@@ -70,30 +70,29 @@
     min-height: 250px;
   }
   
-  /* TREND TABLE */
-  .trend-table {
-    width: 100%; border-collapse: collapse; font-size: 12px;
-  }
-  .trend-table th {
-    background: {{ color_scheme.primary }}; color: white;
-    padding: 12px; text-align: left; font-weight: 600;
-    text-transform: uppercase; letter-spacing: .5px; font-size: 10px;
-  }
-  .trend-table td {
-    padding: 12px; border-bottom: 1px solid var(--gray);
-  }
-  .trend-table tr:hover td {
-    background: {{ color_scheme.light }};
-  }
-  .trend-indicator {
-    display: inline-flex; align-items: center; gap: 6px;
-  }
-  .trend-up { color: var(--green); }
-  .trend-down { color: var(--red); }
-  
-  /* MAP SECTION */
+  /* MAP STYLES */
   #mapContainer {
-    height: 400px; border-radius: 8px; background: #f0f0f0;
+    height: 400px; border-radius: 8px; overflow: hidden;
+    border: 2px solid var(--gray);
+  }
+  .map-info-window {
+    padding: 8px; max-width: 200px;
+  }
+  .map-info-window h4 {
+    margin: 0 0 8px; font-size: 14px; color: var(--navy);
+  }
+  .map-info-window p {
+    margin: 4px 0; font-size: 12px;
+  }
+  .map-legend {
+    display: flex; gap: 16px; margin-top: 12px; font-size: 11px;
+    background: var(--bg); padding: 8px 12px; border-radius: 6px;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .legend-dot {
+    width: 10px; height: 10px; border-radius: 50%;
   }
   
   /* INSIGHTS BOX */
@@ -125,6 +124,31 @@
   }
   .insight-list li:last-child {
     border-bottom: none;
+  }
+  
+  /* STORE TABLE */
+  .store-table {
+    max-height: 400px; overflow-y: auto;
+  }
+  .store-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid var(--gray);
+    font-size: 12px;
+  }
+  .store-rank {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: {{ color_scheme.light }}; color: {{ color_scheme.primary }};
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 11px;
+  }
+  .store-name {
+    flex: 1; font-weight: 600;
+  }
+  .store-revenue {
+    color: var(--navy); font-weight: 700;
+  }
+  .store-visits {
+    color: var(--muted); font-size: 11px;
   }
 </style>
 {% endblock %}
@@ -210,7 +234,7 @@
   </div>
 </div>
 
-<!-- CHARTS ROW 2 -->
+<!-- CHARTS ROW 2: MAP AND TREND -->
 <div class="chart-grid">
   <div class="chart-card">
     <div class="chart-title">📈 Sales Trend Over Time</div>
@@ -218,38 +242,56 @@
   </div>
   
   <div class="chart-card">
-    <div class="chart-title">🗺️ Top Repeat Purchase Stores</div>
+    <div class="chart-title">🗺️ Top Repeat Purchase Stores Map</div>
     <div id="mapContainer">
-      {% if map_data %}
-      <div style="padding:20px; text-align:center;">
-        <p class="text-muted">Map showing {{ map_data|length }} top stores</p>
-        <table class="trend-table" style="margin-top:16px;">
-          <thead>
-            <tr>
-              <th>Store</th>
-              <th>Revenue</th>
-              <th>Visits</th>
-              <th>Repeat %</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for store in map_data[:10] %}
-            <tr>
-              <td>{{ store.store_name[:40] }}</td>
-              <td>₦{{ "{:,.0f}".format(store.total_revenue) }}</td>
-              <td>{{ store.visit_count }}</td>
-              <td>{{ store.visit_percentage }}%</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+      {% if google_maps_key %}
+        <!-- Google Map will be rendered here -->
+        <div style="height:100%; display:flex; align-items:center; justify-content:center; background:#f8f9fa;">
+          <p class="text-muted">Loading map...</p>
+        </div>
       {% else %}
-      <div style="padding:40px; text-align:center; color:var(--muted);">
-        <p>No repeat purchase data available for this period</p>
-      </div>
+        <div style="padding:40px; text-align:center;">
+          <p class="text-muted">🗺️ Map view requires Google Maps API key</p>
+          <p style="font-size:12px; color:var(--muted); margin-top:8px;">
+            Set GOOGLE_MAPS_API_KEY environment variable to enable maps
+          </p>
+        </div>
       {% endif %}
     </div>
+    {% if map_data %}
+    <div class="map-legend">
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#E8192C;"></div>
+        <span>Frequent (5+ visits)</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#F39C12;"></div>
+        <span>Regular (2-4 visits)</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#7A849E;"></div>
+        <span>One-time</span>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- REPEAT STORE LIST -->
+<div class="chart-card" style="margin-bottom:24px;">
+  <div class="chart-title">📍 Store Repeat Purchase Details</div>
+  <div class="store-table">
+    {% for store in map_data[:15] %}
+    <div class="store-row">
+      <div class="store-rank">{{ loop.index }}</div>
+      <div class="store-name">{{ store.store_name[:50] }}</div>
+      <div class="store-visits">{{ store.visit_count }} visits</div>
+      <div class="store-revenue">₦{{ "{:,.0f}".format(store.total_revenue) }}</div>
+      <span class="badge {% if store.repeat_category == 'Frequent (5+)' %}badge-red{% elif store.repeat_category == 'Regular (2-4)' %}badge-amber{% else %}badge-muted{% endif %}">
+        {{ store.repeat_category }}
+      </span>
+    </div>
+    {% endfor %}
   </div>
 </div>
 
@@ -289,13 +331,98 @@
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% if google_maps_key %}
+<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_key }}&callback=initMap" async defer></script>
+{% endif %}
+
 <script>
-// Store historical data for sparklines
+// Store data for charts
 const historicalData = {{ historical_json|safe }};
+const mapData = {{ map_data_json|safe }};
+const colorPrimary = '{{ color_scheme.primary }}';
+const colorSecondary = '{{ color_scheme.secondary }}';
 
 function loadMonthData() {
   const selected = document.getElementById('monthSelect').value;
   window.location.href = `/trends?month=${selected}`;
+}
+
+// Initialize Google Map
+function initMap() {
+  if (!mapData || mapData.length === 0) {
+    document.getElementById('mapContainer').innerHTML = 
+      '<div style="padding:40px; text-align:center; color:var(--muted);"><p>No store location data available</p></div>';
+    return;
+  }
+  
+  // Calculate center
+  const center = {
+    lat: mapData.reduce((sum, m) => sum + m.latitude, 0) / mapData.length,
+    lng: mapData.reduce((sum, m) => sum + m.longitude, 0) / mapData.length
+  };
+  
+  const map = new google.maps.Map(document.getElementById('mapContainer'), {
+    zoom: 11,
+    center: center,
+    mapTypeId: 'roadmap',
+    styles: [
+      {
+        featureType: 'poi',
+        elementType: 'labels',
+        stylers: [{ visibility: 'off' }]
+      }
+    ]
+  });
+  
+  // Add markers for each store
+  mapData.forEach((store, index) => {
+    // Determine color based on visit count
+    let markerColor;
+    if (store.visit_count >= 5) {
+      markerColor = '#E8192C'; // Red - Frequent
+    } else if (store.visit_count >= 2) {
+      markerColor = '#F39C12'; // Orange - Regular
+    } else {
+      markerColor = '#7A849E'; // Gray - One-time
+    }
+    
+    // Create marker
+    const marker = new google.maps.Marker({
+      position: { lat: store.latitude, lng: store.longitude },
+      map: map,
+      title: store.store_name,
+      label: {
+        text: String(index + 1),
+        color: 'white',
+        fontSize: '12px',
+        fontWeight: 'bold'
+      },
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        fillColor: markerColor,
+        fillOpacity: 0.9,
+        strokeWeight: 2,
+        strokeColor: '#fff',
+        scale: 15
+      }
+    });
+    
+    // Info window content
+    const infoContent = `
+      <div class="map-info-window">
+        <h4>#${index + 1} ${store.store_name.substring(0, 30)}</h4>
+        <p><strong>Revenue:</strong> ₦${store.total_revenue.toLocaleString()}</p>
+        <p><strong>Visits:</strong> ${store.visit_count} (${store.repeat_category})</p>
+        <p><strong>Share:</strong> ${store.visit_percentage}% of total visits</p>
+      </div>
+    `;
+    
+    const infoWindow = new google.maps.InfoWindow({ content: infoContent });
+    
+    marker.addListener('click', () => {
+      infoWindow.open(map, marker);
+    });
+  });
 }
 
 // Initialize charts when DOM is ready
@@ -309,7 +436,36 @@ document.addEventListener('DOMContentLoaded', function() {
         labels: historicalData.map(d => d.month_label),
         datasets: [{
           data: historicalData.map(d => d.total_revenue),
-          borderColor: '{{ color_scheme.primary }}',
+          borderColor: colorPrimary,
+          backgroundColor: '{{ color_scheme.light }}',
+          fill: true,
+          tension: 0.4,
+          pointRadius: 0,
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { display: false },
+          y: { display: false }
+        }
+      }
+    });
+  }
+  
+  // Quantity Sparkline
+  const qtyCtx = document.getElementById('qtySparkline');
+  if (qtyCtx && historicalData.length > 0) {
+    new Chart(qtyCtx, {
+      type: 'line',
+      data: {
+        labels: historicalData.map(d => d.month_label),
+        datasets: [{
+          data: historicalData.map(d => d.total_qty),
+          borderColor: colorSecondary,
           backgroundColor: '{{ color_scheme.light }}',
           fill: true,
           tension: 0.4,
@@ -340,7 +496,7 @@ document.addEventListener('DOMContentLoaded', function() {
         datasets: [{
           label: 'Revenue (₦)',
           data: storeData.map(s => s.revenue),
-          backgroundColor: '{{ color_scheme.primary }}',
+          backgroundColor: colorPrimary,
           borderRadius: 4
         }]
       },
@@ -373,7 +529,7 @@ document.addEventListener('DOMContentLoaded', function() {
         datasets: [{
           label: 'Revenue (₦)',
           data: productData.map(p => p.revenue),
-          backgroundColor: '{{ color_scheme.secondary }}',
+          backgroundColor: colorSecondary,
           borderRadius: 4
         }]
       },
@@ -406,7 +562,7 @@ document.addEventListener('DOMContentLoaded', function() {
           {
             label: 'Revenue',
             data: historicalData.map(d => d.total_revenue),
-            borderColor: '{{ color_scheme.primary }}',
+            borderColor: colorPrimary,
             backgroundColor: 'transparent',
             yAxisID: 'y',
             tension: 0.3
@@ -414,7 +570,7 @@ document.addEventListener('DOMContentLoaded', function() {
           {
             label: 'Quantity',
             data: historicalData.map(d => d.total_qty),
-            borderColor: '{{ color_scheme.secondary }}',
+            borderColor: colorSecondary,
             backgroundColor: 'transparent',
             yAxisID: 'y1',
             tension: 0.3

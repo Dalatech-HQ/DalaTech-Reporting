@@ -504,8 +504,24 @@ def trends():
         product_revenue = sales_df.groupby('SKUs')['Sales_Value'].sum().sort_values(ascending=False).head(10)
         top_products = [{'name': name, 'revenue': rev} for name, rev in product_revenue.items()]
     
-    # Get map data
+    # Get map data with geocoding
     map_data = get_repeat_purchase_map_data(df, year, month, top_n=20)
+    
+    # Try to geocode store locations if API key is available
+    google_maps_key = os.environ.get('GOOGLE_MAPS_API_KEY', '')
+    if google_maps_key and map_data:
+        from modules.geocoding import geocode_stores_batch
+        try:
+            coords = geocode_stores_batch([m['store_name'] for m in map_data], google_maps_key)
+            for m in map_data:
+                if m['store_name'] in coords:
+                    m['latitude'] = coords[m['store_name']][0]
+                    m['longitude'] = coords[m['store_name']][1]
+        except Exception as e:
+            print(f"Geocoding error: {e}")
+    
+    # Filter to only stores with coordinates for the map
+    map_data_with_coords = [m for m in map_data if m.get('latitude') and m.get('longitude')]
     
     return render_template('portal/trends.html',
                            metrics=metrics,
@@ -517,10 +533,12 @@ def trends():
                            top_products=top_products,
                            top_products_json=json.dumps(top_products),
                            map_data=map_data,
+                           map_data_json=json.dumps(map_data_with_coords),
                            color_scheme=color_scheme,
                            available_months=available_months,
                            current_year=year,
                            current_month=month,
+                           google_maps_key=google_maps_key,
                            alert_count=ds.get_unacknowledged_count())
 
 
