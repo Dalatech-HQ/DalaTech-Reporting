@@ -1794,82 +1794,122 @@ def whatsapp_webhook():
 def drive_sync_dashboard():
     """Admin dashboard for Google Drive sync status."""
     alert_count = ds.get_unacknowledged_count()
-    
+    from modules.drive_sync import drive_available, DRIVE_FOLDERS
+
+    if not drive_available():
+        return render_template('portal/drive_sync.html',
+                               sync_status='no_credentials',
+                               stats={'total_imports': 0, 'total_errors': 0, 'files_tracked': 0},
+                               all_files=[], folders=DRIVE_FOLDERS,
+                               alert_count=alert_count,
+                               error='No Google credentials found. Run setup_oauth.py or add google_credentials.json.')
+
     try:
-        from modules.drive_sync import SyncState, DRIVE_FOLDERS
-        sync_state = SyncState()
-        
-        # Get recent files for each folder
+        from modules.drive_sync import DriveSyncOrchestrator
+        orch  = DriveSyncOrchestrator()
+        stats = orch.get_sync_summary()
+        # List files from Drive with their sync status
+        all_files = orch.list_all_files()
+        # Group by folder for the UI
         folders_data = []
         for folder in DRIVE_FOLDERS:
-            folder_data = {
-                'name': folder['name'],
-                'id': folder['id'],
-                'recent_files': []
-            }
-            
-            # Get files for this folder from state
-            for file_id, file_info in sync_state.state.get('files', {}).items():
-                if file_info.get('folder_id') == folder['id']:
-                    folder_data['recent_files'].append({
-                        'name': file_info.get('name', 'Unknown'),
-                        'modifiedTime': file_info.get('modifiedTime', ''),
-                        'status': file_info.get('status', 'pending')
-                    })
-            
-            # Sort by modified time
-            folder_data['recent_files'].sort(
-                key=lambda x: x.get('modifiedTime', ''), 
-                reverse=True
-            )
-            folders_data.append(folder_data)
-        
+            folder_files = [f for f in all_files if f['folder_id'] == folder['id']]
+            folders_data.append({
+                'name':  folder['name'],
+                'id':    folder['id'],
+                'files': folder_files,
+            })
         return render_template('portal/drive_sync.html',
                                sync_status='active',
-                               auto_sync=True,
                                stats={
-                                   'total_imports': sync_state.state['stats']['total_imports'],
-                                   'total_errors': sync_state.state['stats']['total_errors'],
-                                   'files_tracked': len(sync_state.state['files']),
+                                   'total_imports':  stats['total_imports'],
+                                   'total_errors':   stats['total_errors'],
+                                   'files_tracked':  stats['total_files_tracked'],
                                },
+                               all_files=all_files,
                                folders=folders_data,
-                               recent_activity=[],
-                               alert_count=alert_count)
+                               alert_count=alert_count,
+                               error=None)
     except Exception as e:
         return render_template('portal/drive_sync.html',
                                sync_status='error',
-                               auto_sync=False,
                                stats={'total_imports': 0, 'total_errors': 0, 'files_tracked': 0},
-                               folders=[],
-                               recent_activity=[{'type': 'error', 'time': datetime.now().strftime('%H:%M'), 'message': str(e)}],
-                               alert_count=alert_count)
+                               all_files=[], folders=DRIVE_FOLDERS,
+                               alert_count=alert_count,
+                               error=str(e))
 
 
 @app.route('/api/drive-sync/trigger', methods=['POST'])
 def api_drive_sync_trigger():
-    """Manually trigger a sync check."""
+    """Check for new/changed files and import them."""
     try:
         from modules.drive_sync import DriveSyncOrchestrator
-        orchestrator = DriveSyncOrchestrator()
-        results = orchestrator.check_all_folders()
-        
-        success_count = sum(1 for r in results if r.get('status') == 'success')
-        error_count = sum(1 for r in results if r.get('status') == 'error')
-        
+        orch    = DriveSyncOrchestrator()
+        results = orch.check_new_files()
         return jsonify({
-            'success': True,
-            'imported': success_count,
-            'errors': error_count,
-            'results': results
+            'success':  True,
+            'imported': sum(1 for r in results if r.get('status') == 'success'),
+            'skipped':  sum(1 for r in results if r.get('status') == 'skipped'),
+            'errors':   sum(1 for r in results if r.get('status') == 'error'),
+            'results':  results,
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/drive-sync/full-import', methods=['POST'])
+def api_drive_sync_full_import():
+    """
+    Background full historical import — imports ALL files from both Drive folders.
+    Returns a job_id; poll /api/drive-sync/job/<job_id> for progress.
+    """
+    import uuid, threading
+    job_id = uuid.uuid4().hex
+    ds.create_job(job_id)
+
+    def _run():
+        try:
+            from modules.drive_sync import DriveSyncOrchestrator
+            orch = DriveSyncOrchestrator()
+
+            # First list all files to know the total
+            all_files_preview = orch.list_all_files()
+            total = len(all_files_preview)
+            ds.update_job(job_id, total=total, status='running',
+                          current_brand='Connecting to Google Drive...')
+
+            imported, errors = 0, 0
+
+            def _progress(current, total_files, file_name):
+                nonlocal imported, errors
+                pct = int(current / max(total_files, 1) * 100)
+                ds.update_job(job_id, progress=pct, current_brand=file_name)
+
+            results = orch.full_historical_sync(progress_cb=_progress)
+            imported = sum(1 for r in results if r.get('status') == 'success')
+            errors   = sum(1 for r in results if r.get('status') == 'error')
+
+            ds.update_job(job_id, status='done', progress=100,
+                          current_brand=f'Complete: {imported} imported, {errors} errors')
+        except Exception as e:
+            ds.update_job(job_id, status='error', error_msg=str(e))
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({'success': True, 'job_id': job_id})
+
+
+@app.route('/api/drive-sync/job/<job_id>')
+def api_drive_sync_job(job_id):
+    """Poll status of a full-import job."""
+    job = ds.get_job(job_id)
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+    return jsonify(job)
+
+
 @app.route('/api/drive-sync/toggle', methods=['POST'])
 def api_drive_sync_toggle():
-    """Toggle automatic sync on/off."""
-    # TODO: Implement auto-sync toggle
+    """Toggle automatic sync (placeholder — sync currently manual)."""
     return jsonify({'success': True, 'auto_sync': True})
 
 

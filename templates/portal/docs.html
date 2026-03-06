@@ -505,14 +505,62 @@
     </ul>
   </div>
 
+  <!-- DRIVE SYNC -->
+  <div class="doc-card">
+    <h2>Google Drive Auto-Sync</h2>
+    <div class="subtitle">Build the complete historical database from your Drive folders — automatically</div>
+
+    <p>DALA watches two Google Drive folders (2025 and 2026 Sales Reports) and can import every Excel file into the database with one click, building the full multi-year history that powers Forecasting, Trends, and the Leaderboard.</p>
+
+    <h3 style="margin:16px 0 8px;font-size:14px;color:var(--navy);">Setting It Up</h3>
+    <ol>
+      <li>Run <strong><code>python setup_oauth.py</code></strong> on your local machine — this opens a Google sign-in page and saves <code>google_token.json</code> to the project root.</li>
+      <li>Commit <code>google_token.json</code> to Git (or add it to Railway as a file/env variable).</li>
+      <li>The same OAuth2 token is shared with Google Sheets — if Sheets sync already works, Drive Sync works too.</li>
+    </ol>
+
+    <h3 style="margin:16px 0 8px;font-size:14px;color:var(--navy);">Using Drive Sync</h3>
+    <ul>
+      <li><strong>Import All History</strong> — Downloads every Excel file from both Drive folders and runs the full pipeline (KPIs, alerts, scorecards). Use this once to build the database from scratch. Takes ~1–2 minutes per monthly file.</li>
+      <li><strong>Check for New Files</strong> — Only downloads files that are new or have changed since the last import. Use this each month after dropping the new report in Drive.</li>
+      <li>Each file's import status (Pending / Imported / Error) is tracked in the database and survives server restarts.</li>
+    </ul>
+
+    <h3 style="margin:16px 0 8px;font-size:14px;color:var(--navy);">Drive Sync API</h3>
+    <ul>
+      <li><strong>POST /api/drive-sync/trigger</strong> — Check for new/changed files only</li>
+      <li><strong>POST /api/drive-sync/full-import</strong> — Start full historical import (async background job)</li>
+      <li><strong>GET /api/drive-sync/job/[job_id]</strong> — Poll job progress (returns progress %, current file, status)</li>
+    </ul>
+
+    <div style="background:var(--bg);border-radius:8px;padding:14px;margin-top:12px;font-size:12px;">
+      <strong>Note:</strong> Drive Sync builds the KPI database only (no PDFs/HTMLs). Brand PDFs are generated on-demand from the Brand Partners page or by re-running generation from the Home page for any specific date range.
+    </div>
+  </div>
+
   <!-- CHANGELOG -->
   <div class="doc-card">
     <h2>Version History</h2>
 
     <div class="changelog-entry">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
-        <span class="version-tag">v4.0</span>
+        <span class="version-tag">v5.0</span>
         <span style="font-size:12px;color:var(--muted);">March 2026 — Current</span>
+      </div>
+      <ul>
+        <li>Google Drive Auto-Sync — import entire historical database from Drive folders with one click</li>
+        <li>Full generation pipeline runs on each Drive file (KPIs, alerts, scorecards, daily sales)</li>
+        <li>Drive sync state persisted in SQLite — survives Railway restarts (no more ephemeral JSON)</li>
+        <li>Duplicate report/alert fix — re-generating the same date range now updates in place instead of creating duplicates</li>
+        <li>Alert count shows real numbers (up to 999+) instead of capping at 99+</li>
+        <li>Drive credentials: OAuth2 (google_token.json) → service account → GOOGLE_CREDENTIALS_JSON env var</li>
+      </ul>
+    </div>
+
+    <div class="changelog-entry">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <span style="background:var(--blue);color:white;padding:4px 12px;border-radius:12px;font-size:11px;font-weight:700;">v4.0</span>
+        <span style="font-size:12px;color:var(--muted);">March 2026</span>
       </div>
       <ul>
         <li>AI Narrative Engine — Gemini-powered brand performance summaries embedded directly in the PDF</li>

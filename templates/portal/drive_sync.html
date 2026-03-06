@@ -4,255 +4,225 @@
 
 {% block content %}
 <style>
-  .sync-card {
-    background: var(--white);
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 2px 8px rgba(27,43,94,.07);
-  }
-  .sync-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
-  }
-  .sync-status.active { background: rgba(30,132,73,.1); color: var(--green); }
-  .sync-status.paused { background: rgba(192,146,42,.1); color: var(--amber); }
-  .sync-status.error { background: rgba(232,25,44,.1); color: var(--red); }
-  
-  .stat-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 16px;
-    margin-bottom: 20px;
-  }
-  .stat-box {
-    background: var(--bg);
-    padding: 16px;
-    border-radius: 8px;
-    text-align: center;
-  }
-  .stat-number {
-    font-size: 28px;
-    font-weight: 800;
-    color: var(--navy);
-  }
-  .stat-label {
-    font-size: 11px;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: .5px;
-  }
-  
-  .folder-card {
-    border: 1.5px solid var(--gray);
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 12px;
-  }
-  .folder-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-  }
-  .folder-name {
-    font-weight: 700;
-    color: var(--navy);
-  }
-  .folder-id {
-    font-size: 11px;
-    color: var(--muted);
-    font-family: monospace;
-  }
-  
-  .file-list {
-    max-height: 300px;
-    overflow-y: auto;
-  }
-  .file-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--gray);
-    font-size: 12px;
-  }
-  .file-item:last-child { border-bottom: none; }
-  .file-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 10px;
-    font-weight: 600;
-  }
-  .file-status.imported { background: rgba(30,132,73,.1); color: var(--green); }
-  .file-status.error { background: rgba(232,25,44,.1); color: var(--red); }
-  .file-status.pending { background: rgba(46,134,193,.1); color: var(--blue); }
-  
-  .action-btn {
-    padding: 10px 20px;
-    border-radius: 8px;
-    font-weight: 600;
-    cursor: pointer;
-    border: none;
-    transition: all .15s;
-  }
-  .action-btn:disabled { opacity: .5; cursor: not-allowed; }
-  
-  .log-entry {
-    font-family: monospace;
-    font-size: 11px;
-    padding: 6px 8px;
-    border-bottom: 1px solid var(--gray);
-  }
-  .log-entry.success { color: var(--green); }
-  .log-entry.error { color: var(--red); }
-  .log-entry.info { color: var(--muted); }
+  .sync-card { background:var(--white);border-radius:12px;padding:20px;margin-bottom:20px;box-shadow:0 2px 8px rgba(27,43,94,.07); }
+  .sync-badge { display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600; }
+  .sync-badge.active { background:rgba(30,132,73,.1);color:var(--green); }
+  .sync-badge.error  { background:rgba(232,25,44,.1);color:var(--red); }
+  .sync-badge.no_credentials { background:rgba(192,146,42,.1);color:var(--amber); }
+  .stat-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px; }
+  .stat-box  { background:var(--bg);padding:16px;border-radius:8px;text-align:center; }
+  .stat-num  { font-size:28px;font-weight:800;color:var(--navy); }
+  .stat-lbl  { font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px; }
+  .file-row  { display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--gray);font-size:12px;gap:8px; }
+  .file-row:last-child { border-bottom:none; }
+  .fstatus   { display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;white-space:nowrap; }
+  .fstatus.imported { background:rgba(30,132,73,.1);color:var(--green); }
+  .fstatus.error    { background:rgba(232,25,44,.1);color:var(--red); }
+  .fstatus.pending  { background:rgba(46,134,193,.1);color:var(--blue); }
+  .progress-wrap { background:var(--gray);border-radius:8px;height:12px;overflow:hidden;margin:10px 0; }
+  .progress-bar  { background:var(--navy);height:100%;border-radius:8px;transition:width .4s; }
+  #importPanel   { display:none;margin-top:16px;padding:16px;background:var(--bg);border-radius:8px; }
+  .folder-hdr    { font-weight:700;color:var(--navy);margin:16px 0 8px;font-size:13px; }
+  .folder-id     { font-size:10px;color:var(--muted);font-family:monospace; }
 </style>
+
+<!-- Credential warning -->
+{% if sync_status == 'no_credentials' %}
+<div class="sync-card" style="border-left:4px solid var(--amber);">
+  <h4 style="color:var(--amber);margin-bottom:8px;">⚠ Google Credentials Not Found</h4>
+  <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">{{ error }}</p>
+  <p style="font-size:12px;">
+    <strong>Option A (Recommended):</strong> Run <code>python setup_oauth.py</code> on your local machine to generate <code>google_token.json</code>, then deploy.<br>
+    <strong>Option B:</strong> Add a service account JSON as <code>google_credentials.json</code> in the project root, or set the <code>GOOGLE_CREDENTIALS_JSON</code> environment variable on Railway.
+  </p>
+</div>
+{% endif %}
+
+<!-- Error banner -->
+{% if error and sync_status == 'error' %}
+<div class="sync-card" style="border-left:4px solid var(--red);">
+  <h4 style="color:var(--red);margin-bottom:6px;">Drive Error</h4>
+  <p style="font-size:12px;font-family:monospace;color:var(--muted);">{{ error }}</p>
+</div>
+{% endif %}
 
 <!-- Status Overview -->
 <div class="sync-card">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
     <div>
-      <h3 style="color:var(--navy);margin-bottom:4px;">Sync Status</h3>
-      <p class="text-muted fs-sm">Automatic import from Google Drive folders</p>
+      <h3 style="color:var(--navy);margin-bottom:4px;">Google Drive Sync</h3>
+      <p class="text-muted fs-sm">Import monthly sales reports from Drive to build the historical database</p>
     </div>
-    <span class="sync-status {% if sync_status == 'active' %}active{% elif sync_status == 'error' %}error{% else %}paused{% endif %}">
-      {% if sync_status == 'active' %}🟢 Active{% elif sync_status == 'error' %}🔴 Error{% else %}🟡 Paused{% endif %}
+    <span class="sync-badge {{ sync_status }}">
+      {% if sync_status == 'active' %}🟢 Connected
+      {% elif sync_status == 'error' %}🔴 Error
+      {% else %}🟡 No Credentials{% endif %}
     </span>
   </div>
-  
+
   <div class="stat-grid">
-    <div class="stat-box">
-      <div class="stat-number">{{ stats.total_imports }}</div>
-      <div class="stat-label">Files Imported</div>
-    </div>
-    <div class="stat-box">
-      <div class="stat-number">{{ stats.total_errors }}</div>
-      <div class="stat-label">Errors</div>
-    </div>
-    <div class="stat-box">
-      <div class="stat-number">{{ stats.files_tracked }}</div>
-      <div class="stat-label">Files Tracked</div>
-    </div>
-    <div class="stat-box">
-      <div class="stat-number">{{ folders|length }}</div>
-      <div class="stat-label">Folders</div>
-    </div>
+    <div class="stat-box"><div class="stat-num">{{ stats.total_imports }}</div><div class="stat-lbl">Files Imported</div></div>
+    <div class="stat-box"><div class="stat-num">{{ stats.total_errors }}</div><div class="stat-lbl">Errors</div></div>
+    <div class="stat-box"><div class="stat-num">{{ stats.files_tracked }}</div><div class="stat-lbl">Files Tracked</div></div>
+    <div class="stat-box"><div class="stat-num">{{ all_files|length }}</div><div class="stat-lbl">In Drive</div></div>
   </div>
-  
-  <div style="display:flex;gap:12px;">
-    <button class="action-btn btn-primary" onclick="triggerSync()" id="syncBtn">
-      🔄 Check Now
+
+  {% if sync_status == 'active' %}
+  <div style="display:flex;gap:12px;flex-wrap:wrap;">
+    <button class="btn btn-primary" onclick="triggerCheck()" id="checkBtn">🔄 Check for New Files</button>
+    <button class="btn btn-outline" onclick="startFullImport()" id="importBtn"
+            style="background:#1B2B5E;color:white;border-color:#1B2B5E;">
+      📥 Import All History
     </button>
-    <button class="action-btn btn-outline" onclick="toggleAutoSync()">
-      {% if auto_sync %}⏸ Pause Auto-Sync{% else %}▶ Resume Auto-Sync{% endif %}
-    </button>
-    <a href="/drive-sync/logs" class="action-btn btn-outline">📋 View Logs</a>
+    <a href="https://drive.google.com/drive/folders/1I6b9ytn6XR0QHtr9tBRzXXe1xhMKW7dD" target="_blank" class="btn btn-outline">📂 Open 2025 Folder ↗</a>
+    <a href="https://drive.google.com/drive/folders/1dLbLm-O66ySffXUHlmAsHNIiayKHkEol" target="_blank" class="btn btn-outline">📂 Open 2026 Folder ↗</a>
   </div>
+
+  <!-- Full Import Progress Panel -->
+  <div id="importPanel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <strong id="importTitle" style="color:var(--navy);">Importing historical data…</strong>
+      <span id="importPct" style="font-size:13px;font-weight:700;color:var(--navy);">0%</span>
+    </div>
+    <div class="progress-wrap"><div class="progress-bar" id="importBar" style="width:0%"></div></div>
+    <p id="importMsg" class="text-muted fs-sm" style="margin-top:6px;">Starting…</p>
+  </div>
+  {% endif %}
 </div>
 
-<!-- Folders -->
+<!-- Files in Drive (grouped by folder) -->
+{% if sync_status == 'active' %}
 <div class="sync-card">
-  <h4 style="color:var(--navy);margin-bottom:16px;">Monitored Folders</h4>
-  
+  <h4 style="color:var(--navy);margin-bottom:4px;">Files in Drive</h4>
+  <p class="text-muted fs-sm" style="margin-bottom:16px;">All Excel files across both folders — click "Import All History" to import any that are still pending.</p>
+
   {% for folder in folders %}
-  <div class="folder-card">
-    <div class="folder-header">
-      <div>
-        <div class="folder-name">{{ folder.name }}</div>
-        <div class="folder-id">{{ folder.id }}</div>
-      </div>
-      <a href="https://drive.google.com/drive/folders/{{ folder.id }}" target="_blank" class="btn btn-sm btn-outline">
-        Open in Drive ↗
-      </a>
-    </div>
-    
-    {% if folder.recent_files %}
-    <div class="file-list">
-      {% for file in folder.recent_files %}
-      <div class="file-item">
-        <div style="display:flex;align-items:center;gap:8px;">
-          📄 {{ file.name }}
-        </div>
-        <div style="display:flex;align-items:center;gap:12px;">
-          <span class="text-muted fs-sm">{{ file.modifiedTime[:10] }}</span>
-          <span class="file-status {{ file.status }}">
-            {% if file.status == 'imported' %}✓ Imported{% elif file.status == 'error' %}✗ Error{% else %}⏳ Pending{% endif %}
-          </span>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <p class="text-muted fs-sm">No files processed yet</p>
-    {% endif %}
+  <div class="folder-hdr">
+    📁 {{ folder.name }}
+    <span class="folder-id"> — ID: {{ folder.id }}</span>
+    <a href="https://drive.google.com/drive/folders/{{ folder.id }}" target="_blank"
+       style="font-size:11px;color:var(--blue);margin-left:8px;">Open ↗</a>
   </div>
-  {% endfor %}
-</div>
 
-<!-- Recent Activity -->
-<div class="sync-card">
-  <h4 style="color:var(--navy);margin-bottom:16px;">Recent Activity</h4>
-  
-  {% if recent_activity %}
-  <div class="file-list">
-    {% for activity in recent_activity %}
-    <div class="log-entry {{ activity.type }}">
-      [{{ activity.time }}] {{ activity.message }}
+  {% if folder.files %}
+  <div style="border:1px solid var(--gray);border-radius:8px;overflow:hidden;margin-bottom:16px;">
+    {% for f in folder.files %}
+    <div class="file-row">
+      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
+        <span>📄</span>
+        <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ f.name }}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
+        {% if f.modifiedTime %}
+        <span class="text-muted" style="font-size:11px;">{{ f.modifiedTime[:10] }}</span>
+        {% endif %}
+        <span class="fstatus {{ f.status }}">
+          {% if f.status == 'imported' %}✓ Imported{% elif f.status == 'error' %}✗ Error{% else %}⏳ Pending{% endif %}
+        </span>
+        {% if f.report_id %}
+        <a href="/dashboard?report_id={{ f.report_id }}" class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 8px;">View</a>
+        {% endif %}
+      </div>
     </div>
     {% endfor %}
   </div>
   {% else %}
-  <p class="text-muted fs-sm">No recent activity</p>
+  <p class="text-muted fs-sm" style="margin-bottom:16px;">No files found in this folder yet. Make sure the folder is shared with your service account, or that you're signed in via OAuth2.</p>
   {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Setup instructions (always show) -->
+<div class="sync-card">
+  <h4 style="color:var(--navy);margin-bottom:12px;">How This Works</h4>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+    <div>
+      <p style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px;">1. Watched Folders</p>
+      <p class="text-muted fs-sm">2025 and 2026 Google Drive folders are monitored for Excel sales reports.</p>
+      <p style="font-size:12px;font-weight:700;color:var(--navy);margin:12px 0 4px;">2. Import All History</p>
+      <p class="text-muted fs-sm">Click "Import All History" to download every file and build the complete database — this runs once and takes ~1-2 mins per file.</p>
+    </div>
+    <div>
+      <p style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px;">3. Monthly Updates</p>
+      <p class="text-muted fs-sm">Each month, drop the new Excel report in the Drive folder and click "Check for New Files" — only new or changed files will be imported.</p>
+      <p style="font-size:12px;font-weight:700;color:var(--navy);margin:12px 0 4px;">4. What Gets Built</p>
+      <p class="text-muted fs-sm">KPIs, alerts, brand scorecards, forecasting trends, leaderboards — all powered by the full historical dataset.</p>
+    </div>
+  </div>
 </div>
 
 {% endblock %}
 
 {% block scripts %}
 <script>
-async function triggerSync() {
-  const btn = document.getElementById('syncBtn');
+async function triggerCheck() {
+  const btn = document.getElementById('checkBtn');
   btn.disabled = true;
-  btn.textContent = '⏳ Checking...';
-  
+  btn.textContent = '⏳ Checking…';
   try {
-    const res = await fetch('/api/drive-sync/trigger', { method: 'POST' });
+    const res  = await fetch('/api/drive-sync/trigger', { method: 'POST' });
     const data = await res.json();
-    
     if (data.success) {
-      alert(`Sync complete!\nImported: ${data.imported}\nErrors: ${data.errors}`);
+      alert(`Done!\nImported: ${data.imported}  Skipped: ${data.skipped}  Errors: ${data.errors}`);
       location.reload();
     } else {
-      alert('Sync failed: ' + data.error);
+      alert('Error: ' + data.error);
     }
   } catch (e) {
-    alert('Error: ' + e.message);
+    alert('Network error: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = '🔄 Check Now';
+    btn.textContent = '🔄 Check for New Files';
   }
 }
 
-async function toggleAutoSync() {
+async function startFullImport() {
+  if (!confirm('This will import ALL files from both Drive folders and may take several minutes.\n\nContinue?')) return;
+
+  const btn   = document.getElementById('importBtn');
+  const panel = document.getElementById('importPanel');
+  btn.disabled = true;
+  btn.textContent = '⏳ Importing…';
+  panel.style.display = 'block';
+
+  let jobId;
   try {
-    const res = await fetch('/api/drive-sync/toggle', { method: 'POST' });
+    const res  = await fetch('/api/drive-sync/full-import', { method: 'POST' });
     const data = await res.json();
-    
-    if (data.success) {
-      location.reload();
-    }
+    if (!data.success) { alert('Failed to start: ' + data.error); return; }
+    jobId = data.job_id;
   } catch (e) {
     alert('Error: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = '📥 Import All History';
+    return;
   }
+
+  // Poll for progress
+  const pollInterval = setInterval(async () => {
+    try {
+      const res  = await fetch(`/api/drive-sync/job/${jobId}`);
+      const job  = await res.json();
+      const pct  = job.progress || 0;
+      document.getElementById('importBar').style.width = pct + '%';
+      document.getElementById('importPct').textContent  = pct + '%';
+      document.getElementById('importMsg').textContent  = job.current_brand || '';
+
+      if (job.status === 'done' || job.status === 'error') {
+        clearInterval(pollInterval);
+        btn.disabled = false;
+        btn.textContent = '📥 Import All History';
+        if (job.status === 'done') {
+          document.getElementById('importTitle').textContent = '✓ Import Complete';
+          setTimeout(() => location.reload(), 1500);
+        } else {
+          document.getElementById('importTitle').textContent = '✗ Import Failed';
+          document.getElementById('importMsg').textContent   = job.error_msg || 'Unknown error';
+        }
+      }
+    } catch (e) { /* ignore poll errors */ }
+  }, 2000);
 }
 </script>
 {% endblock %}
