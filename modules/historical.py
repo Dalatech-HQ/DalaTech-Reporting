@@ -54,19 +54,25 @@ def get_monthly_metrics(df: pd.DataFrame, year: int, month: int) -> Dict:
     top_store_name = top_store.index[0] if len(top_store) > 0 else None
     top_store_revenue = top_store.iloc[0] if len(top_store) > 0 else 0
     
+    # Convert numpy types to native Python types for JSON serialization
+    def to_native(val):
+        if hasattr(val, 'item'):  # numpy scalar
+            return val.item()
+        return val
+    
     return {
-        'year': year,
-        'month': month,
+        'year': int(year),
+        'month': int(month),
         'month_label': datetime(year, month, 1).strftime('%b %Y'),
-        'total_revenue': round(total_revenue, 2),
-        'total_qty': round(total_qty, 2),
-        'unique_stores': unique_stores,
-        'unique_skus': unique_skus,
-        'repeat_stores': repeat_stores,
-        'repeat_rate': repeat_rate,
+        'total_revenue': float(round(total_revenue, 2)),
+        'total_qty': float(round(total_qty, 2)),
+        'unique_stores': int(unique_stores),
+        'unique_skus': int(unique_skus),
+        'repeat_stores': int(repeat_stores),
+        'repeat_rate': float(repeat_rate),
         'top_store_name': top_store_name,
-        'top_store_revenue': round(top_store_revenue, 2),
-        'avg_revenue_per_store': round(total_revenue / unique_stores, 2) if unique_stores > 0 else 0,
+        'top_store_revenue': float(round(top_store_revenue, 2)),
+        'avg_revenue_per_store': float(round(total_revenue / unique_stores, 2)) if unique_stores > 0 else 0,
     }
 
 
@@ -131,7 +137,7 @@ def get_portfolio_monthly_trend(df: pd.DataFrame) -> List[Dict]:
             # Count active brands this month
             month_df = df[(df['Date'].dt.year == ym.year) & (df['Date'].dt.month == ym.month)]
             sales_df = month_df[month_df['Vch Type'] == 'Sales']
-            metrics['active_brands'] = sales_df['Brand Partner'].nunique()
+            metrics['active_brands'] = int(sales_df['Brand Partner'].nunique())
             
             # MoM calculations
             if prev_metrics:
