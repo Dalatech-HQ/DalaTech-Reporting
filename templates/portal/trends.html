@@ -174,12 +174,14 @@
   <div class="kpi-card-large">
     <div class="kpi-header">Total Sales Revenue</div>
     <div class="kpi-value-large">₦{{ "{:,.0f}".format(metrics.total_revenue) }}</div>
-    {% if metrics.revenue_mom > 0 %}
-    <span class="mom-badge mom-positive">▲ {{ metrics.revenue_mom }}% MoM</span>
-    {% elif metrics.revenue_mom < 0 %}
-    <span class="mom-badge mom-negative">▼ {{ metrics.revenue_mom|abs }}% MoM</span>
-    {% else %}
-    <span class="mom-badge mom-neutral">→ 0% MoM</span>
+    {% if metrics.revenue_mom is defined %}
+      {% if metrics.revenue_mom > 0 %}
+      <span class="mom-badge mom-positive">▲ {{ metrics.revenue_mom }}% MoM</span>
+      {% elif metrics.revenue_mom < 0 %}
+      <span class="mom-badge mom-negative">▼ {{ metrics.revenue_mom|abs }}% MoM</span>
+      {% else %}
+      <span class="mom-badge mom-neutral">→ 0% MoM</span>
+      {% endif %}
     {% endif %}
     <div class="kpi-sparkline" id="revenueSparkline"></div>
   </div>
@@ -187,12 +189,14 @@
   <div class="kpi-card-large">
     <div class="kpi-header">Total Quantity Sold</div>
     <div class="kpi-value-large">{{ "{:,.0f}".format(metrics.total_qty) }} <small style="font-size:14px; color:var(--muted);">PACKS</small></div>
-    {% if metrics.qty_mom > 0 %}
-    <span class="mom-badge mom-positive">▲ {{ metrics.qty_mom }}% MoM</span>
-    {% elif metrics.qty_mom < 0 %}
-    <span class="mom-badge mom-negative">▼ {{ metrics.qty_mom|abs }}% MoM</span>
-    {% else %}
-    <span class="mom-badge mom-neutral">→ 0% MoM</span>
+    {% if metrics.qty_mom is defined %}
+      {% if metrics.qty_mom > 0 %}
+      <span class="mom-badge mom-positive">▲ {{ metrics.qty_mom }}% MoM</span>
+      {% elif metrics.qty_mom < 0 %}
+      <span class="mom-badge mom-negative">▼ {{ metrics.qty_mom|abs }}% MoM</span>
+      {% else %}
+      <span class="mom-badge mom-neutral">→ 0% MoM</span>
+      {% endif %}
     {% endif %}
     <div class="kpi-sparkline" id="qtySparkline"></div>
   </div>
@@ -201,7 +205,7 @@
     <div class="kpi-header">Sales Reach</div>
     <div class="kpi-value-large">{{ metrics.unique_stores }} <small style="font-size:14px; color:var(--muted);">Supermarkets</small></div>
     <span class="text-muted" style="font-size:12px;">Active in last 30 days</span>
-    {% if metrics.stores_mom != 0 %}
+    {% if metrics.stores_mom is defined and metrics.stores_mom != 0 %}
     <br>
     {% if metrics.stores_mom > 0 %}
     <span class="mom-badge mom-positive">▲ {{ metrics.stores_mom }}% MoM</span>

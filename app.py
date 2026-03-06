@@ -25,6 +25,7 @@ Routes:
 import os, io, json, traceback, shutil, uuid, threading
 from datetime import datetime
 from functools import wraps
+import numpy as np
 
 from flask import (
     Flask, render_template, request, send_file,
@@ -534,17 +535,33 @@ def trends():
     # Filter to only stores with coordinates for the map
     map_data_with_coords = [m for m in map_data if m.get('latitude') and m.get('longitude')]
     
+    # Helper to convert numpy types to native Python types for JSON
+    def convert_to_native(obj):
+        if isinstance(obj, dict):
+            return {k: convert_to_native(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_to_native(i) for i in obj]
+        elif isinstance(obj, (np.integer, np.int64, np.int32)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float64, np.float32)):
+            return float(obj)
+        return obj
+    
+    # Convert data for JSON serialization
+    historical_native = convert_to_native(historical)
+    map_data_native = convert_to_native(map_data_with_coords)
+    
     return render_template('portal/trends.html',
                            metrics=metrics,
                            insights=insights,
                            historical=historical,
-                           historical_json=json.dumps(historical),
+                           historical_json=json.dumps(historical_native),
                            top_stores=top_stores,
                            top_stores_json=json.dumps(top_stores),
                            top_products=top_products,
                            top_products_json=json.dumps(top_products),
                            map_data=map_data,
-                           map_data_json=json.dumps(map_data_with_coords),
+                           map_data_json=json.dumps(map_data_native),
                            color_scheme=color_scheme,
                            available_months=available_months,
                            current_year=year,
