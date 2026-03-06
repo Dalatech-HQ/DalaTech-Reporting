@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ brand_name }} — DALA Sales Report</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:   #1B2B5E;
+      --red:    #E8192C;
+      --blue:   #2E86C1;
+      --green:  #1E8449;
+      --amber:  #C0922A;
+      --gray:   #DDE3ED;
+      --bg:     #F4F6FA;
+      --white:  #FFFFFF;
+      --muted:  #7A849E;
+      --text:   #1A1A2E;
+      --shadow: 0 2px 10px rgba(27,43,94,0.10);
+    }
+
+    body {
+      font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      font-size: 13px;
+      color: var(--text);
+      background: var(--bg);
+      min-height: 100vh;
+    }
+
+    /* ── TOP HEADER ─────────────────────────────────────────────────────────── */
+    .header {
+      background: var(--red);
+      color: white;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+    }
+
+    .header-logo {
+      width: 48px; height: 48px;
+      object-fit: contain;
+      background: white;
+      border-radius: 8px;
+      padding: 4px;
+      flex-shrink: 0;
+    }
+
+    .header-logo-placeholder {
+      width: 48px; height: 48px;
+      background: rgba(255,255,255,0.25);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 18px; flex-shrink: 0;
+    }
+
+    .header-center { flex: 1; text-align: center; }
+    .header-center h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.3px; }
+    .header-center .sub { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+
+    .header-right { text-align: right; flex-shrink: 0; }
+    .header-right .dala { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; opacity: 0.8; }
+
+    /* ── NAV TABS ────────────────────────────────────────────────────────────── */
+    .nav-tabs {
+      background: var(--navy);
+      display: flex;
+      padding: 0 24px;
+    }
+
+    .nav-tab {
+      padding: 10px 20px;
+      color: rgba(255,255,255,0.65);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .nav-tab:hover { color: white; }
+    .nav-tab.active { color: white; border-bottom-color: var(--red); }
+
+    /* ── FILTER BAR ──────────────────────────────────────────────────────────── */
+    .filter-bar {
+      background: white;
+      border-bottom: 1px solid var(--gray);
+      padding: 8px 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .filter-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
+
+    .filter-chip {
+      background: var(--navy);
+      color: white;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 14px;
+      border-radius: 14px;
+    }
+
+    {% if portfolio_share %}
+    .portfolio-badge {
+      background: rgba(46,134,193,0.12);
+      color: var(--blue);
+      border: 1px solid rgba(46,134,193,0.3);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 14px;
+    }
+    {% endif %}
+
+    /* ── SECTIONS ────────────────────────────────────────────────────────────── */
+    .section { display: none; }
+    .section.active { display: block; }
+
+    /* ── PAGE BODY ───────────────────────────────────────────────────────────── */
+    .page-body { padding: 16px 20px; max-width: 1400px; margin: 0 auto; }
+
+    /* ── CARD ────────────────────────────────────────────────────────────────── */
+    .card {
+      background: white;
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+      padding: 14px 16px;
+    }
+
+    .card-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--navy);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--navy);
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .card-title-sub { font-size: 10px; font-weight: 400; color: var(--muted); text-transform: none; letter-spacing: 0; }
+
+    /* ── KPI ROW ─────────────────────────────────────────────────────────────── */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .kpi-card {
+      background: white;
+      border-radius: 10px;
+      padding: 14px 16px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+    }
+
+    .kpi-card.rev::before  { background: var(--red); }
+    .kpi-card.qty::before  { background: var(--blue); }
+    .kpi-card.reach::before { background: var(--green); }
+
+    .kpi-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+
+    .kpi-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
+    .kpi-value { font-size: 22px; font-weight: 700; color: var(--navy); line-height: 1.1; }
+    .kpi-value small { font-size: 12px; font-weight: 400; color: var(--muted); }
+
+    .kpi-icon {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px; flex-shrink: 0;
+    }
+
+    .kpi-icon.red   { background: #FDE8EA; }
+    .kpi-icon.blue  { background: #E3EEF8; }
+    .kpi-icon.green { background: #E8F5E9; }
+
+    .wow-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+
+    .wow-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+
+    .wow-badge.up   { background: #E8F5E9; color: var(--green); }
+    .wow-badge.down { background: #FDE8EA; color: var(--red); }
+    .wow-badge.flat { background: #F4F6FA; color: var(--muted); }
+
+    .wow-label { font-size: 10px; color: var(--muted); }
+
+    .kpi-trend-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 4px; }
+
+    .kpi-sparkline {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      height: 36px;
+    }
+
+    .spark-bar-wrap { display: flex; flex-direction: column; align-items: center; flex: 1; }
+
+    .spark-pct { font-size: 8px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+
+    .spark-bar {
+      width: 100%;
+      border-radius: 2px 2px 0 0;
+      min-height: 3px;
+    }
+
+    .spark-week { font-size: 8px; color: var(--muted); margin-top: 2px; }
+
+    .kpi-sub { font-size: 10px; color: var(--muted); margin-top: 6px; }
+
+    /* ── MAIN GRID ───────────────────────────────────────────────────────────── */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 220px;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .left-col { display: flex; flex-direction: column; gap: 12px; }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    /* ── RANK TABLE ──────────────────────────────────────────────────────────── */
+    .rank-table { width: 100%; border-collapse: collapse; }
+
+    .rank-table td { padding: 6px 4px; vertical-align: middle; }
+
+    .rank-table tr { border-bottom: 1px solid var(--bg); transition: background 0.15s; }
+    .rank-table tr:hover { background: var(--bg); }
+    .rank-table tr:last-child { border-bottom: none; }
+
+    .rank-num {
+      width: 20px; height: 20px;
+      border-radius: 4px;
+      background: var(--navy);
+      color: white;
+      font-size: 10px;
+      font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .rank-num.top1 { background: var(--red); }
+
+    .rank-name { font-size: 11.5px; color: var(--text); padding: 0 8px; }
+
+    .rank-value { font-size: 11.5px; font-weight: 700; color: var(--navy); text-align: right; white-space: nowrap; }
+
+    .rank-bar-cell { width: 80px; }
+
+    .rank-bar-bg {
+      height: 6px;
+      background: var(--bg);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .rank-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+    }
+
+    /* ── RIGHT PANEL ─────────────────────────────────────────────────────────── */
+    .right-panel { display: flex; flex-direction: column; gap: 12px; }
+
+    .inv-donut {
+      width: 90px; height: 90px;
+      border-radius: 50%;
+      border: 12px solid var(--navy);
+      margin: 8px auto;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .inv-donut-inner { text-align: center; }
+    .inv-donut-val { font-size: 15px; font-weight: 700; color: var(--navy); line-height: 1; }
+    .inv-donut-unit { font-size: 9px; color: var(--muted); text-transform: uppercase; }
+
+    .inv-total { text-align: center; font-size: 11px; color: var(--muted); }
+    .inv-total strong { color: var(--navy); font-size: 16px; display: block; }
+
+    .health-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      text-align: center;
+      margin: 4px auto;
+    }
+
+    .health-green  { background: #E8F5E9; color: var(--green); }
+    .health-amber  { background: #FFF8E1; color: var(--amber); }
+    .health-red    { background: #FDE8EA; color: var(--red); }
+    .health-gray   { background: var(--bg); color: var(--muted); }
+
+    /* ── TREND FULL WIDTH ────────────────────────────────────────────────────── */
+    .trend-section { margin-bottom: 14px; }
+
+    /* ── REORDER STRIP ───────────────────────────────────────────────────────── */
+    .reorder-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .reorder-pill {
+      border-radius: 10px;
+      padding: 12px 16px;
+      text-align: center;
+      box-shadow: var(--shadow);
+    }
+
+    .reorder-pill.repeat { background: #E8F5E9; }
+    .reorder-pill.single { background: #FFF8E1; }
+    .reorder-pill.total  { background: #E3EEF8; }
+
+    .reorder-val { font-size: 28px; font-weight: 700; display: block; }
+    .reorder-val.repeat { color: var(--green); }
+    .reorder-val.single { color: var(--amber); }
+    .reorder-val.total  { color: var(--navy); }
+    .reorder-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; margin-top: 2px; }
+
+    /* ── HEATMAP SECTION ─────────────────────────────────────────────────────── */
+    .heatmap-section { margin-bottom: 14px; }
+
+    /* ── PERFORMANCE SCORECARD ───────────────────────────────────────────────── */
+    .scorecard {
+      background: white;
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+      padding: 16px 20px;
+      margin-bottom: 14px;
+    }
+
+    .scorecard-header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+
+    .grade-circle {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      flex-shrink: 0;
+      border: 4px solid;
+    }
+
+    .grade-letter { font-size: 28px; font-weight: 700; line-height: 1; }
+    .grade-label  { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; margin-top: 1px; }
+
+    .grade-info h3 { font-size: 15px; font-weight: 700; color: var(--navy); }
+    .grade-info p  { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+    .score-bars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+
+    .score-item { text-align: center; }
+    .score-item-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 6px; }
+    .score-item-bar-bg { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
+    .score-item-bar-fill { height: 100%; border-radius: 4px; }
+    .score-item-val { font-size: 12px; font-weight: 700; color: var(--navy); }
+
+    /* ── NARRATIVE ───────────────────────────────────────────────────────────── */
+    .narrative {
+      background: #EBF5FB;
+      border-left: 4px solid var(--blue);
+      border-radius: 0 10px 10px 0;
+      padding: 14px 18px;
+      margin-bottom: 14px;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .narrative strong { color: var(--navy); }
+
+    /* ── DETAIL SECTION (Tab 2) ──────────────────────────────────────────────── */
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+
+    .detail-table { width: 100%; border-collapse: collapse; }
+    .detail-table th {
+      background: var(--navy);
+      color: white;
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 7px 10px;
+      text-align: left;
+    }
+
+    .detail-table td {
+      font-size: 11px;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--bg);
+      color: var(--text);
+    }
+
+    .detail-table tr:hover td { background: var(--bg); }
+    .detail-table td.num { text-align: right; font-weight: 600; color: var(--navy); }
+
+    .inv-health-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 5px;
+    }
+
+    /* ── REORDER CHART SECTION ───────────────────────────────────────────────── */
+    .reorder-section { margin-bottom: 14px; }
+
+    /* ── FOOTER ──────────────────────────────────────────────────────────────── */
+    .footer {
+      background: var(--navy);
+      color: rgba(255,255,255,0.6);
+      text-align: center;
+      padding: 14px 24px;
+      font-size: 11px;
+      margin-top: 20px;
+    }
+
+    .footer strong { color: white; }
+
+    /* ── PEAK CALLOUT ────────────────────────────────────────────────────────── */
+    .peak-callout {
+      background: #FDE8EA;
+      border: 1px solid var(--red);
+      border-radius: 8px;
+      padding: 8px 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 11px;
+      margin-bottom: 10px;
+    }
+
+    .peak-callout .peak-icon { font-size: 18px; }
+    .peak-callout .peak-label { color: var(--muted); font-size: 10px; }
+    .peak-callout .peak-val { color: var(--red); font-weight: 700; font-size: 13px; }
+    .peak-callout .peak-date { color: var(--navy); font-weight: 600; }
+
+    /* ── RESPONSIVE ──────────────────────────────────────────────────────────── */
+    @media (max-width: 900px) {
+      .main-grid { grid-template-columns: 1fr; }
+      .kpi-row   { grid-template-columns: 1fr; }
+      .two-col   { grid-template-columns: 1fr; }
+      .detail-grid { grid-template-columns: 1fr; }
+      .score-bars { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── HEADER ─────────────────────────────────────────────────────────── -->
+  <header class="header">
+    {% if logo_path %}
+      <img src="{{ logo_path }}" alt="DALA" class="header-logo">
+    {% else %}
+      <div class="header-logo-placeholder">D</div>
+    {% endif %}
+    <div class="header-center">
+      <h1>February Monthly Sales Report</h1>
+      <div class="sub">{{ brand_name }} &nbsp;|&nbsp; {{ start_date }} – {{ end_date }}</div>
+    </div>
+    <div class="header-right">
+      <div class="dala">DALA Technologies</div>
+    </div>
+  </header>
+
+  <!-- ── NAV TABS ──────────────────────────────────────────────────────── -->
+  <nav class="nav-tabs">
+    <div class="nav-tab active" onclick="showSection('overview', this)">Overview</div>
+    <div class="nav-tab" onclick="showSection('detail', this)">Inventory & Analysis</div>
+  </nav>
+
+  <!-- ── FILTER BAR ─────────────────────────────────────────────────────── -->
+  <div class="filter-bar">
+    <span class="filter-label">Brand Partner</span>
+    <span class="filter-chip">{{ brand_name }}</span>
+    {% if portfolio_share %}
+      <span class="portfolio-badge">{{ portfolio_share }}% of Portfolio Revenue</span>
+    {% endif %}
+  </div>
+
+  <!-- ════════════════════ SECTION 1: OVERVIEW ════════════════════════════ -->
+  <div id="section-overview" class="section active">
+    <div class="page-body">
+
+      <!-- KPI Cards -->
+      <div class="kpi-row">
+
+        <!-- Revenue -->
+        <div class="kpi-card rev">
+          <div class="kpi-top">
+            <div>
+              <div class="kpi-label">Total Sales Revenue</div>
+              <div class="kpi-value">₦{{ "{:,.0f}".format(kpis.total_revenue) }}</div>
+            </div>
+            <div class="kpi-icon red">💰</div>
+          </div>
+          <div class="wow-row">
+            {% set wc = kpis.wow_rev_change %}
+            {% if wc > 0 %}
+              <span class="wow-badge up">▲ {{ wc }}%</span>
+            {% elif wc < 0 %}
+              <span class="wow-badge down">▼ {{ wc|abs }}%</span>
+            {% else %}
+              <span class="wow-badge flat">— 0%</span>
+            {% endif %}
+            <span class="wow-label">vs prior week (W4 vs W3)</span>
+          </div>
+          <div class="kpi-trend-label">WoW% Trend</div>
+          <div class="kpi-sparkline">
+            {% for pct in kpis.weekly_rev_pct %}
+            <div class="spark-bar-wrap">
+              <span class="spark-pct">{{ pct|int }}%</span>
+              <div class="spark-bar"
+                   style="height:{{ [pct*0.6, 4]|max }}px;
+                          background:{% if pct == kpis.weekly_rev_pct|max %}#E8192C{% else %}#1B2B5E{% endif %};">
+              </div>
+              <span class="spark-week">W{{ loop.index }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Qty Sold -->
+        <div class="kpi-card qty">
+          <div class="kpi-top">
+            <div>
+              <div class="kpi-label">Total Quantity Sold</div>
+              <div class="kpi-value">{{ "{:,.1f}".format(kpis.total_qty) }} <small>PACKS</small></div>
+            </div>
+            <div class="kpi-icon blue">📦</div>
+          </div>
+          <div class="wow-row">
+            {% set wc = kpis.wow_qty_change %}
+            {% if wc > 0 %}
+              <span class="wow-badge up">▲ {{ wc }}%</span>
+            {% elif wc < 0 %}
+              <span class="wow-badge down">▼ {{ wc|abs }}%</span>
+            {% else %}
+              <span class="wow-badge flat">— 0%</span>
+            {% endif %}
+            <span class="wow-label">vs prior week (W4 vs W3)</span>
+          </div>
+          <div class="kpi-trend-label">WoW% Trend</div>
+          <div class="kpi-sparkline">
+            {% for pct in kpis.weekly_qty_pct %}
+            <div class="spark-bar-wrap">
+              <span class="spark-pct">{{ pct|int }}%</span>
+              <div class="spark-bar"
+                   style="height:{{ [pct*0.6, 4]|max }}px;
+                          background:{% if pct == kpis.weekly_qty_pct|max %}#E8192C{% else %}#2E86C1{% endif %};">
+              </div>
+              <span class="spark-week">W{{ loop.index }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Sales Reach -->
+        <div class="kpi-card reach">
+          <div class="kpi-top">
+            <div>
+              <div class="kpi-label">Sales Reach</div>
+              <div class="kpi-value">{{ kpis.num_stores }} <small>stores</small></div>
+            </div>
+            <div class="kpi-icon green">🏪</div>
+          </div>
+          <div class="kpi-sub">Active Supermarkets in Period</div>
+          <div class="kpi-sub" style="margin-top:4px;">
+            Avg Rev/Store: <strong style="color:var(--navy);">₦{{ "{:,.0f}".format(kpis.avg_revenue_per_store) }}</strong>
+          </div>
+          <div class="kpi-sub" style="margin-top:4px;">
+            Trading Days: <strong style="color:var(--navy);">{{ kpis.trading_days }}</strong>
+          </div>
+          <div class="kpi-sub" style="margin-top:4px;">
+            Repeat Customer Rate: <strong style="color:var(--green);">{{ kpis.repeat_pct }}%</strong>
+          </div>
+        </div>
+
+      </div><!-- /kpi-row -->
+
+      <!-- Main Grid: Left charts | Right inventory panel -->
+      <div class="main-grid">
+
+        <!-- Left Column -->
+        <div class="left-col">
+
+          <!-- Top Tables Row -->
+          <div class="two-col">
+
+            <!-- Top Stores -->
+            <div class="card">
+              <div class="card-title">
+                Top Selling Supermarkets by Value
+                <span class="card-title-sub">[Period]</span>
+              </div>
+              <table class="rank-table">
+                {% for row in top_stores_table %}
+                <tr>
+                  <td style="width:24px;">
+                    <div class="rank-num {% if loop.index == 1 %}top1{% endif %}">{{ loop.index }}</div>
+                  </td>
+                  <td class="rank-name">{{ row.store }}</td>
+                  <td class="rank-value">{{ row.value }}</td>
+                  <td class="rank-bar-cell">
+                    <div class="rank-bar-bg">
+                      <div class="rank-bar-fill"
+                           style="width:{{ row.pct }}%;
+                                  background:{% if loop.index == 1 %}var(--red){% else %}var(--navy){% endif %};">
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </table>
+              <div style="margin-top:10px;">{{ chart_stores | safe }}</div>
+            </div>
+
+            <!-- Top Products -->
+            <div class="card">
+              <div class="card-title">
+                Top Selling Products by Value
+                <span class="card-title-sub">[Period]</span>
+              </div>
+              <table class="rank-table">
+                {% for row in top_products_table %}
+                <tr>
+                  <td style="width:24px;">
+                    <div class="rank-num {% if loop.index == 1 %}top1{% endif %}">{{ loop.index }}</div>
+                  </td>
+                  <td class="rank-name">{{ row.sku }}</td>
+                  <td class="rank-value" style="color:var(--red);">{{ row.value }}</td>
+                  <td class="rank-bar-cell">
+                    <div class="rank-bar-bg">
+                      <div class="rank-bar-fill"
+                           style="width:{{ row.pct }}%;
+                                  background:var(--red);">
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </table>
+              <div style="margin-top:10px;">{{ chart_products | safe }}</div>
+            </div>
+
+          </div><!-- /two-col -->
+
+        </div><!-- /left-col -->
+
+        <!-- Right Panel: Inventory -->
+        <div class="right-panel">
+
+          <!-- Inventory Status -->
+          <div class="card" style="text-align:center;">
+            <div class="card-title" style="justify-content:center;">Current Inventory Status</div>
+            <div style="font-size:10px;color:var(--muted);margin-bottom:8px;">DALA Warehouse Inventory Count</div>
+            <div class="inv-donut">
+              <div class="inv-donut-inner">
+                <div class="inv-donut-val">{{ "{:,.0f}".format(kpis.total_closing_stock) }}</div>
+                <div class="inv-donut-unit">Packs</div>
+              </div>
+            </div>
+            <div class="inv-total">
+              Total Inventory Count:
+              <strong>{{ "{:,.1f}".format(kpis.total_closing_stock) }}</strong>
+            </div>
+            <div style="margin-top:8px;text-align:center;">
+              <span class="health-badge health-{{ kpis.inv_health_color }}">
+                {{ kpis.inv_health_status }}
+              </span>
+            </div>
+            {% if kpis.stock_days_cover > 0 %}
+            <div style="font-size:10px;color:var(--muted);margin-top:4px;">
+              ~{{ kpis.stock_days_cover }} days cover
+            </div>
+            {% endif %}
+          </div>
+
+          <!-- Stock Level Chart -->
+          <div class="card">
+            <div class="card-title">Current Stock Level</div>
+            {{ chart_stock | safe }}
+          </div>
+
+        </div><!-- /right-panel -->
+
+      </div><!-- /main-grid -->
+
+      <!-- Sales Trend: Full Width -->
+      <div class="trend-section card">
+        <div class="card-title">Sales Trend
+          <span class="card-title-sub">Total Revenue and Quantity Sold by Date</span>
+        </div>
+        {% if kpis.peak_date %}
+        <div class="peak-callout">
+          <span class="peak-icon">🔺</span>
+          <div>
+            <div class="peak-label">Peak Sales Day</div>
+            <div>
+              <span class="peak-date">{{ kpis.peak_date.strftime('%d %b %Y') }}</span>
+              &nbsp;—&nbsp;
+              <span class="peak-val">₦{{ "{:,.0f}".format(kpis.peak_revenue) }}</span>
+              &nbsp;·&nbsp;
+              <span style="color:var(--navy);font-size:11px;">{{ "{:.1f}".format(kpis.peak_qty) }} packs</span>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+        {{ chart_trend | safe }}
+      </div>
+
+      <!-- Store Frequency Heatmap: Full Width -->
+      <div class="heatmap-section card">
+        <div class="card-title">Store Order Frequency Heatmap
+          <span class="card-title-sub">Top stores — darker = more orders on that date</span>
+        </div>
+        {{ chart_heatmap | safe }}
+      </div>
+
+      <!-- Reorder Strip -->
+      <div class="reorder-strip">
+        <div class="reorder-pill repeat">
+          <span class="reorder-val repeat">{{ kpis.repeat_stores }}</span>
+          <div class="reorder-lbl">Repeat Customers</div>
+        </div>
+        <div class="reorder-pill single">
+          <span class="reorder-val single">{{ kpis.single_stores }}</span>
+          <div class="reorder-lbl">Single Order — Follow Up</div>
+        </div>
+        <div class="reorder-pill total">
+          <span class="reorder-val total">{{ kpis.repeat_stores + kpis.single_stores }}</span>
+          <div class="reorder-lbl">Total Stores Stocked</div>
+        </div>
+      </div>
+
+      <!-- Performance Scorecard -->
+      <div class="scorecard">
+        <div class="card-title">Performance Scorecard</div>
+        <div class="scorecard-header">
+          <div class="grade-circle" style="border-color:{{ perf.grade_color }};color:{{ perf.grade_color }};">
+            <div class="grade-letter">{{ perf.grade }}</div>
+            <div class="grade-label" style="color:{{ perf.grade_color }};">{{ perf.total }}/100</div>
+          </div>
+          <div class="grade-info">
+            <h3 style="color:{{ perf.grade_color }};">{{ perf.grade_label }}</h3>
+            <p>Scored across 4 dimensions: Revenue Performance, Customer Loyalty, Market Reach, and Sales Activity.</p>
+          </div>
+        </div>
+        <div class="score-bars">
+          {% set dims = [
+            ('Revenue Performance', perf.revenue_score, '#E8192C'),
+            ('Customer Loyalty',    perf.loyalty_score, '#1E8449'),
+            ('Market Reach',        perf.reach_score,   '#2E86C1'),
+            ('Sales Activity',      perf.activity_score,'#1B2B5E'),
+          ] %}
+          {% for label, score, color in dims %}
+          <div class="score-item">
+            <div class="score-item-label">{{ label }}</div>
+            <div class="score-item-bar-bg">
+              <div class="score-item-bar-fill"
+                   style="width:{{ score * 4 }}%;background:{{ color }};"></div>
+            </div>
+            <div class="score-item-val" style="color:{{ color }};">{{ score }}/25</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Business Narrative -->
+      <div class="narrative">
+        <strong>Business Insight:</strong> {{ narrative }}
+      </div>
+
+    </div><!-- /page-body -->
+  </div><!-- /section-overview -->
+
+
+  <!-- ════════════════════ SECTION 2: DETAIL ══════════════════════════════ -->
+  <div id="section-detail" class="section">
+    <div class="page-body">
+
+      <div class="detail-grid">
+
+        <!-- Closing Stock -->
+        <div class="card">
+          <div class="card-title">
+            Closing Stock Balance
+            <span class="card-title-sub health-{{ kpis.inv_health_color }}" style="padding:2px 8px;border-radius:8px;
+              background:{% if kpis.inv_health_color == 'green' %}#E8F5E9{% elif kpis.inv_health_color == 'amber' %}#FFF8E1{% elif kpis.inv_health_color == 'red' %}#FDE8EA{% else %}#F4F6FA{% endif %};">
+              {{ kpis.inv_health_status }}
+            </span>
+          </div>
+          {% if closing_stock_table %}
+          <table class="detail-table">
+            <tr><th>SKU</th><th style="text-align:right;">Stock (Cartons)</th></tr>
+            {% for row in closing_stock_table %}
+            <tr>
+              <td>
+                <span class="inv-health-dot"
+                      style="background:{% if row.color == 'green' %}#1E8449{% elif row.color == 'amber' %}#C0922A{% elif row.color == 'red' %}#E8192C{% else %}#9BA8C0{% endif %};"></span>
+                {{ row.sku }}
+              </td>
+              <td class="num">{{ row.qty }}</td>
+            </tr>
+            {% endfor %}
+            <tr style="border-top:2px solid var(--navy);background:var(--bg);">
+              <td><strong>TOTAL</strong></td>
+              <td class="num"><strong>{{ "{:,.0f}".format(kpis.total_closing_stock) }}</strong></td>
+            </tr>
+          </table>
+          {% else %}
+          <p style="font-size:11px;color:var(--muted);padding:10px 0;">No inventory data recorded.</p>
+          {% endif %}
+        </div>
+
+        <!-- DALA Pickup -->
+        <div class="card">
+          <div class="card-title">Inventory Picked Up by DALA</div>
+          {% if pickup_table %}
+          <table class="detail-table">
+            <tr><th>SKU</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Value</th></tr>
+            {% for row in pickup_table %}
+            <tr>
+              <td>{{ row.sku }}</td>
+              <td class="num">{{ row.qty }}</td>
+              <td class="num">{{ row.value }}</td>
+            </tr>
+            {% endfor %}
+            <tr style="border-top:2px solid var(--navy);background:var(--bg);">
+              <td><strong>TOTAL</strong></td>
+              <td class="num"><strong>{{ "{:,.0f}".format(kpis.total_pickup_qty) }}</strong></td>
+              <td class="num"><strong>{% if kpis.total_pickup_value >= 1000 %}₦{{ "{:,.0f}".format(kpis.total_pickup_value/1000) }}K{% else %}₦{{ "{:,.0f}".format(kpis.total_pickup_value) }}{% endif %}</strong></td>
+            </tr>
+          </table>
+          {% else %}
+          <p style="font-size:11px;color:var(--muted);padding:10px 0;">No DALA pickup recorded in this period.</p>
+          {% endif %}
+        </div>
+
+        <!-- Brand Supply -->
+        <div class="card">
+          <div class="card-title">Inventory Supplied by Brand</div>
+          {% if supply_table %}
+          <table class="detail-table">
+            <tr><th>SKU</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Value</th></tr>
+            {% for row in supply_table %}
+            <tr>
+              <td>{{ row.sku }}</td>
+              <td class="num">{{ row.qty }}</td>
+              <td class="num">{{ row.value }}</td>
+            </tr>
+            {% endfor %}
+            <tr style="border-top:2px solid var(--navy);background:var(--bg);">
+              <td><strong>TOTAL</strong></td>
+              <td class="num"><strong>{{ "{:,.0f}".format(kpis.total_supplied_qty) }}</strong></td>
+              <td class="num"><strong>{% if kpis.total_supplied_value >= 1000 %}₦{{ "{:,.0f}".format(kpis.total_supplied_value/1000) }}K{% else %}₦{{ "{:,.0f}".format(kpis.total_supplied_value) }}{% endif %}</strong></td>
+            </tr>
+          </table>
+          {% else %}
+          <p style="font-size:11px;color:var(--muted);padding:10px 0;">No brand supply recorded in this period.</p>
+          {% endif %}
+        </div>
+
+        <!-- Reorder Full Detail -->
+        <div class="card">
+          <div class="card-title">Customer Reorder Detail</div>
+          <div style="margin-bottom:10px;">{{ chart_reorder | safe }}</div>
+        </div>
+
+      </div><!-- /detail-grid -->
+
+      <!-- Business Narrative -->
+      <div class="narrative">
+        <strong>Business Insight:</strong> {{ narrative }}
+      </div>
+
+    </div>
+  </div><!-- /section-detail -->
+
+  <!-- ── FOOTER ──────────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    Confidential — prepared by <strong>DALA Technologies</strong> for {{ brand_name }} only.
+    Data covers Sales transactions for {{ start_date }} – {{ end_date }}.
+  </footer>
+
+  <script>
+    function showSection(name, tab) {
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('section-' + name).classList.add('active');
+      tab.classList.add('active');
+    }
+  </script>
+
+</body>
+</html>

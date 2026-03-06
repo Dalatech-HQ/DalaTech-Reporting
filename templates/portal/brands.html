@@ -1,0 +1,92 @@
+{% extends "portal/base.html" %}
+{% block title %}Brand Partners — DALA Analytics{% endblock %}
+{% block page_title %}Brand Partners{% endblock %}
+
+{% block topbar_actions %}
+<select class="form-control" style="width:160px;" onchange="window.location='/brands?report_id='+this.value">
+  {% for r in reports %}
+  <option value="{{ r.id }}" {% if report and r.id==report.id %}selected{% endif %}>{{ r.month_label }}</option>
+  {% endfor %}
+</select>
+<input type="text" id="search" placeholder="Search brands..." class="form-control" style="width:200px;" oninput="filterBrands(this.value)">
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <table class="data-table" id="brandTable">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Brand Partner</th>
+        <th>Revenue</th>
+        <th>Qty</th>
+        <th>Stores</th>
+        <th>Repeat %</th>
+        <th>Grade</th>
+        <th>Stock</th>
+        <th>WoW</th>
+        <th>Trend</th>
+        <th>Portal</th>
+        <th>Files</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in brand_kpis %}
+      {% set safe = b.brand_name.replace(' ','_').replace("'","").replace('/','_') %}
+      {% set gc = {'A':'#1E8449','B':'#2E86C1','C':'#C0922A','D':'#E8192C'} %}
+      {% set token_info = tokens.get(b.brand_name) %}
+      {% set fcast = forecasts.get(b.brand_name, {}) %}
+      <tr class="brand-row" data-name="{{ b.brand_name|lower }}">
+        <td style="color:var(--muted);font-weight:700;">{{ loop.index }}</td>
+        <td><a href="/brand/{{ b.brand_name }}" style="color:var(--navy);font-weight:600;text-decoration:none;">{{ b.brand_name }}</a></td>
+        <td style="font-weight:700;">₦{{ "{:,.0f}".format(b.total_revenue) }}</td>
+        <td>{{ "{:,.1f}".format(b.total_qty) }}</td>
+        <td>{{ b.num_stores }}</td>
+        <td>{{ b.repeat_pct }}%</td>
+        <td>{% if b.perf_grade %}<span class="grade-badge" style="background:{{ gc.get(b.perf_grade,'#888') }};">{{ b.perf_grade }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td>
+          {% if b.inv_health_status == 'Healthy' %}<span class="badge badge-green">Healthy</span>
+          {% elif b.inv_health_status == 'Watch' %}<span class="badge badge-amber">Watch</span>
+          {% elif b.inv_health_status == 'Low Stock' %}<span class="badge badge-red">Low</span>
+          {% else %}<span class="text-muted">—</span>{% endif %}
+        </td>
+        <td>
+          {% if b.wow_rev_change > 0 %}<span style="color:var(--green);font-weight:700;">▲{{ b.wow_rev_change }}%</span>
+          {% elif b.wow_rev_change < 0 %}<span style="color:var(--red);font-weight:700;">▼{{ b.wow_rev_change|abs }}%</span>
+          {% else %}<span class="text-muted">—</span>{% endif %}
+        </td>
+        <td>
+          {% if fcast.growth_label %}
+          <span style="color:{{ fcast.growth_color }};font-size:11px;font-weight:600;">{{ fcast.growth_label }}</span>
+          {% else %}<span class="text-muted">—</span>{% endif %}
+        </td>
+        <td>
+          {% if token_info %}
+          <a href="/portal/{{ token_info.token }}" target="_blank" class="btn btn-outline btn-sm">Portal</a>
+          {% else %}
+          <a href="/brand/{{ b.brand_name }}" class="btn btn-outline btn-sm">Setup</a>
+          {% endif %}
+        </td>
+        <td style="display:flex;gap:4px;">
+          <a href="/download/pdf/{{ safe }}_Report_Feb2026.pdf" title="PDF" class="btn btn-primary btn-sm">PDF</a>
+          <a href="/download/html/{{ safe }}_Report_Feb2026.html" target="_blank" title="HTML" class="btn btn-navy btn-sm">HTML</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="12" style="text-align:center;color:var(--muted);padding:48px;">No brand data. Generate a report first.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterBrands(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('.brand-row').forEach(row => {
+    row.style.display = row.dataset.name.includes(q) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

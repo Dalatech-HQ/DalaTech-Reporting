@@ -1,0 +1,158 @@
+{% extends "portal/base.html" %}
+{% block title %}Settings — DALA Analytics{% endblock %}
+{% block page_title %}Settings{% endblock %}
+
+{% block content %}
+<div class="grid-2" style="margin-bottom:24px;">
+
+  <!-- Email Config -->
+  <div class="card">
+    <h4 style="color:var(--navy);margin-bottom:4px;">Email Delivery</h4>
+    <p class="text-muted fs-sm" style="margin-bottom:16px;">Configure SMTP to send reports directly to brand partners.</p>
+    {% if smtp_configured %}
+    <div class="flash flash-success" style="margin-bottom:12px;">✅ SMTP configured</div>
+    {% else %}
+    <div class="flash flash-error" style="margin-bottom:12px;">⚠️ SMTP not configured — set env vars</div>
+    {% endif %}
+    <div style="font-size:12px;background:var(--bg);padding:12px;border-radius:8px;font-family:monospace;">
+      SMTP_HOST=smtp.gmail.com<br>
+      SMTP_PORT=587<br>
+      SMTP_USER=your@gmail.com<br>
+      SMTP_PASSWORD=your_app_password<br>
+      SMTP_FROM=your@gmail.com
+    </div>
+    <p class="text-muted fs-sm" style="margin-top:8px;">Set these in your <code>.env</code> file or Railway environment variables.</p>
+    {% if smtp_configured %}
+    <button onclick="sendTestEmails()" class="btn btn-green btn-sm" style="margin-top:12px;">📧 Send to All Brands</button>
+    {% endif %}
+  </div>
+
+  <!-- WhatsApp Config -->
+  <div class="card">
+    <h4 style="color:var(--navy);margin-bottom:4px;">WhatsApp Delivery</h4>
+    <p class="text-muted fs-sm" style="margin-bottom:16px;">Twilio WhatsApp API — send report summaries directly to brand partners.</p>
+    {% if twilio_configured %}
+    <div class="flash flash-success" style="margin-bottom:12px;">✅ Twilio configured</div>
+    {% else %}
+    <div class="flash flash-error" style="margin-bottom:12px;">⚠️ Twilio not configured — set env vars</div>
+    {% endif %}
+    <div style="font-size:12px;background:var(--bg);padding:12px;border-radius:8px;font-family:monospace;">
+      TWILIO_ACCOUNT_SID=ACxxxxxx<br>
+      TWILIO_AUTH_TOKEN=xxxxxx<br>
+      TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+    </div>
+    {% if twilio_configured %}
+    <button onclick="sendWhatsApp()" class="btn btn-green btn-sm" style="margin-top:12px;">💬 Send to All Brands</button>
+    {% endif %}
+  </div>
+
+</div>
+
+<!-- Brand Partner Tokens -->
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    <div>
+      <h4 style="color:var(--navy);">Brand Partner Portal Access</h4>
+      <p class="text-muted fs-sm">Each brand partner has a unique portal link. Set their email/WhatsApp here.</p>
+    </div>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Brand Partner</th>
+        <th>Portal Link</th>
+        <th>Email</th>
+        <th>WhatsApp</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in tokens %}
+      <tr id="row-{{ loop.index }}">
+        <td style="font-weight:600;">{{ t.brand_name }}</td>
+        <td>
+          <input type="text" value="{{ request.host_url }}portal/{{ t.token }}"
+                 class="form-control" style="font-size:11px;" readonly
+                 onclick="this.select()">
+        </td>
+        <td>
+          <input type="email" id="email-{{ loop.index }}" value="{{ t.email or '' }}"
+                 class="form-control" style="font-size:12px;" placeholder="brand@email.com">
+        </td>
+        <td>
+          <input type="text" id="wa-{{ loop.index }}" value="{{ t.whatsapp or '' }}"
+                 class="form-control" style="font-size:12px;" placeholder="+234801...">
+        </td>
+        <td>
+          {% if t.active %}<span class="badge badge-green">Active</span>
+          {% else %}<span class="badge badge-red">Revoked</span>{% endif %}
+        </td>
+        <td style="display:flex;gap:4px;flex-wrap:wrap;">
+          <button onclick="saveContact('{{ t.brand_name }}', {{ loop.index }})"
+                  class="btn btn-navy btn-sm">Save</button>
+          <button onclick="regenTok('{{ t.brand_name }}')"
+                  class="btn btn-outline btn-sm">Regen</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px;">No tokens yet. Generate reports to create brand tokens automatically.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div id="deliverStatus" style="margin-top:16px;display:none;"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function saveContact(brand, idx) {
+  const email = document.getElementById('email-'+idx).value;
+  const wa    = document.getElementById('wa-'+idx).value;
+  const res = await fetch('/api/update_contact', {
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({brand_name:brand, email:email||null, whatsapp:wa||null})
+  });
+  const d = await res.json();
+  if (d.success) alert('Saved for '+brand);
+}
+
+async function regenTok(brand) {
+  if (!confirm('Regenerate? Old link stops working.')) return;
+  const res = await fetch('/api/regenerate_token', {
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({brand_name:brand})
+  });
+  const d = await res.json();
+  if (d.success) { alert('Token regenerated!'); location.reload(); }
+}
+
+async function sendTestEmails() {
+  const s = document.getElementById('deliverStatus');
+  s.style.display='block';
+  s.innerHTML='<div class="flash flash-success">Sending emails...</div>';
+  const res = await fetch('/api/deliver', {
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({channel:'email', brands:[]})
+  });
+  const d = await res.json();
+  const ok  = d.results.filter(r=>r.success).length;
+  const fail = d.results.filter(r=>!r.success).length;
+  s.innerHTML=`<div class="flash flash-success">Sent: ${ok} / Failed: ${fail}</div>`;
+}
+
+async function sendWhatsApp() {
+  const s = document.getElementById('deliverStatus');
+  s.style.display='block';
+  s.innerHTML='<div class="flash flash-success">Sending WhatsApp messages...</div>';
+  const res = await fetch('/api/deliver', {
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({channel:'whatsapp', brands:[]})
+  });
+  const d = await res.json();
+  const ok  = d.results.filter(r=>r.success).length;
+  s.innerHTML=`<div class="flash flash-success">Sent: ${ok} messages</div>`;
+}
+</script>
+{% endblock %}

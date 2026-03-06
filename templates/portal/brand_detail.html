@@ -1,0 +1,231 @@
+{% extends "portal/base.html" %}
+{% block title %}{{ brand_name }} — DALA Analytics{% endblock %}
+{% block page_title %}{{ brand_name }}{% endblock %}
+
+{% block topbar_actions %}
+{% if pdf_file is defined %}
+{% set safe = brand_name.replace(' ','_').replace("'","").replace('/','_') %}
+{% set pdfs = [] %}
+<a href="/download/pdf/{{ safe }}_Report_Feb2026.pdf" class="btn btn-primary btn-sm">⬇ Download PDF</a>
+<a href="/download/html/{{ safe }}_Report_Feb2026.html" target="_blank" class="btn btn-outline btn-sm">Open Interactive</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% if not kpis %}
+<div class="card" style="text-align:center;padding:48px;">
+  <p class="text-muted">No data for {{ brand_name }} yet. Generate a report first.</p>
+</div>
+{% else %}
+
+<!-- KPI CARDS -->
+<div class="grid-4" style="margin-bottom:20px;">
+  <div class="kpi-card red">
+    <div class="kpi-label">Total Revenue</div>
+    <div class="kpi-value-sm">₦{{ "{:,.0f}".format(kpis.total_revenue) }}</div>
+    <div class="kpi-sub">{{ report.month_label if report }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Qty Sold</div>
+    <div class="kpi-value-sm">{{ "{:,.1f}".format(kpis.total_qty) }}</div>
+    <div class="kpi-sub">Carton packs</div>
+  </div>
+  <div class="kpi-card blue">
+    <div class="kpi-label">Stores</div>
+    <div class="kpi-value-sm">{{ kpis.num_stores }}</div>
+    <div class="kpi-sub">{{ kpis.repeat_pct }}% repeat rate</div>
+  </div>
+  <div class="kpi-card" style="{% if kpis.perf_grade == 'A' %}border-top:3px solid #1E8449{% elif kpis.perf_grade == 'B' %}border-top:3px solid #2E86C1{% elif kpis.perf_grade == 'C' %}border-top:3px solid #C0922A{% else %}border-top:3px solid #E8192C{% endif %};">
+    <div class="kpi-label">Performance Grade</div>
+    {% set gc = {'A':'#1E8449','B':'#2E86C1','C':'#C0922A','D':'#E8192C'} %}
+    <div class="kpi-value-sm" style="color:{{ gc.get(kpis.perf_grade,'#888') }};">{{ kpis.perf_grade }}</div>
+    <div class="kpi-sub">Score: {{ kpis.perf_score }}/100</div>
+  </div>
+</div>
+
+<div class="grid-2" style="margin-bottom:20px;">
+
+  <!-- Revenue Trend Chart -->
+  <div class="card">
+    <h4 style="color:var(--navy);margin-bottom:4px;">Revenue History</h4>
+    <p class="text-muted fs-sm" style="margin-bottom:12px;">Month-over-month revenue trend</p>
+    {% if history|length > 1 %}
+    <canvas id="historyChart" height="160"></canvas>
+    {% else %}
+    <p class="text-muted fs-sm">Only one month of data. More history will appear as you generate more reports.</p>
+    {% endif %}
+  </div>
+
+  <!-- Forecast -->
+  <div class="card">
+    <h4 style="color:var(--navy);margin-bottom:12px;">Predictive Analytics</h4>
+    {% if forecast %}
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div>
+        <div class="kpi-label">Next Month Forecast</div>
+        <div style="font-size:22px;font-weight:800;color:var(--navy);">₦{{ "{:,.0f}".format(forecast.forecast) }}</div>
+        {% if forecast.pct_change > 0 %}
+        <span class="badge badge-green">▲ {{ forecast.pct_change }}% projected</span>
+        {% elif forecast.pct_change < 0 %}
+        <span class="badge badge-red">▼ {{ forecast.pct_change|abs }}% projected</span>
+        {% else %}
+        <span class="badge badge-muted">→ Flat</span>
+        {% endif %}
+        <span class="badge badge-muted" style="margin-left:4px;">Confidence: {{ forecast.confidence }}</span>
+      </div>
+      <div>
+        <div class="kpi-label">Growth Trend</div>
+        <span style="font-weight:700;color:{{ forecast.growth_color }};">{{ forecast.growth_label }}</span>
+        <span class="text-muted fs-sm"> ({{ forecast.data_points }} months data)</span>
+      </div>
+      {% if depletion and depletion.urgency != 'unknown' %}
+      <div>
+        <div class="kpi-label">Stock Depletion Est.</div>
+        <div style="font-weight:700;color:{% if depletion.urgency=='critical' %}var(--red){% elif depletion.urgency=='warning' %}var(--amber){% else %}var(--green){% endif %};">
+          {{ depletion.depletion_date }} ({{ depletion.days_remaining }} days)
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="text-muted fs-sm">Need 2+ months of data for forecasting.</p>
+    {% endif %}
+  </div>
+
+</div>
+
+<!-- Inventory + KPI Details -->
+<div class="grid-2" style="margin-bottom:20px;">
+  <div class="card">
+    <h4 style="color:var(--navy);margin-bottom:12px;">Inventory Status</h4>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div style="display:flex;justify-content:space-between;">
+        <span class="text-muted">Closing Stock</span>
+        <span class="fw-bold">{{ "{:,.1f}".format(kpis.closing_stock_total) }} packs</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;">
+        <span class="text-muted">Stock Days Cover</span>
+        <span class="fw-bold">{{ kpis.stock_days_cover }} days</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;">
+        <span class="text-muted">Health Status</span>
+        {% if kpis.inv_health_status == 'Healthy' %}<span class="badge badge-green">Healthy</span>
+        {% elif kpis.inv_health_status == 'Watch' %}<span class="badge badge-amber">Watch</span>
+        {% elif kpis.inv_health_status == 'Low Stock' %}<span class="badge badge-red">Low Stock</span>
+        {% else %}<span class="text-muted">—</span>{% endif %}
+      </div>
+      <div style="display:flex;justify-content:space-between;">
+        <span class="text-muted">WoW Revenue</span>
+        <span class="fw-bold {% if kpis.wow_rev_change > 0 %}text-green{% elif kpis.wow_rev_change < 0 %}text-red{% endif %}">
+          {% if kpis.wow_rev_change > 0 %}▲{% elif kpis.wow_rev_change < 0 %}▼{% endif %}
+          {{ kpis.wow_rev_change }}%
+        </span>
+      </div>
+      <div style="display:flex;justify-content:space-between;">
+        <span class="text-muted">Trading Days</span>
+        <span class="fw-bold">{{ kpis.trading_days }}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;">
+        <span class="text-muted">Repeat Stores</span>
+        <span class="fw-bold">{{ kpis.repeat_stores }} / {{ kpis.num_stores }} ({{ kpis.repeat_pct }}%)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h4 style="color:var(--navy);margin-bottom:12px;">Performance Scorecard</h4>
+    {% set scores = [
+      ('Revenue vs Avg', kpis.perf_revenue_score),
+      ('Customer Loyalty', kpis.perf_loyalty_score),
+      ('Store Reach', kpis.perf_reach_score),
+      ('Activity', kpis.perf_activity_score),
+    ] %}
+    {% for label, score in scores %}
+    <div style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+        <span class="fs-sm">{{ label }}</span>
+        <span class="fs-sm fw-bold">{{ score }}/25</span>
+      </div>
+      <div style="width:100%;height:7px;background:#EEF0F5;border-radius:4px;">
+        <div style="width:{{ (score/25*100)|int }}%;height:100%;background:var(--navy);border-radius:4px;"></div>
+      </div>
+    </div>
+    {% endfor %}
+    <div style="border-top:1px solid var(--gray);padding-top:10px;margin-top:10px;display:flex;justify-content:space-between;">
+      <span class="fw-bold">Total Score</span>
+      <span class="fw-bold" style="color:var(--navy);">{{ kpis.perf_score }}/100</span>
+    </div>
+  </div>
+</div>
+
+<!-- Brand Partner Portal Token -->
+<div class="card" style="margin-bottom:20px;">
+  <h4 style="color:var(--navy);margin-bottom:8px;">Brand Partner Portal Access</h4>
+  <p class="text-muted fs-sm" style="margin-bottom:12px;">Share this link with {{ brand_name }} for their self-service dashboard.</p>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <input type="text" id="tokenLink" value="{{ request.host_url }}portal/{{ token }}"
+           class="form-control" readonly style="flex:1;font-size:12px;">
+    <button onclick="copyToken()" class="btn btn-navy btn-sm">Copy</button>
+    <button onclick="regenToken('{{ brand_name }}')" class="btn btn-outline btn-sm">Regenerate</button>
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+{% if history|length > 1 %}
+const histData = {{ hist_oldest | tojson }};
+const labels = histData.map(h => h.month_label);
+const values = histData.map(h => h.total_revenue);
+const ctx = document.getElementById('historyChart').getContext('2d');
+new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels,
+    datasets: [{
+      label: 'Revenue (₦)',
+      data: values,
+      borderColor: '#E8192C',
+      backgroundColor: 'rgba(232,25,44,0.08)',
+      fill: true,
+      tension: 0.4,
+      pointBackgroundColor: '#E8192C',
+      pointRadius: 4,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { ticks: { callback: v => '₦' + (v/1000).toFixed(0) + 'K' }, grid: { color: '#EEF0F5' } },
+      x: { grid: { display: false } }
+    }
+  }
+});
+{% endif %}
+
+function copyToken() {
+  const inp = document.getElementById('tokenLink');
+  inp.select();
+  document.execCommand('copy');
+  alert('Portal link copied!');
+}
+
+async function regenToken(brand) {
+  if (!confirm('Regenerate token? The old link will stop working.')) return;
+  const res = await fetch('/api/regenerate_token', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({brand_name: brand})
+  });
+  const d = await res.json();
+  if (d.success) {
+    document.getElementById('tokenLink').value = d.portal_url;
+    alert('Token regenerated!');
+  }
+}
+</script>
+{% endblock %}

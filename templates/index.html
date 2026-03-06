@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DALA Report Generator</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+
+  <!-- ── Top Navigation Bar ────────────────────────────────────────── -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="topbar-brand">
+        <img src="{{ url_for('static', filename='logo.jpeg') }}"
+             alt="DALA" class="topbar-logo"
+             onerror="this.style.display='none'" />
+        <span class="topbar-name">DALA Technologies</span>
+      </div>
+      <span class="topbar-title">Brand Partner Report Generator</span>
+    </div>
+  </header>
+
+  <!-- ── Main ──────────────────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- Upload Card -->
+    <section class="card upload-card">
+      <h2 class="card-title">Generate Reports</h2>
+      <p class="card-subtitle">
+        Upload the Tally Excel export, select the reporting period, then click
+        <strong>Generate</strong>. One branded PDF per active brand partner.
+      </p>
+
+      <form id="reportForm" enctype="multipart/form-data">
+
+        <!-- Drop Zone -->
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="tallyFile" name="tally_file"
+                 accept=".xls,.xlsx" required style="display:none" />
+          <div class="drop-icon">📂</div>
+          <p class="drop-label" id="dropLabel">
+            Drag &amp; drop your Tally export here<br />
+            <span class="drop-hint">or <button type="button" class="link-btn" id="browseBtn">browse file</button></span>
+          </p>
+          <p class="file-chosen" id="fileChosen" hidden></p>
+        </div>
+
+        <!-- Date Range -->
+        <div class="date-row">
+          <div class="date-field">
+            <label for="startDate">Start Date</label>
+            <input type="date" id="startDate" name="start_date"
+                   value="2026-02-01" required />
+          </div>
+          <div class="date-sep">→</div>
+          <div class="date-field">
+            <label for="endDate">End Date</label>
+            <input type="date" id="endDate" name="end_date"
+                   value="2026-02-28" required />
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="action-row">
+          <button type="submit" class="btn btn-primary" id="generateBtn">
+            ⚡ Generate Reports
+          </button>
+          <button type="button" class="btn btn-ghost" id="clearBtn">
+            🗑 Clear Previous PDFs
+          </button>
+        </div>
+
+      </form>
+    </section>
+
+    <!-- Progress Card -->
+    <section class="card progress-card" id="progressCard" hidden>
+      <div class="progress-header">
+        <span class="spinner"></span>
+        <span id="progressText">Processing — please wait…</span>
+      </div>
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="progressBar"></div>
+      </div>
+      <p class="progress-note" id="progressNote"></p>
+    </section>
+
+    <!-- Results Card -->
+    <section class="card results-card" id="resultsCard" hidden>
+      <div class="results-header">
+        <h3 id="resultsSummary">Reports Ready</h3>
+        <div class="results-actions">
+          <button class="btn btn-ghost btn-sm" id="downloadAllBtn">⬇ Download All PDFs</button>
+        </div>
+      </div>
+
+      <!-- Zero-sales notice -->
+      <div class="info-banner" id="zeroSalesBanner" hidden>
+        <strong>ℹ Brands with no sales (skipped):</strong>
+        <span id="zeroSalesList"></span>
+      </div>
+
+      <!-- Non-fatal warnings -->
+      <div class="error-banner" id="errorBanner" hidden>
+        <strong>⚠ Notes:</strong>
+        <ul id="errorList"></ul>
+      </div>
+
+      <!-- File list -->
+      <ul class="file-list" id="fileList"></ul>
+    </section>
+
+  </main>
+
+  <!-- ── Footer ─────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    DALA Technologies · Internal Use Only · Reports are confidential
+  </footer>
+
+  <!-- ── Scripts ────────────────────────────────────────────────────── -->
+  <script>
+  (() => {
+    const form          = document.getElementById('reportForm');
+    const dropZone      = document.getElementById('dropZone');
+    const fileInput     = document.getElementById('tallyFile');
+    const browseBtn     = document.getElementById('browseBtn');
+    const dropLabel     = document.getElementById('dropLabel');
+    const fileChosen    = document.getElementById('fileChosen');
+    const generateBtn   = document.getElementById('generateBtn');
+    const clearBtn      = document.getElementById('clearBtn');
+
+    const progressCard  = document.getElementById('progressCard');
+    const progressText  = document.getElementById('progressText');
+    const progressBar   = document.getElementById('progressBar');
+    const progressNote  = document.getElementById('progressNote');
+    const resultsCard   = document.getElementById('resultsCard');
+    const resultsSummary= document.getElementById('resultsSummary');
+    const downloadAllBtn= document.getElementById('downloadAllBtn');
+    const errorBanner   = document.getElementById('errorBanner');
+    const errorList     = document.getElementById('errorList');
+    const fileList      = document.getElementById('fileList');
+
+    // ── File drag-and-drop ─────────────────────────────────────────────
+    browseBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      fileInput.click();
+    });
+    dropZone.addEventListener('click', (e) => {
+      // Only trigger if clicking the zone itself, not the browse button
+      if (e.target === dropZone || e.target.classList.contains('drop-icon') || e.target.classList.contains('drop-label')) {
+        fileInput.click();
+      }
+    });
+    dropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropZone.classList.add('drag-over');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files[0]) setFile(fileInput.files[0]);
+    });
+
+    function setFile(file) {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      fileInput.files = dt.files;
+      dropLabel.hidden  = true;
+      fileChosen.hidden = false;
+      fileChosen.textContent = `✓  ${file.name}  (${(file.size/1024).toFixed(0)} KB)`;
+      dropZone.classList.add('has-file');
+    }
+
+    // ── Form submit ────────────────────────────────────────────────────
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+
+      const startDate  = document.getElementById('startDate').value;
+      const endDate    = document.getElementById('endDate').value;
+      if (!fileInput.files[0]) { alert('Please select a Tally Excel file first.'); return; }
+      if (startDate > endDate)  { alert('Start date must be on or before end date.'); return; }
+
+      // Reset UI
+      generateBtn.disabled = true;
+      resultsCard.hidden   = true;
+      errorBanner.hidden   = true;
+      progressCard.hidden  = false;
+      progressBar.style.width = '0%';
+      progressText.textContent = 'Uploading file and processing data…';
+      progressNote.textContent = '';
+
+      // Animate progress bar
+      let pct = 0;
+      const ticker = setInterval(() => {
+        pct = Math.min(pct + Math.random() * (useSheets ? 3 : 6), 82);
+        progressBar.style.width = pct + '%';
+      }, 500);
+
+      // Build form data
+      const fd = new FormData(form);
+
+      try {
+        const res  = await fetch('/generate', { method: 'POST', body: fd });
+        const data = await res.json();
+
+        clearInterval(ticker);
+        progressBar.style.width = '100%';
+        progressText.textContent = 'Done!';
+        await sleep(450);
+        progressCard.hidden = true;
+
+        if (!data.success) { alert('Error: ' + (data.error || 'Unknown error.')); return; }
+
+        renderResults(data);
+      } catch (err) {
+        clearInterval(ticker);
+        progressCard.hidden = true;
+        alert('Network or server error: ' + err.message);
+      } finally {
+        generateBtn.disabled = false;
+      }
+    });
+
+    // ── Render results ─────────────────────────────────────────────────
+    function renderResults(data) {
+      fileList.innerHTML  = '';
+      errorList.innerHTML = '';
+
+      resultsSummary.textContent =
+        `${data.count} report${data.count !== 1 ? 's' : ''} generated  ·  ` +
+        `${data.start_date} → ${data.end_date}`;
+      
+      // Show zero-sales brands notice
+      const zeroSalesBanner = document.getElementById('zeroSalesBanner');
+      const zeroSalesList = document.getElementById('zeroSalesList');
+      if (data.zero_sales_brands && data.zero_sales_brands.length > 0) {
+        zeroSalesList.textContent = data.zero_sales_brands.join(', ');
+        zeroSalesBanner.hidden = false;
+      } else {
+        zeroSalesBanner.hidden = true;
+      }
+
+      // Non-fatal errors / warnings
+      const warnings = (data.errors || []).filter(e => !e.fatal);
+      const fatals   = (data.errors || []).filter(e => e.fatal);
+
+      if (warnings.length || fatals.length) {
+        errorBanner.hidden = false;
+        [...fatals, ...warnings].forEach(err => {
+          const li = document.createElement('li');
+          li.textContent = `${err.brand}: ${err.error}`;
+          errorList.appendChild(li);
+        });
+      }
+
+      // File list rows
+      data.files.forEach(f => {
+        const li = document.createElement('li');
+        li.className = 'file-item';
+
+        li.innerHTML = `
+          <span class="file-icon">📄</span>
+          <span class="file-name">${f.brand}</span>
+          <a class="btn btn-sm btn-primary" href="${f.url}" download="${f.filename}">
+            ⬇ Download PDF
+          </a>`;
+        fileList.appendChild(li);
+      });
+
+      downloadAllBtn._files = data.files;
+      resultsCard.hidden = false;
+      resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // ── Download all PDFs ──────────────────────────────────────────────
+    downloadAllBtn.addEventListener('click', () => {
+      (downloadAllBtn._files || []).forEach((f, i) => {
+        setTimeout(() => {
+          const a = document.createElement('a');
+          a.href = f.url; a.download = f.filename;
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        }, i * 300);
+      });
+    });
+
+    // ── Clear PDFs ─────────────────────────────────────────────────────
+    clearBtn.addEventListener('click', async () => {
+      if (!confirm('Delete all previously generated PDFs from the output folder?')) return;
+      const res  = await fetch('/clear', { method: 'POST' });
+      const data = await res.json();
+      resultsCard.hidden = true;
+      alert(`Cleared ${data.count} file${data.count !== 1 ? 's' : ''}.`);
+    });
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+  })();
+  </script>
+</body>
+</html>

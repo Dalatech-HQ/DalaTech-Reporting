@@ -1,0 +1,84 @@
+{% extends "portal/base.html" %}
+{% block title %}Alerts — DALA Analytics{% endblock %}
+{% block page_title %}Smart Alerts{% endblock %}
+
+{% block topbar_actions %}
+{% if alert_count > 0 %}
+<button onclick="ackAll()" class="btn btn-outline btn-sm">✓ Acknowledge All</button>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% if not alerts %}
+<div class="card" style="text-align:center;padding:48px;">
+  <div style="font-size:32px;margin-bottom:8px;">✅</div>
+  <h3 style="color:var(--navy);">No alerts</h3>
+  <p class="text-muted">All clear. Alerts appear here after report generation.</p>
+</div>
+{% else %}
+
+<div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+  {% set high = alerts|selectattr('severity','equalto','high')|list|length %}
+  {% set med  = alerts|selectattr('severity','equalto','medium')|list|length %}
+  {% set low  = alerts|selectattr('severity','equalto','low')|list|length %}
+  {% set info = alerts|selectattr('severity','equalto','info')|list|length %}
+  <div class="card-sm" style="flex:1;min-width:120px;border-top:3px solid var(--red);">
+    <div class="kpi-label">High</div>
+    <div style="font-size:24px;font-weight:800;color:var(--red);">{{ high }}</div>
+  </div>
+  <div class="card-sm" style="flex:1;min-width:120px;border-top:3px solid var(--amber);">
+    <div class="kpi-label">Medium</div>
+    <div style="font-size:24px;font-weight:800;color:var(--amber);">{{ med }}</div>
+  </div>
+  <div class="card-sm" style="flex:1;min-width:120px;border-top:3px solid var(--blue);">
+    <div class="kpi-label">Low</div>
+    <div style="font-size:24px;font-weight:800;color:var(--blue);">{{ low }}</div>
+  </div>
+  <div class="card-sm" style="flex:1;min-width:120px;border-top:3px solid var(--green);">
+    <div class="kpi-label">Info</div>
+    <div style="font-size:24px;font-weight:800;color:var(--green);">{{ info }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div id="alertsList">
+  {% for a in alerts %}
+  <div class="alert-item {{ a.severity }}" id="alert-{{ a.id }}" {% if a.acknowledged %}style="opacity:.5;"{% endif %}>
+    <div style="flex:1;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap;">
+        <span class="alert-sev">{{ a.severity|upper }}</span>
+        {% if a.brand_name %}<span class="badge badge-muted">{{ a.brand_name }}</span>{% endif %}
+        <span class="badge badge-muted">{{ a.alert_type }}</span>
+        <span class="text-muted fs-sm">{{ a.month_label }}</span>
+        <span class="text-muted fs-sm">{{ a.created_at[:10] }}</span>
+        {% if a.acknowledged %}<span class="badge badge-green">✓ Acknowledged</span>{% endif %}
+      </div>
+      <div style="font-size:12px;line-height:1.5;">{{ a.message }}</div>
+    </div>
+    {% if not a.acknowledged %}
+    <button onclick="ackAlert({{ a.id }}, this)" class="btn btn-outline btn-sm" style="flex-shrink:0;">✓ Ack</button>
+    {% endif %}
+  </div>
+  {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function ackAlert(id, btn) {
+  const res = await fetch('/api/acknowledge', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({alert_id:id})});
+  const d = await res.json();
+  document.getElementById('alert-'+id).style.opacity='0.5';
+  btn.textContent='✓ Done'; btn.disabled=true;
+}
+async function ackAll() {
+  const btns = document.querySelectorAll('[onclick^="ackAlert"]');
+  for (const btn of btns) {
+    const m = btn.getAttribute('onclick').match(/ackAlert\((\d+)/);
+    if (m) await ackAlert(parseInt(m[1]), btn);
+  }
+}
+</script>
+{% endblock %}

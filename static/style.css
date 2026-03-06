@@ -1,0 +1,496 @@
+/* ── Reset & base ──────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --navy:      #1B2B5E;
+  --navy-mid:  #243770;
+  --dala-red:  #E8192C;
+  --white:     #FFFFFF;
+  --bg:        #F0F3FA;
+  --card-bg:   #FFFFFF;
+  --border:    #DDE3ED;
+  --mid-gray:  #A8B4C8;
+  --text:      #1A1A2E;
+  --muted:     #6B7898;
+  --green:     #1E8449;
+  --green-bg:  #EAF4EE;
+  --amber:     #B7770D;
+  --amber-bg:  #FEF9E7;
+  --accent:    #2E86C1;
+  --accent-bg: #EBF5FB;
+  --radius:    10px;
+  --shadow:    0 2px 16px rgba(27,43,94,0.10);
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+/* ── Top navigation bar ────────────────────────────────────────────────── */
+.topbar {
+  background: var(--navy);
+  color: var(--white);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+
+.topbar-inner {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 0 24px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.topbar-logo {
+  height: 36px;
+  width:  36px;
+  object-fit: contain;
+  background: white;
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.topbar-name {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.3px;
+}
+
+.topbar-title {
+  font-size: 12px;
+  color: rgba(255,255,255,0.65);
+  letter-spacing: 0.5px;
+}
+
+/* ── Main ──────────────────────────────────────────────────────────────── */
+.main {
+  flex: 1;
+  max-width: 860px;
+  width: 100%;
+  margin: 36px auto;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Card ──────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 28px 32px;
+}
+
+.card-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 6px;
+}
+
+.card-subtitle {
+  color: var(--muted);
+  font-size: 13.5px;
+  margin-bottom: 24px;
+  line-height: 1.6;
+}
+
+/* ── Drop zone ─────────────────────────────────────────────────────────── */
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 36px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  margin-bottom: 22px;
+}
+
+.drop-zone:hover,
+.drop-zone.drag-over {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.drop-zone.has-file {
+  border-color: var(--green);
+  background: var(--green-bg);
+}
+
+.drop-icon {
+  font-size: 36px;
+  margin-bottom: 10px;
+}
+
+.drop-label {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.drop-hint { font-size: 13px; }
+
+.file-chosen {
+  color: var(--green);
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+/* ── Date row ──────────────────────────────────────────────────────────── */
+.date-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.date-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.date-field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.date-field input[type="date"] {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s;
+  width: 100%;
+  background: var(--white);
+}
+
+.date-field input[type="date"]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(46,134,193,0.12);
+}
+
+.date-sep {
+  color: var(--mid-gray);
+  font-size: 20px;
+  padding-bottom: 10px;
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+.action-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 22px;
+  border-radius: 7px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: opacity 0.15s, transform 0.1s;
+  white-space: nowrap;
+}
+
+.btn:active { transform: scale(0.97); }
+
+.btn-primary {
+  background: var(--navy);
+  color: var(--white);
+}
+
+.btn-primary:hover { background: var(--navy-mid); }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.btn-ghost:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-sm {
+  padding: 7px 14px;
+  font-size: 12.5px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 13px;
+  text-decoration: underline;
+  padding: 0;
+}
+
+/* ── Progress card ─────────────────────────────────────────────────────── */
+.progress-card { padding: 24px 32px; }
+
+.progress-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  color: var(--navy);
+  font-weight: 600;
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid var(--border);
+  border-top-color: var(--navy);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.progress-bar-track {
+  background: var(--bg);
+  border-radius: 99px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--navy), var(--accent));
+  border-radius: 99px;
+  transition: width 0.4s ease;
+  width: 0%;
+}
+
+/* ── Results card ──────────────────────────────────────────────────────── */
+.results-card { padding: 24px 32px; }
+
+.results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.results-header h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.error-banner {
+  background: #fff3cd;
+  border: 1px solid #f5c518;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--amber);
+}
+
+.error-banner ul { margin-top: 6px; padding-left: 18px; }
+.error-banner li { margin-top: 3px; }
+
+.info-banner {
+  background: var(--accent-bg);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.info-banner strong { color: var(--accent); }
+
+.file-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  transition: background 0.15s;
+}
+
+.file-item:hover { background: var(--bg); }
+
+.file-icon { font-size: 18px; }
+
+.file-name {
+  flex: 1;
+  font-size: 13.5px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* ── Google Sheets toggle ──────────────────────────────────────────────── */
+.sheets-toggle {
+  margin-bottom: 22px;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-label input[type="checkbox"] {
+  display: none;
+}
+
+.toggle-track {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  background: var(--border);
+  border-radius: 99px;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 16px; height: 16px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+input[type="checkbox"]:checked + .toggle-track {
+  background: var(--navy);
+}
+
+input[type="checkbox"]:checked + .toggle-track .toggle-thumb {
+  transform: translateX(18px);
+}
+
+.toggle-text {
+  font-size: 13.5px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggle-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+  padding-left: 50px;
+}
+
+.toggle-hint code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11.5px;
+}
+
+/* ── Badges ────────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.badge-ok {
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid #b7dfc7;
+}
+
+.badge-warn {
+  background: var(--amber-bg);
+  color: var(--amber);
+  border: 1px solid #f0d08a;
+}
+
+/* ── Progress note ─────────────────────────────────────────────────────── */
+.progress-note {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+
+/* ── Sheets button in results ──────────────────────────────────────────── */
+.btn-sheets {
+  background: #0f9d58;
+  color: white;
+}
+
+.btn-sheets:hover { background: #0b8048; }
+
+/* ── Results actions row ───────────────────────────────────────────────── */
+.results-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ── Footer ────────────────────────────────────────────────────────────── */
+.footer {
+  text-align: center;
+  padding: 18px 24px;
+  font-size: 12px;
+  color: var(--mid-gray);
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}

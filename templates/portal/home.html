@@ -1,0 +1,137 @@
+{% extends "portal/base.html" %}
+{% block title %}DALA Analytics — Home{% endblock %}
+{% block page_title %}Home{% endblock %}
+
+{% block topbar_actions %}
+{% if latest %}
+<span class="text-muted fs-sm">Latest: {{ latest.month_label }}</span>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="grid-2" style="margin-bottom:24px;">
+
+  <!-- Upload Card -->
+  <div class="card" style="border-top:4px solid var(--red);">
+    <h3 style="color:var(--navy);margin-bottom:4px;">Generate New Reports</h3>
+    <p class="text-muted fs-sm" style="margin-bottom:20px;">Upload a Tally Excel export to generate PDFs, interactive HTMLs, and save to history.</p>
+
+    <form id="uploadForm" enctype="multipart/form-data">
+      <div class="form-group">
+        <label class="form-label">Tally Excel File (.xls / .xlsx)</label>
+        <input type="file" name="tally_file" class="form-control" accept=".xls,.xlsx" required>
+      </div>
+      <div class="grid-2" style="gap:12px;">
+        <div class="form-group">
+          <label class="form-label">Start Date</label>
+          <input type="date" name="start_date" class="form-control" value="2026-02-01" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">End Date</label>
+          <input type="date" name="end_date" class="form-control" value="2026-02-28" required>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;" id="genBtn">
+        ⚡ Generate All Reports
+      </button>
+    </form>
+
+    <div id="genStatus" style="display:none;margin-top:16px;"></div>
+  </div>
+
+  <!-- Quick Stats -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+    {% if latest %}
+    <div class="card-sm" style="border-top:4px solid var(--navy);">
+      <div class="text-muted fs-sm" style="margin-bottom:4px;">Latest Report</div>
+      <div style="font-size:18px;font-weight:800;color:var(--navy);">{{ latest.month_label }}</div>
+      <div class="text-muted fs-sm">{{ latest.start_date }} to {{ latest.end_date }}</div>
+      <div style="margin-top:10px;display:flex;gap:20px;">
+        <div>
+          <div class="kpi-label">Revenue</div>
+          <div style="font-size:15px;font-weight:800;color:var(--red);">₦{{ "{:,.0f}".format(latest.total_revenue) }}</div>
+        </div>
+        <div>
+          <div class="kpi-label">Brands</div>
+          <div style="font-size:15px;font-weight:800;color:var(--navy);">{{ latest.brand_count }}</div>
+        </div>
+        <div>
+          <div class="kpi-label">Stores</div>
+          <div style="font-size:15px;font-weight:800;color:var(--navy);">{{ latest.total_stores }}</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+        <a href="/dashboard" class="btn btn-navy btn-sm">View Dashboard</a>
+        {% set month_tag = latest.start_date[:7].replace('-','') %}
+        <a href="/download/html/PORTFOLIO_Dashboard_{{ latest.start_date[5:7]|upper }}{{ latest.start_date[:4] }}.html"
+           target="_blank" class="btn btn-outline btn-sm">Portfolio HTML</a>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if alert_count > 0 %}
+    <div class="card-sm" style="border-top:4px solid var(--red);">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:700;color:var(--red);">🔔 {{ alert_count }} Unacknowledged Alert{{ 's' if alert_count != 1 }}</div>
+          <div class="text-muted fs-sm" style="margin-top:2px;">Review alerts to stay on top of issues</div>
+        </div>
+        <a href="/alerts" class="btn btn-primary btn-sm">View Alerts</a>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card-sm">
+      <div style="font-weight:600;color:var(--navy);margin-bottom:10px;">Report History</div>
+      {% for r in reports[:5] %}
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--gray);">
+        <div>
+          <span style="font-weight:600;">{{ r.month_label }}</span>
+          <span class="text-muted fs-sm"> · {{ r.brand_count }} brands</span>
+        </div>
+        <a href="/dashboard?report_id={{ r.id }}" class="btn btn-outline btn-sm">View</a>
+      </div>
+      {% else %}
+      <p class="text-muted fs-sm">No reports generated yet. Upload a Tally file to get started.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('genBtn');
+  const status = document.getElementById('genStatus');
+  btn.disabled = true;
+  btn.textContent = 'Generating... please wait';
+  status.style.display = 'block';
+  status.innerHTML = '<div class="flash flash-success">Processing file and generating reports for all brands...</div>';
+
+  const fd = new FormData(this);
+  try {
+    const res = await fetch('/generate', {method:'POST', body:fd});
+    const data = await res.json();
+    if (data.success) {
+      status.innerHTML = `<div class="flash flash-success">
+        ✅ Done! ${data.pdf_count} PDFs · ${data.html_count} HTMLs generated for ${data.brands} brands.
+        ${data.errors.length > 0 ? `<br><span style="color:var(--amber);">${data.errors.length} errors — see console.</span>` : ''}
+        <br><br>
+        <a href="/dashboard?report_id=${data.report_id}" class="btn btn-navy btn-sm">View Dashboard</a>
+        &nbsp;
+        <a href="${data.portfolio_dashboard}" target="_blank" class="btn btn-outline btn-sm">Portfolio Dashboard</a>
+      </div>`;
+    } else {
+      status.innerHTML = `<div class="flash flash-error">❌ ${data.error}</div>`;
+    }
+  } catch(err) {
+    status.innerHTML = `<div class="flash flash-error">❌ Request failed: ${err.message}</div>`;
+  }
+  btn.disabled = false;
+  btn.textContent = '⚡ Generate All Reports';
+});
+</script>
+{% endblock %}

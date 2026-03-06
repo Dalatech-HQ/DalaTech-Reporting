@@ -1,0 +1,149 @@
+{% extends "portal/base.html" %}
+{% block title %}Dashboard — {{ report.month_label if report else 'DALA' }}{% endblock %}
+{% block page_title %}Portfolio Dashboard — {{ report.month_label if report else '' }}{% endblock %}
+
+{% block topbar_actions %}
+<select class="form-control" style="width:180px;" onchange="window.location='/dashboard?report_id='+this.value">
+  {% for r in reports %}
+  <option value="{{ r.id }}" {% if report and r.id==report.id %}selected{% endif %}>{{ r.month_label }}</option>
+  {% endfor %}
+</select>
+{% if portfolio_file %}
+<a href="/download/html/{{ portfolio_file }}" target="_blank" class="btn btn-primary btn-sm">Open Portfolio Dashboard</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% if not report %}
+<div class="card" style="text-align:center;padding:48px;">
+  <p style="font-size:18px;color:var(--muted);">No reports yet. <a href="/">Upload your first Tally file.</a></p>
+</div>
+{% else %}
+
+<!-- KPI SUMMARY -->
+<div class="grid-4" style="margin-bottom:24px;">
+  <div class="kpi-card red">
+    <div class="kpi-label">Total Revenue</div>
+    <div class="kpi-value-sm">₦{{ "{:,.0f}".format(report.total_revenue) }}</div>
+    <div class="kpi-sub">All {{ report.brand_count }} brands</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Total Qty Sold</div>
+    <div class="kpi-value-sm">{{ "{:,.1f}".format(report.total_qty) }}</div>
+    <div class="kpi-sub">Packs across portfolio</div>
+  </div>
+  <div class="kpi-card blue">
+    <div class="kpi-label">Stores Reached</div>
+    <div class="kpi-value-sm">{{ report.total_stores }}</div>
+    <div class="kpi-sub">Unique supermarkets</div>
+  </div>
+  <div class="kpi-card green">
+    <div class="kpi-label">Brand Partners</div>
+    <div class="kpi-value-sm">{{ report.brand_count }}</div>
+    <div class="kpi-sub">With sales this period</div>
+  </div>
+</div>
+
+<!-- ALERTS STRIP -->
+{% if alerts %}
+<div class="card" style="margin-bottom:24px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <h4 style="color:var(--navy);">Recent Alerts</h4>
+    <a href="/alerts" class="btn btn-outline btn-sm">View All</a>
+  </div>
+  {% for a in alerts %}
+  <div class="alert-item {{ a.severity }}">
+    <div style="flex:1;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
+        <span class="alert-sev">{{ a.severity|upper }}</span>
+        {% if a.brand_name %}<span class="badge badge-muted">{{ a.brand_name }}</span>{% endif %}
+        <span class="text-muted fs-sm">{{ a.created_at[:10] }}</span>
+      </div>
+      <div style="font-size:12px;">{{ a.message }}</div>
+    </div>
+    {% if not a.acknowledged %}
+    <button onclick="ackAlert({{ a.id }}, this)" class="btn btn-outline btn-sm">✓ Ack</button>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- BRAND RANKINGS TABLE -->
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    <h4 style="color:var(--navy);">Brand Partner Rankings — {{ report.month_label }}</h4>
+    <a href="/brands?report_id={{ report.id }}" class="btn btn-outline btn-sm">All Brands</a>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Brand</th>
+        <th>Revenue</th>
+        <th>Portfolio %</th>
+        <th>Qty</th>
+        <th>Stores</th>
+        <th>Grade</th>
+        <th>Stock</th>
+        <th>WoW</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set total_rev = report.total_revenue %}
+      {% for b in brand_kpis %}
+      {% set pct = (b.total_revenue / total_rev * 100)|round(1) if total_rev else 0 %}
+      <tr>
+        <td style="color:var(--muted);font-weight:700;">{{ loop.index }}</td>
+        <td style="font-weight:600;"><a href="/brand/{{ b.brand_name }}" style="color:var(--navy);text-decoration:none;">{{ b.brand_name }}</a></td>
+        <td style="font-weight:700;color:var(--navy);">₦{{ "{:,.0f}".format(b.total_revenue) }}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div style="width:60px;height:5px;background:#EEF0F5;border-radius:3px;">
+              <div style="width:{{ [pct,100]|min }}%;height:100%;background:var(--red);border-radius:3px;"></div>
+            </div>
+            <span class="fs-sm text-muted">{{ pct }}%</span>
+          </div>
+        </td>
+        <td>{{ "{:,.1f}".format(b.total_qty) }}</td>
+        <td>{{ b.num_stores }}</td>
+        <td>
+          {% if b.perf_grade %}
+          {% set gc = {'A':'#1E8449','B':'#2E86C1','C':'#C0922A','D':'#E8192C'} %}
+          <span class="grade-badge" style="background:{{ gc.get(b.perf_grade,'#888') }};">{{ b.perf_grade }}</span>
+          {% else %}<span class="text-muted">—</span>{% endif %}
+        </td>
+        <td>
+          {% if b.inv_health_status == 'Healthy' %}<span class="badge badge-green">Healthy</span>
+          {% elif b.inv_health_status == 'Watch' %}<span class="badge badge-amber">Watch</span>
+          {% elif b.inv_health_status == 'Low Stock' %}<span class="badge badge-red">Low</span>
+          {% else %}<span class="text-muted fs-sm">—</span>{% endif %}
+        </td>
+        <td>
+          {% if b.wow_rev_change > 0 %}<span style="color:var(--green);font-weight:700;font-size:11px;">▲ {{ b.wow_rev_change }}%</span>
+          {% elif b.wow_rev_change < 0 %}<span style="color:var(--red);font-weight:700;font-size:11px;">▼ {{ b.wow_rev_change|abs }}%</span>
+          {% else %}<span class="text-muted fs-sm">—</span>{% endif %}
+        </td>
+        <td>
+          <a href="/brand/{{ b.brand_name }}" class="btn btn-outline btn-sm">Detail</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function ackAlert(id, btn) {
+  await fetch('/api/acknowledge', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({alert_id:id})});
+  btn.closest('.alert-item').style.opacity='0.4';
+  btn.textContent='✓ Done';
+  btn.disabled=true;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env/
+
+# Environment variables — NEVER commit secrets
+.env
+.env.local
+.env.production
+
+# Database (local — ephemeral on Railway)
+dala_data.db
+*.db-shm
+*.db-wal
+
+# Generated output (large files, regenerated on demand)
+output/
+
+# Extracted data files (raw Tally exports)
+extracted/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VSCode
+.vscode/
+.claude/
+
+# Credentials / secrets
+google_credentials.json
+*.json.bak
+service_account*.json
+
+# Logs / temp
+*.log
+*.tmp
+test_output*.txt
+ps_install_log.txt
+webapp_screenshot.png
+pdf_preview*.png
+pdf_final*.png
+
+# Playwright
+playwright-report/
+test-results/

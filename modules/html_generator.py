@@ -1,0 +1,441 @@
+"""
+html_generator.py — Standalone interactive HTML report generator using Plotly.
+
+Each function returns a Plotly figure-div HTML string for embedding in Jinja2 templates.
+The template includes Plotly.js once from CDN; all chart divs use include_plotlyjs=False.
+"""
+
+import os
+import base64
+from datetime import datetime
+
+import pandas as pd
+import plotly.graph_objects as go
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+from .kpi import generate_narrative, calculate_perf_score
+
+BASE_DIR     = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')
+LOGO_PATH    = os.path.join(BASE_DIR, 'logo.jpeg')
+
+jinja_env = Environment(
+    loader=FileSystemLoader(TEMPLATE_DIR),
+    autoescape=select_autoescape(['html', 'xml'])
+)
+
+# ── Colour palette ─────────────────────────────────────────────────────────────
+C_NAVY  = '#1B2B5E'
+C_RED   = '#E8192C'
+C_BLUE  = '#2E86C1'
+C_GREEN = '#1E8449'
+C_AMBER = '#C0922A'
+C_GRAY  = '#DDE3ED'
+C_BG    = '#F4F6FA'
+C_WHITE = '#FFFFFF'
+C_MUTED = '#7A849E'
+
+PLOTLY_CFG = dict(displayModeBar=False, responsive=True)
+
+LAYOUT_BASE = dict(
+    paper_bgcolor=C_WHITE,
+    plot_bgcolor=C_WHITE,
+    font=dict(family='Segoe UI, Helvetica Neue, Arial', size=11, color='#1A1A2E'),
+    hoverlabel=dict(bgcolor=C_NAVY, font_color='white', font_size=12),
+    showlegend=False,
+    # margin intentionally omitted — set per-chart
+)
+
+
+def _div(fig, div_id=None) -> str:
+    """Render a Plotly figure to an HTML div string (no Plotly.js included)."""
+    kwargs = dict(full_html=False, include_plotlyjs=False, config=PLOTLY_CFG)
+    if div_id:
+        kwargs['div_id'] = div_id
+    return fig.to_html(**kwargs)
+
+
+def _naira(v):
+    if v >= 1_000_000: return f'₦{v/1_000_000:.1f}M'
+    if v >= 1_000:     return f'₦{v/1_000:.1f}K'
+    return f'₦{v:,.0f}'
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  PLOTLY CHART BUILDERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def plotly_dual_trend(daily_sales_df: pd.DataFrame) -> str:
+    """Dual-axis area+line: Revenue (left, red fill) + Quantity (right, navy dashed)."""
+    df = daily_sales_df.copy()
+    if df.empty or len(df) < 2:
+        return '<p style="color:#9BA8C0;text-align:center;padding:20px;">Insufficient data</p>'
+
+    df['Date'] = pd.to_datetime(df['Date'])
+    df = df.sort_values('Date')
+
+    # Peak day
+    peak_idx = df['Revenue'].idxmax()
+    peak_date = df.loc[peak_idx, 'Date']
+    peak_rev  = df.loc[peak_idx, 'Revenue']
+
+    fig = go.Figure()
+
+    # Revenue area
+    fig.add_trace(go.Scatter(
+        x=df['Date'], y=df['Revenue'],
+        name='Total Revenue',
+        fill='tozeroy', fillcolor='rgba(232,25,44,0.12)',
+        line=dict(color=C_RED, width=2.5),
+        mode='lines',
+        hovertemplate='<b>%{x|%d %b}</b><br>Revenue: ₦%{y:,.0f}<extra></extra>',
+        yaxis='y1',
+    ))
+
+    # Peak annotation
+    fig.add_trace(go.Scatter(
+        x=[peak_date], y=[peak_rev],
+        mode='markers+text',
+        marker=dict(color=C_RED, size=10, symbol='circle'),
+        text=[f'Peak: {_naira(peak_rev)}'],
+        textposition='top center',
+        textfont=dict(size=10, color=C_RED, family='Segoe UI'),
+        showlegend=False,
+        yaxis='y1',
+        hoverinfo='skip',
+    ))
+
+    # Quantity line
+    fig.add_trace(go.Scatter(
+        x=df['Date'], y=df['Quantity'],
+        name='Total Quantity',
+        line=dict(color=C_NAVY, width=2, dash='dot'),
+        mode='lines',
+        hovertemplate='<b>%{x|%d %b}</b><br>Qty: %{y:.1f} packs<extra></extra>',
+        yaxis='y2',
+    ))
+
+    layout = {**LAYOUT_BASE,
+        'yaxis': dict(
+            title='Revenue (₦)', side='left',
+            tickformat=',.0f', tickprefix='₦',
+            gridcolor=C_GRAY, gridwidth=0.5,
+            showline=True, linecolor=C_RED, linewidth=1.5,
+        ),
+        'yaxis2': dict(
+            title='Quantity (Packs)', side='right', overlaying='y',
+            showgrid=False, showline=True, linecolor=C_NAVY, linewidth=1.5,
+        ),
+        'xaxis': dict(tickformat='%d %b', gridcolor=C_GRAY, gridwidth=0.3),
+        'legend': dict(
+            orientation='h', yanchor='bottom', y=1.02,
+            xanchor='right', x=1,
+            bgcolor='rgba(255,255,255,0.85)',
+            bordercolor=C_GRAY, borderwidth=1,
+        ),
+        'showlegend': True,
+        'margin': dict(l=60, r=60, t=40, b=40),
+        'height': 240,
+    }
+    fig.update_layout(**layout)
+    return _div(fig, 'trend-chart')
+
+
+def plotly_top_stores(top_stores_df: pd.DataFrame) -> str:
+    """Interactive horizontal bar — top stores by revenue."""
+    df = top_stores_df.head(8).copy()
+    if df.empty:
+        return '<p style="color:#9BA8C0;text-align:center;padding:20px;">No data</p>'
+
+    df = df.iloc[::-1].reset_index(drop=True)
+    colors = [C_RED if i == len(df)-1 else C_NAVY for i in range(len(df))]
+    text_labels = [_naira(v) for v in df['Revenue']]
+
+    fig = go.Figure(go.Bar(
+        x=df['Revenue'], y=df['Store'],
+        orientation='h',
+        marker_color=colors,
+        text=text_labels,
+        textposition='outside',
+        textfont=dict(size=10, color=C_NAVY, family='Segoe UI'),
+        hovertemplate='<b>%{y}</b><br>Revenue: ₦%{x:,.0f}<extra></extra>',
+    ))
+
+    fig.update_layout(
+        **LAYOUT_BASE,
+        xaxis=dict(
+            tickformat=',.0f', tickprefix='₦',
+            showgrid=True, gridcolor=C_GRAY, gridwidth=0.5,
+            range=[0, df['Revenue'].max() * 1.3],
+        ),
+        yaxis=dict(showgrid=False, tickfont=dict(size=10)),
+        margin=dict(l=10, r=80, t=10, b=30),
+        height=max(180, len(df) * 32),
+    )
+    return _div(fig, 'stores-chart')
+
+
+def plotly_top_products(product_value_df: pd.DataFrame) -> str:
+    """Interactive horizontal bar — top products by revenue."""
+    df = product_value_df.head(8).copy()
+    if df.empty:
+        return '<p style="color:#9BA8C0;text-align:center;padding:20px;">No data</p>'
+
+    df = df.iloc[::-1].reset_index(drop=True)
+    text_labels = [_naira(v) for v in df['Revenue']]
+
+    fig = go.Figure(go.Bar(
+        x=df['Revenue'], y=df['SKU'],
+        orientation='h',
+        marker_color=C_RED,
+        text=text_labels,
+        textposition='outside',
+        textfont=dict(size=10, color=C_RED, family='Segoe UI'),
+        hovertemplate='<b>%{y}</b><br>Revenue: ₦%{x:,.0f}<extra></extra>',
+    ))
+
+    fig.update_layout(
+        **LAYOUT_BASE,
+        xaxis=dict(
+            tickformat=',.0f', tickprefix='₦',
+            showgrid=True, gridcolor=C_GRAY, gridwidth=0.5,
+            range=[0, df['Revenue'].max() * 1.3],
+        ),
+        yaxis=dict(showgrid=False, tickfont=dict(size=10)),
+        margin=dict(l=10, r=80, t=10, b=30),
+        height=max(180, len(df) * 32),
+    )
+    return _div(fig, 'products-chart')
+
+
+def plotly_store_heatmap(store_heatmap_df: pd.DataFrame) -> str:
+    """Plotly heatmap — top stores (rows) x dates (columns), color = orders placed."""
+    df = store_heatmap_df.copy()
+    if df.empty:
+        return '<p style="color:#9BA8C0;text-align:center;padding:20px;">No heatmap data available</p>'
+
+    df['Date'] = pd.to_datetime(df['Date'])
+    pivot = df.pivot_table(index='Store', columns='Date', values='Orders',
+                            fill_value=0, aggfunc='sum')
+    pivot = pivot.reindex(sorted(pivot.columns), axis=1)
+
+    stores = list(pivot.index)
+    dates  = [d.strftime('%d %b') for d in pivot.columns]
+    z      = pivot.values.tolist()
+
+    # Custom colorscale: white → navy
+    colorscale = [
+        [0.0, '#F4F6FA'],
+        [0.3, '#A8B8D8'],
+        [1.0, C_NAVY],
+    ]
+
+    fig = go.Figure(go.Heatmap(
+        z=z, x=dates, y=stores,
+        colorscale=colorscale,
+        showscale=False,
+        hovertemplate='<b>%{y}</b><br>%{x}<br>Orders: %{z}<extra></extra>',
+        zmin=0,
+    ))
+
+    fig.update_layout(
+        **LAYOUT_BASE,
+        xaxis=dict(side='bottom', tickangle=-45, tickfont=dict(size=9)),
+        yaxis=dict(tickfont=dict(size=9)),
+        margin=dict(l=10, r=10, t=10, b=60),
+        height=max(180, len(stores) * 36 + 80),
+    )
+    return _div(fig, 'heatmap-chart')
+
+
+def plotly_stock_bars(closing_stock_df: pd.DataFrame) -> str:
+    """Vertical bar chart — current closing stock per SKU."""
+    df = closing_stock_df.copy()
+    if df.empty:
+        return '<p style="color:#9BA8C0;text-align:center;padding:20px;">No inventory data</p>'
+
+    df = df.sort_values('Closing Stock (Cartons)', ascending=False).head(10)
+    labels = [s[:20] + '…' if len(s) > 20 else s for s in df['SKU']]
+
+    fig = go.Figure(go.Bar(
+        x=labels, y=df['Closing Stock (Cartons)'],
+        marker_color=C_NAVY,
+        text=[f'{v:.0f}' for v in df['Closing Stock (Cartons)']],
+        textposition='outside',
+        textfont=dict(size=9, color=C_NAVY),
+        hovertemplate='<b>%{x}</b><br>Stock: %{y:.0f} cartons<extra></extra>',
+    ))
+
+    fig.update_layout(
+        **LAYOUT_BASE,
+        xaxis=dict(tickangle=-50, tickfont=dict(size=8), showgrid=False),
+        yaxis=dict(showgrid=True, gridcolor=C_GRAY),
+        margin=dict(l=10, r=10, t=20, b=80),
+        height=220,
+    )
+    return _div(fig, 'stock-chart')
+
+
+def plotly_reorder_bars(reorder_df: pd.DataFrame) -> str:
+    """Horizontal bar — stores by order count, green=repeat, amber=single."""
+    df = reorder_df.copy()
+    if df.empty:
+        return '<p style="color:#9BA8C0;text-align:center;padding:20px;">No reorder data</p>'
+
+    df = df.head(12).iloc[::-1].reset_index(drop=True)
+    colors = [C_GREEN if s == 'Repeat Customer' else C_AMBER for s in df['Status']]
+    labels = [f'{int(v)} order{"s" if v != 1 else ""}' for v in df['Order Count']]
+
+    fig = go.Figure(go.Bar(
+        x=df['Order Count'], y=df['Store'],
+        orientation='h',
+        marker_color=colors,
+        text=labels,
+        textposition='outside',
+        textfont=dict(size=9),
+        hovertemplate='<b>%{y}</b><br>Orders: %{x}<extra></extra>',
+    ))
+
+    fig.update_layout(
+        **LAYOUT_BASE,
+        xaxis=dict(
+            tickformat='d', showgrid=True, gridcolor=C_GRAY,
+            range=[0, df['Order Count'].max() * 1.35],
+        ),
+        yaxis=dict(showgrid=False, tickfont=dict(size=9)),
+        margin=dict(l=10, r=80, t=10, b=30),
+        height=max(160, len(df) * 30),
+    )
+    return _div(fig, 'reorder-chart')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  PUBLIC ENTRY POINT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def generate_html(output_path: str, brand_name: str, kpis: dict,
+                  start_date: str, end_date: str,
+                  portfolio_avg_revenue: float = None,
+                  total_portfolio_revenue: float = None) -> str:
+    """
+    Generate a standalone interactive HTML report using Plotly.
+
+    Args:
+        output_path:              Absolute path for .html output file
+        brand_name:               Brand partner display name
+        kpis:                     Dict from calculate_kpis()
+        start_date / end_date:    'YYYY-MM-DD'
+        portfolio_avg_revenue:    Optional — avg revenue across all brands (for scorecard)
+        total_portfolio_revenue:  Optional — sum revenue all brands (for portfolio share %)
+
+    Returns:
+        output_path
+    """
+    # ── Plotly chart divs ─────────────────────────────────────────────────────
+    chart_trend    = plotly_dual_trend(kpis['daily_sales'])
+    chart_stores   = plotly_top_stores(kpis['top_stores'])
+    chart_products = plotly_top_products(kpis['product_value'])
+    chart_heatmap  = plotly_store_heatmap(kpis['store_heatmap_df'])
+    chart_stock    = plotly_stock_bars(kpis['closing_stock'])
+    chart_reorder  = plotly_reorder_bars(kpis['reorder_analysis'])
+
+    # ── Scorecard ─────────────────────────────────────────────────────────────
+    perf = calculate_perf_score(kpis, portfolio_avg_revenue)
+
+    # ── Portfolio share ───────────────────────────────────────────────────────
+    portfolio_share = None
+    if total_portfolio_revenue and total_portfolio_revenue > 0:
+        portfolio_share = round(kpis['total_revenue'] / total_portfolio_revenue * 100, 1)
+
+    # ── Table data ────────────────────────────────────────────────────────────
+    def _naira_k(v):
+        if v >= 1_000_000: return f'₦{v/1_000_000:.1f}M'
+        if v >= 1_000:     return f'₦{v/1_000:.1f}K'
+        return f'₦{v:,.0f}'
+
+    top_stores_table = [
+        {
+            'store': r['Store'],
+            'value': _naira_k(r['Revenue']),
+            'pct':   round(r['Revenue'] / kpis['total_revenue'] * 100, 1)
+                     if kpis['total_revenue'] > 0 else 0,
+        }
+        for _, r in kpis['top_stores'].head(5).iterrows()
+    ]
+
+    top_products_table = [
+        {
+            'sku':   r['SKU'],
+            'value': _naira_k(r['Revenue']),
+            'pct':   round(r['Revenue'] / kpis['total_revenue'] * 100, 1)
+                     if kpis['total_revenue'] > 0 else 0,
+        }
+        for _, r in kpis['product_value'].head(5).iterrows()
+    ]
+
+    closing_stock_table = [
+        {
+            'sku':   r['SKU'],
+            'qty':   f"{r['Closing Stock (Cartons)']:.0f}",
+            'health': kpis['inv_health_status'],
+            'color':  kpis['inv_health_color'],
+        }
+        for _, r in kpis['closing_stock'].iterrows()
+    ]
+
+    pickup_table = [
+        {'sku': r['SKU'], 'qty': f"{r['Qty Picked Up']:.0f}",
+         'value': _naira_k(r['Value'])}
+        for _, r in kpis['pickup_summary'].iterrows()
+    ]
+
+    supply_table = [
+        {'sku': r['SKU'], 'qty': f"{r['Qty Supplied']:.0f}",
+         'value': _naira_k(r['Value'])}
+        for _, r in kpis['supply_summary'].iterrows()
+    ]
+
+    # ── Narrative ─────────────────────────────────────────────────────────────
+    narrative = generate_narrative(brand_name, kpis, start_date, end_date)
+
+    # ── Dates ─────────────────────────────────────────────────────────────────
+    start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+    end_dt   = datetime.strptime(end_date,   '%Y-%m-%d')
+    display_start = start_dt.strftime('%d %b %Y')
+    display_end   = end_dt.strftime('%d %b %Y')
+
+    # ── Logo ──────────────────────────────────────────────────────────────────
+    logo_data = ''
+    if os.path.exists(LOGO_PATH):
+        with open(LOGO_PATH, 'rb') as f:
+            logo_data = f"data:image/jpeg;base64,{base64.b64encode(f.read()).decode()}"
+
+    # ── Render template ───────────────────────────────────────────────────────
+    template     = jinja_env.get_template('report_interactive.html')
+    html_content = template.render(
+        brand_name=brand_name,
+        start_date=display_start,
+        end_date=display_end,
+        kpis=kpis,
+        narrative=narrative,
+        logo_path=logo_data,
+        perf=perf,
+        portfolio_share=portfolio_share,
+        top_stores_table=top_stores_table,
+        top_products_table=top_products_table,
+        closing_stock_table=closing_stock_table,
+        pickup_table=pickup_table,
+        supply_table=supply_table,
+        chart_trend=chart_trend,
+        chart_stores=chart_stores,
+        chart_products=chart_products,
+        chart_heatmap=chart_heatmap,
+        chart_stock=chart_stock,
+        chart_reorder=chart_reorder,
+    )
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+
+    return output_path

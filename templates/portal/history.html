@@ -1,0 +1,88 @@
+{% extends "portal/base.html" %}
+{% block title %}History — DALA Analytics{% endblock %}
+{% block page_title %}Report History{% endblock %}
+
+{% block content %}
+{% if not reports %}
+<div class="card" style="text-align:center;padding:48px;">
+  <div style="font-size:32px;margin-bottom:8px;">📅</div>
+  <h3 style="color:var(--navy);">No History Yet</h3>
+  <p class="text-muted">Generate reports to build a historical record.</p>
+</div>
+{% else %}
+
+<!-- Revenue trend chart -->
+{% if trend|length > 1 %}
+<div class="card" style="margin-bottom:24px;">
+  <h4 style="color:var(--navy);margin-bottom:4px;">Portfolio Revenue Trend</h4>
+  <p class="text-muted fs-sm" style="margin-bottom:12px;">Monthly total revenue across all brand partners</p>
+  <canvas id="portfolioTrend" height="120"></canvas>
+</div>
+{% endif %}
+
+<div class="card">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Month</th>
+        <th>Period</th>
+        <th>Total Revenue</th>
+        <th>Total Qty</th>
+        <th>Stores</th>
+        <th>Brands</th>
+        <th>Generated</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in reports %}
+      <tr>
+        <td style="font-weight:700;color:var(--navy);">{{ r.month_label }}</td>
+        <td class="text-muted fs-sm">{{ r.start_date }} to {{ r.end_date }}</td>
+        <td style="font-weight:700;">₦{{ "{:,.0f}".format(r.total_revenue) }}</td>
+        <td>{{ "{:,.1f}".format(r.total_qty) }}</td>
+        <td>{{ r.total_stores }}</td>
+        <td>{{ r.brand_count }}</td>
+        <td class="text-muted fs-sm">{{ r.generated_at[:10] }}</td>
+        <td style="display:flex;gap:4px;">
+          <a href="/dashboard?report_id={{ r.id }}" class="btn btn-navy btn-sm">View</a>
+          <a href="/brands?report_id={{ r.id }}" class="btn btn-outline btn-sm">Brands</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if trend|length > 1 %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const trendData = {{ trend | tojson }};
+trendData.reverse();
+const ctx = document.getElementById('portfolioTrend').getContext('2d');
+new Chart(ctx, {
+  type: 'bar',
+  data: {
+    labels: trendData.map(r => r.month_label),
+    datasets: [{
+      label: 'Revenue (₦)',
+      data: trendData.map(r => r.total_revenue),
+      backgroundColor: trendData.map((_, i) => i === trendData.length-1 ? '#E8192C' : 'rgba(27,43,94,0.7)'),
+      borderRadius: 4,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { ticks: { callback: v => '₦' + (v/1_000_000).toFixed(1) + 'M' }, grid: { color: '#EEF0F5' } },
+      x: { grid: { display: false } }
+    }
+  }
+});
+</script>
+{% endif %}
+{% endblock %}
