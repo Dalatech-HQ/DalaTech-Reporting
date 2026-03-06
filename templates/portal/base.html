@@ -183,7 +183,7 @@
     <a href="/alerts" class="nav-link {% if request.endpoint=='alerts_view' %}active{% endif %}">
       <span class="nav-icon">🔔</span> Alerts
       {% if alert_count > 0 %}
-      <span class="nav-badge">{{ alert_count if alert_count < 100 else '99+' }}</span>
+      <span class="nav-badge">{{ alert_count if alert_count < 999 else '999+' }}</span>
       {% endif %}
     </a>
     <a href="/alert-rules" class="nav-link {% if request.endpoint=='alert_rules_view' %}active{% endif %}">
@@ -212,7 +212,7 @@
       {% block topbar_actions %}{% endblock %}
       <a href="/alerts" class="notif-bell" title="Alerts">
         🔔
-        {% if alert_count > 0 %}<span class="notif-count">{{ alert_count if alert_count < 100 else '99+' }}</span>{% endif %}
+        {% if alert_count > 0 %}<span class="notif-count">{{ alert_count if alert_count < 999 else '999+' }}</span>{% endif %}
       </a>
     </div>
   </div>

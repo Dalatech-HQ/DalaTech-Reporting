@@ -74,7 +74,7 @@
     <div class="card-sm" style="border-top:4px solid var(--red);">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <div>
-          <div style="font-weight:700;color:var(--red);">🔔 {{ alert_count if alert_count < 100 else '99+' }} Unacknowledged Alert{{ 's' if alert_count != 1 }}</div>
+          <div style="font-weight:700;color:var(--red);">🔔 {{ alert_count }} Unacknowledged Alert{{ 's' if alert_count != 1 }}</div>
           <div class="text-muted fs-sm" style="margin-top:2px;">Review alerts to stay on top of issues</div>
         </div>
         <a href="/alerts" class="btn btn-primary btn-sm">View Alerts</a>

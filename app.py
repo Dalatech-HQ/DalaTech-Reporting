@@ -343,21 +343,32 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
         for b in brands:
             all_kpis[b]['perf_score'] = calculate_perf_score(all_kpis[b], portfolio_avg_revenue)
 
-        # Save report to DB
+        # Save report to DB — upsert: reuse existing row for same date range
         all_stores = set()
         for k in all_kpis.values():
             if k.get('top_stores') is not None and not k['top_stores'].empty:
                 all_stores.update(k['top_stores']['Store'].tolist())
 
-        report_id = ds.save_report(
-            start_date=start_date, end_date=end_date,
-            xls_filename=filename,
-            total_revenue=total_portfolio_revenue,
-            total_qty=sum(k['total_qty'] for k in all_kpis.values()),
-            total_stores=len(all_stores),
-            brand_count=len(brands),
-            report_type=report_type,
-        )
+        total_qty_sum = sum(k['total_qty'] for k in all_kpis.values())
+        existing_report = ds.get_report_by_date_range(start_date, end_date)
+        if existing_report:
+            report_id = existing_report['id']
+            ds.clear_report_data(report_id)  # wipe old alerts/kpis to avoid duplicates
+            ds.update_report(report_id, xls_filename=filename,
+                             total_revenue=total_portfolio_revenue,
+                             total_qty=total_qty_sum,
+                             total_stores=len(all_stores),
+                             brand_count=len(brands))
+        else:
+            report_id = ds.save_report(
+                start_date=start_date, end_date=end_date,
+                xls_filename=filename,
+                total_revenue=total_portfolio_revenue,
+                total_qty=total_qty_sum,
+                total_stores=len(all_stores),
+                brand_count=len(brands),
+                report_type=report_type,
+            )
         _upd(report_id=report_id)
 
         # Save KPIs + alerts
@@ -807,21 +818,32 @@ def generate():
     total_portfolio_revenue = sum(k['total_revenue'] for k in all_kpis.values())
     portfolio_avg_revenue   = total_portfolio_revenue / max(len(brands), 1)
 
-    # Save report to DB
+    # Save report to DB — upsert: reuse existing row for same date range
     all_stores = set()
     for k in all_kpis.values():
         if k.get('top_stores') is not None and not k['top_stores'].empty:
             all_stores.update(k['top_stores']['Store'].tolist())
 
-    report_id = ds.save_report(
-        start_date=start_date,
-        end_date=end_date,
-        xls_filename=file.filename,
-        total_revenue=total_portfolio_revenue,
-        total_qty=sum(k['total_qty'] for k in all_kpis.values()),
-        total_stores=len(all_stores),
-        brand_count=len(brands),
-    )
+    total_qty_sum = sum(k['total_qty'] for k in all_kpis.values())
+    existing_report = ds.get_report_by_date_range(start_date, end_date)
+    if existing_report:
+        report_id = existing_report['id']
+        ds.clear_report_data(report_id)
+        ds.update_report(report_id, xls_filename=file.filename,
+                         total_revenue=total_portfolio_revenue,
+                         total_qty=total_qty_sum,
+                         total_stores=len(all_stores),
+                         brand_count=len(brands))
+    else:
+        report_id = ds.save_report(
+            start_date=start_date,
+            end_date=end_date,
+            xls_filename=file.filename,
+            total_revenue=total_portfolio_revenue,
+            total_qty=total_qty_sum,
+            total_stores=len(all_stores),
+            brand_count=len(brands),
+        )
 
     # Generate files
     ok_pdf = ok_html = 0

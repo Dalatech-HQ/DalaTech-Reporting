@@ -278,12 +278,38 @@ class DataStore:
         """Check if a report already exists for this date range."""
         with self._connect() as conn:
             row = conn.execute(
-                """SELECT * FROM reports 
+                """SELECT * FROM reports
                    WHERE start_date = ? AND end_date = ?
                    ORDER BY generated_at DESC LIMIT 1""",
                 (start_date, end_date)
             ).fetchone()
             return dict(row) if row else None
+
+    def clear_report_data(self, report_id):
+        """Delete all brand_kpis, daily_sales, alerts, and ai_narratives for a report.
+        Used when re-generating the same date range to avoid duplicates."""
+        with self._connect() as conn:
+            conn.execute("DELETE FROM alerts WHERE report_id=?", (report_id,))
+            conn.execute("DELETE FROM brand_kpis WHERE report_id=?", (report_id,))
+            conn.execute("DELETE FROM daily_sales WHERE report_id=?", (report_id,))
+            try:
+                conn.execute("DELETE FROM ai_narratives WHERE report_id=?", (report_id,))
+            except Exception:
+                pass  # table may not exist on older DBs
+
+    def update_report(self, report_id, xls_filename, total_revenue, total_qty,
+                      total_stores, brand_count, report_type=None, start_date=None, end_date=None):
+        """Update an existing report row's stats after re-generation."""
+        now = datetime.now().isoformat(timespec='seconds')
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE reports SET
+                   xls_filename=?, total_revenue=?, total_qty=?, total_stores=?,
+                   brand_count=?, generated_at=?
+                   WHERE id=?""",
+                (xls_filename, total_revenue, total_qty, total_stores,
+                 brand_count, now, report_id)
+            )
 
     # ── Brand KPI operations ──────────────────────────────────────────────────
 
