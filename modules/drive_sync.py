@@ -37,6 +37,37 @@ from .ingestion import load_and_clean, filter_by_date
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
+def setup_google_credentials():
+    """
+    Setup Google credentials from environment variable.
+    For Railway deployment: writes GOOGLE_CREDENTIALS_JSON env var to file.
+    """
+    creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', '/app/google_credentials.json')
+    
+    # If credentials file doesn't exist but env var has content, create it
+    if not os.path.exists(creds_path):
+        creds_json = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+        if creds_json:
+            os.makedirs(os.path.dirname(creds_path), exist_ok=True)
+            with open(creds_path, 'w') as f:
+                f.write(creds_json)
+            print(f"✓ Google credentials written to {creds_path}")
+        else:
+            # Try alternative: look for file in current directory
+            local_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                'google_credentials.json'
+            )
+            if os.path.exists(local_path):
+                os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = local_path
+                return local_path
+    
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = creds_path
+    return creds_path
+
+# Setup credentials on module load
+GOOGLE_CREDENTIALS_PATH = setup_google_credentials()
+
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 DRIVE_FOLDERS = [
     {
@@ -65,16 +96,21 @@ class DriveService:
     
     def __init__(self, credentials_path: str = None):
         self.service = None
-        self.credentials_path = credentials_path or self._find_credentials()
+        self.credentials_path = credentials_path or GOOGLE_CREDENTIALS_PATH
         self._authenticate()
     
     def _find_credentials(self) -> str:
         """Find service account credentials file."""
+        # First check if already setup
+        if GOOGLE_CREDENTIALS_PATH and os.path.exists(GOOGLE_CREDENTIALS_PATH):
+            return GOOGLE_CREDENTIALS_PATH
+        
+        # Fallback to searching
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         possible_paths = [
             os.path.join(base_dir, 'google_credentials.json'),
             os.path.join(base_dir, 'service_account.json'),
-            os.environ.get('GOOGLE_CREDENTIALS_PATH', ''),
+            os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', ''),
         ]
         for path in possible_paths:
             if path and os.path.exists(path):
