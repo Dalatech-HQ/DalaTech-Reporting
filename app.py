@@ -456,21 +456,43 @@ def trends():
     color themes, and insights.
     """
     import pandas as pd
+
+    def render_trends_error(message, available_months=None, year=None, month=None):
+        now = datetime.now()
+        selected_year = year or now.year
+        selected_month = month or now.month
+
+        return render_template(
+            'portal/trends.html',
+            error=message,
+            metrics=None,
+            insights={'working': [], 'not_working': [], 'next_steps': []},
+            historical=[],
+            historical_json='[]',
+            top_stores=[],
+            top_stores_json='[]',
+            top_products=[],
+            top_products_json='[]',
+            map_data=[],
+            map_data_json='[]',
+            color_scheme=get_color_scheme_for_month(selected_year, selected_month),
+            available_months=available_months or [],
+            current_year=selected_year,
+            current_month=selected_month,
+            google_maps_key=os.environ.get('GOOGLE_MAPS_API_KEY', ''),
+            alert_count=ds.get_unacknowledged_count(),
+        )
     
     # Load historical data
     hist_path = os.path.join(BASE_DIR, '2024to2026salesreport.xlsx')
     if not os.path.exists(hist_path):
-        return render_template('portal/trends.html', 
-                               error="Historical data not available",
-                               metrics=None, insights=None)
+        return render_trends_error("Historical data not available")
     
     try:
         df = pd.read_excel(hist_path)
         df['Date'] = pd.to_datetime(df['Date'])
     except Exception as e:
-        return render_template('portal/trends.html',
-                               error=f"Error loading data: {e}",
-                               metrics=None, insights=None)
+        return render_trends_error(f"Error loading data: {e}")
     
     # Get available months
     df['YearMonth'] = df['Date'].dt.to_period('M')
@@ -488,9 +510,12 @@ def trends():
     # Calculate metrics
     metrics = get_monthly_metrics(df, year, month)
     if not metrics:
-        return render_template('portal/trends.html',
-                               error="No data for selected month",
-                               metrics=None, insights=None)
+        return render_trends_error(
+            "No data for selected month",
+            available_months=available_months,
+            year=year,
+            month=month,
+        )
     
     # Get historical data for sparklines
     historical = get_portfolio_monthly_trend(df)

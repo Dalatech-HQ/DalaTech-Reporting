@@ -156,6 +156,7 @@
 {% block content %}
 
 <!-- MONTH SELECTOR -->
+{% if available_months %}
 <div class="month-selector">
   <label>📅 Select Period</label>
   <select id="monthSelect" onchange="loadMonthData()">
@@ -168,6 +169,18 @@
   <span style="flex:1;"></span>
   <span class="text-muted">Color Theme: <strong style="color: {{ color_scheme.primary }}">{{ color_scheme.name }}</strong></span>
 </div>
+{% endif %}
+
+{% if error %}
+<div class="chart-card" style="margin-bottom:24px;">
+  <div class="chart-title">Trend Data Unavailable</div>
+  <p style="font-size:14px; line-height:1.6; color:var(--text);">{{ error }}</p>
+  <p class="text-muted" style="margin-top:12px;">
+    The Trends dashboard depends on the historical workbook bundled with the app. If this is happening on Railway, confirm that
+    <code>2024to2026salesreport.xlsx</code> is present in the deployed build and readable by Pandas.
+  </p>
+</div>
+{% elif metrics %}
 
 <!-- KPI CARDS -->
 <div class="kpi-row">
@@ -331,9 +344,12 @@
   </div>
 </div>
 
+{% endif %}
+
 {% endblock %}
 
 {% block scripts %}
+{% if metrics %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 {% if google_maps_key %}
 <script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_key }}&callback=initMap" async defer></script>
@@ -608,4 +624,5 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 </script>
+{% endif %}
 {% endblock %}
