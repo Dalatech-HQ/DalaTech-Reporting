@@ -416,9 +416,47 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
         except Exception:
             pass
 
-        # Generate per-brand files
+        # Generate per-brand files with retry logic
         start_dt  = datetime.strptime(start_date, '%Y-%m-%d')
         month_tag = start_dt.strftime('%b%Y')
+
+        def try_generate_pdf(brand_name, pdf_path, kpis, max_retries=2):
+            """Attempt PDF generation with retries."""
+            for attempt in range(max_retries):
+                try:
+                    generate_pdf_html(
+                        output_path=pdf_path, brand_name=brand_name, kpis=kpis,
+                        start_date=start_date, end_date=end_date,
+                        portfolio_avg_revenue=portfolio_avg_revenue,
+                        total_portfolio_revenue=total_portfolio_revenue,
+                        ai_narrative=ai_narratives.get(brand_name),
+                        sheets_url=sheets_urls.get(brand_name),
+                    )
+                    return True, None
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        import time
+                        time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                    else:
+                        return False, str(e)
+            return False, "Max retries exceeded"
+
+        def try_generate_html(brand_name, html_path, kpis, max_retries=2):
+            """Attempt HTML generation with retries."""
+            for attempt in range(max_retries):
+                try:
+                    generate_html(output_path=html_path, brand_name=brand_name, kpis=kpis,
+                                  start_date=start_date, end_date=end_date,
+                                  portfolio_avg_revenue=portfolio_avg_revenue,
+                                  total_portfolio_revenue=total_portfolio_revenue)
+                    return True, None
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        import time
+                        time.sleep(0.5 * (attempt + 1))
+                    else:
+                        return False, str(e)
+            return False, "Max retries exceeded"
 
         brands_done = []
         for i, brand_name in enumerate(brands):
@@ -430,27 +468,22 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
 
             brand_result = {'brand': brand_name, 'pdf': False, 'html': False, 'error': None}
 
-            try:
-                generate_pdf_html(
-                    output_path=pdf_path, brand_name=brand_name, kpis=kpis,
-                    start_date=start_date, end_date=end_date,
-                    portfolio_avg_revenue=portfolio_avg_revenue,
-                    total_portfolio_revenue=total_portfolio_revenue,
-                    ai_narrative=ai_narratives.get(brand_name),
-                    sheets_url=sheets_urls.get(brand_name),
-                )
-                brand_result['pdf'] = True
-            except Exception as e:
-                brand_result['error'] = str(e)
+            # Generate PDF with retry
+            pdf_success, pdf_error = try_generate_pdf(brand_name, pdf_path, kpis)
+            brand_result['pdf'] = pdf_success
+            if pdf_error:
+                brand_result['error'] = f'PDF: {pdf_error}'
 
-            try:
-                generate_html(output_path=html_path, brand_name=brand_name, kpis=kpis,
-                              start_date=start_date, end_date=end_date,
-                              portfolio_avg_revenue=portfolio_avg_revenue,
-                              total_portfolio_revenue=total_portfolio_revenue)
-                brand_result['html'] = True
-            except Exception as e:
-                brand_result['error'] = (brand_result['error'] or '') + ' HTML:' + str(e)
+            # Generate HTML with retry
+            html_success, html_error = try_generate_html(brand_name, html_path, kpis)
+            brand_result['html'] = html_success
+            if html_error:
+                brand_result['error'] = (brand_result['error'] or '') + f' HTML: {html_error}'
+
+            # Clear error if at least one succeeded
+            if (brand_result['pdf'] or brand_result['html']) and brand_result['error']:
+                # Partial success - log warning but don't show as error
+                brand_result['error'] = None if (brand_result['pdf'] and brand_result['html']) else brand_result['error']
 
             brands_done.append(brand_result)
             _upd(brands_done=brands_done, progress=round((i + 1) / (len(brands) + 1) * 100))

@@ -38,6 +38,7 @@ def _linear_trend(values):
 def next_month_revenue_forecast(history):
     """
     Forecast next month's revenue using linear trend.
+    Enhanced to provide forecasts even with limited data.
 
     Args:
         history: list of dicts with keys 'total_revenue', 'month_label',
@@ -58,17 +59,32 @@ def next_month_revenue_forecast(history):
 
     revenues = [h['total_revenue'] for h in history]
     n = len(revenues)
+    
+    # Single data point: forecast same as current with low confidence
+    if n == 1:
+        last_rev = revenues[0]
+        return {
+            'forecast':    round(last_rev, 2),
+            'confidence':  'Low',
+            'trend_label': 'Flat',
+            'pct_change':  0.0,
+            'data_points': n,
+        }
+    
     slope, r2 = _linear_trend(revenues)
 
     # Forecast = last value + slope
     last_rev = revenues[-1]
     forecast = max(last_rev + slope, 0)
 
-    # Confidence
+    # Confidence - adjusted thresholds for limited data
     if n >= 6 and r2 >= 0.7:
         confidence = 'High'
     elif n >= 3 and r2 >= 0.4:
         confidence = 'Medium'
+    elif n >= 2:
+        # With 2+ points, we can at least make a basic forecast
+        confidence = 'Low'
     else:
         confidence = 'Low'
 
@@ -129,20 +145,35 @@ def stock_depletion_date(kpis, as_of_date=None):
 def growth_label(history):
     """
     Classify brand trajectory from history list (oldest → newest).
+    Now works with single data point by comparing to portfolio average.
 
     Returns: 'Growing' | 'Stable' | 'Declining' | 'Insufficient Data'
     """
-    if not history or len(history) < 2:
+    if not history or len(history) < 1:
         return 'Insufficient Data'
-    revenues = [h['total_revenue'] for h in history]
-    slope, _ = _linear_trend(revenues)
-    last = revenues[-1]
-    pct = slope / last * 100 if last > 0 else 0
-    if pct > 5:
-        return 'Growing'
-    elif pct < -5:
-        return 'Declining'
-    return 'Stable'
+    
+    # If we have at least 2 data points, use trend analysis
+    if len(history) >= 2:
+        revenues = [h['total_revenue'] for h in history]
+        slope, _ = _linear_trend(revenues)
+        last = revenues[-1]
+        pct = slope / last * 100 if last > 0 else 0
+        if pct > 5:
+            return 'Growing'
+        elif pct < -5:
+            return 'Declining'
+        return 'Stable'
+    
+    # Single data point - use performance score if available
+    if len(history) == 1 and history[0].get('perf_score'):
+        score = history[0].get('perf_score', 0)
+        if score >= 70:
+            return 'Growing'
+        elif score <= 40:
+            return 'Declining'
+        return 'Stable'
+    
+    return 'Insufficient Data'
 
 
 def growth_color(label):
