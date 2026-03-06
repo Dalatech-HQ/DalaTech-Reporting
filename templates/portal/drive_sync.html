@@ -114,12 +114,12 @@
     {% for f in folder.files %}
     <div class="file-row">
       <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
-        <span>📄</span>
+        <span>📅</span>
         <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ f.name }}</span>
       </div>
       <div style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
-        {% if f.modifiedTime %}
-        <span class="text-muted" style="font-size:11px;">{{ f.modifiedTime[:10] }}</span>
+        {% if f.file_count %}
+        <span class="text-muted" style="font-size:11px;">{{ f.file_count }} brand files</span>
         {% endif %}
         <span class="fstatus {{ f.status }}">
           {% if f.status == 'imported' %}✓ Imported{% elif f.status == 'error' %}✗ Error{% else %}⏳ Pending{% endif %}

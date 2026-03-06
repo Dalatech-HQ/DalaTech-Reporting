@@ -15,8 +15,10 @@ Folders watched:
 
 import os
 import io
+import re
 import json
 import time
+import calendar as _calendar
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 
@@ -54,6 +56,42 @@ DRIVE_FOLDERS = [
         'year': 2026,
     },
 ]
+
+# ── Drive folder helpers ───────────────────────────────────────────────────────
+
+_MONTH_NAMES = {
+    'january': 1, 'february': 2, 'march': 3, 'april': 4,
+    'may': 5,     'june': 6,     'july': 7,  'august': 8,
+    'september': 9, 'october': 10, 'november': 11, 'december': 12,
+}
+
+
+def _extract_month_from_folder_name(folder_name: str) -> Optional[int]:
+    """Return month number (1-12) if a month name appears in the folder name, else None."""
+    name_lower = folder_name.lower()
+    for mname, mnum in _MONTH_NAMES.items():
+        if mname in name_lower:
+            return mnum
+    return None
+
+
+def _extract_brand_from_filename(filename: str) -> str:
+    """
+    Extract brand name from a file like 'B-Boom August Sales Report Week 1.xlsx'.
+    Strips everything from the first whole-word month name onwards,
+    and also strips trailing ' Sales Report...' suffixes.
+    """
+    name = os.path.splitext(filename)[0]
+    # Remove " Sales Report ..." suffix
+    name = re.sub(r'\s+Sales\s+Report.*$', '', name, flags=re.IGNORECASE)
+    # Remove month name (whole word) and everything after it
+    months_pat = (
+        r'\b(January|February|March|April|May|June|July|'
+        r'August|September|October|November|December)\b.*$'
+    )
+    name = re.sub(months_pat, '', name, flags=re.IGNORECASE)
+    return name.strip()
+
 
 # ── Auth helper ───────────────────────────────────────────────────────────────
 
@@ -143,6 +181,26 @@ class DriveService:
             if not page_token:
                 break
         return files
+
+    def list_subfolders(self, folder_id: str) -> List[Dict]:
+        """List immediate subfolders of a folder."""
+        q = (
+            f"'{folder_id}' in parents and trashed=false and "
+            "mimeType='application/vnd.google-apps.folder'"
+        )
+        resp = self.service.files().list(
+            q=q, spaces='drive',
+            fields='files(id, name)',
+            pageSize=200,
+        ).execute()
+        return resp.get('files', [])
+
+    def list_excel_recursive(self, folder_id: str) -> List[Dict]:
+        """Recursively find all Excel files under folder_id (any depth)."""
+        results = list(self.list_excel_files(folder_id))
+        for sf in self.list_subfolders(folder_id):
+            results.extend(self.list_excel_recursive(sf['id']))
+        return results
 
     def download_file(self, file_id: str) -> io.BytesIO:
         """Download a Drive file to an in-memory buffer."""
@@ -366,6 +424,71 @@ def _run_pipeline(file_buffer: io.BytesIO, filename: str,
     }
 
 
+def _run_pipeline_from_df(df: pd.DataFrame, label: str,
+                          start_date: str, end_date: str, ds: DataStore) -> Dict:
+    """
+    Run the full DALA generation pipeline on a pre-combined DataFrame.
+    Identical to _run_pipeline() but accepts a DataFrame instead of a file buffer.
+    """
+    from .ingestion import filter_by_date, split_by_brand
+    from .kpi import calculate_kpis, calculate_perf_score
+    from .alerts import check_and_save_alerts, run_portfolio_alerts
+
+    df_filtered = filter_by_date(df, start_date, end_date)
+    if df_filtered.empty:
+        raise ValueError(f"No data in date range {start_date} to {end_date}")
+
+    brand_data = split_by_brand(df_filtered)
+    brands     = list(brand_data.keys())
+    if not brands:
+        raise ValueError("No brand data found after split")
+
+    all_kpis  = {b: calculate_kpis(brand_data[b]) for b in brands}
+    total_rev = sum(k['total_revenue'] for k in all_kpis.values())
+    avg_rev   = total_rev / max(len(brands), 1)
+    for b in brands:
+        all_kpis[b]['perf_score'] = calculate_perf_score(all_kpis[b], avg_rev)
+
+    all_stores: set = set()
+    for k in all_kpis.values():
+        if k.get('top_stores') is not None and not k['top_stores'].empty:
+            all_stores.update(k['top_stores']['Store'].tolist())
+
+    total_qty = sum(k['total_qty'] for k in all_kpis.values())
+    existing  = ds.get_report_by_date_range(start_date, end_date)
+    if existing:
+        report_id = existing['id']
+        ds.clear_report_data(report_id)
+        ds.update_report(report_id, xls_filename=label,
+                         total_revenue=total_rev, total_qty=total_qty,
+                         total_stores=len(all_stores), brand_count=len(brands))
+    else:
+        report_id = ds.save_report(
+            start_date=start_date, end_date=end_date,
+            xls_filename=label,
+            total_revenue=total_rev, total_qty=total_qty,
+            total_stores=len(all_stores), brand_count=len(brands),
+        )
+
+    for b in brands:
+        k = all_kpis[b]
+        share = round(k['total_revenue'] / max(total_rev, 1) * 100, 2)
+        ds.save_brand_kpis(report_id, b, k, k.get('perf_score', {}), share)
+        if not k['daily_sales'].empty:
+            ds.save_daily_sales(report_id, b, k['daily_sales'])
+        history = ds.get_brand_history(b, limit=3)
+        check_and_save_alerts(report_id, b, k, avg_rev, history[1:], ds)
+
+    run_portfolio_alerts(report_id, ds.get_all_brand_kpis(report_id), ds)
+    return {
+        'report_id':  report_id,
+        'brands':     len(brands),
+        'rows':       len(df_filtered),
+        'start_date': start_date,
+        'end_date':   end_date,
+    }
+
+
 # ── Main Sync Orchestrator ────────────────────────────────────────────────────
 
 class DriveSyncOrchestrator:
@@ -378,87 +501,123 @@ class DriveSyncOrchestrator:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
+    def get_month_groups(self) -> List[Dict]:
+        """
+        Scan root Drive folders and return a list of month groups.
+        Each group = one first-level subfolder that contains a month name,
+        with all Excel files found recursively inside it.
+        Folders without a month name (Audit, Templates, etc.) are skipped.
+        """
+        groups = []
+        for root_folder in DRIVE_FOLDERS:
+            year = root_folder['year']
+            try:
+                subfolders = self.drive.list_subfolders(root_folder['id'])
+            except Exception as e:
+                print(f"Could not list subfolders in {root_folder['name']}: {e}")
+                continue
+            for sf in sorted(subfolders, key=lambda x: x['name']):
+                month_num = _extract_month_from_folder_name(sf['name'])
+                if month_num is None:
+                    continue
+                files = self.drive.list_excel_recursive(sf['id'])
+                if not files:
+                    continue
+                groups.append({
+                    'root_folder_id':    root_folder['id'],
+                    'root_folder_name':  root_folder['name'],
+                    'year':              year,
+                    'month':             month_num,
+                    'month_folder_name': sf['name'],
+                    'month_folder_id':   sf['id'],
+                    'files':             files,
+                })
+        return groups
+
     def check_new_files(self) -> List[Dict]:
         """
-        Check all folders for NEW or CHANGED files (since last import).
-        Runs the full pipeline for each new file.
+        Check all month groups for new or changed files and import any that have changed.
         """
+        groups  = self.get_month_groups()
         results = []
-        for folder in DRIVE_FOLDERS:
-            try:
-                files = self.drive.list_excel_files(folder['id'])
-                for f in files:
-                    if not self.state.is_imported(f['id'], f['modifiedTime']):
-                        result = self._import_file(f, folder['id'], folder['year'])
-                        results.append(result)
-            except Exception as e:
-                results.append({'folder': folder['name'], 'status': 'error', 'error': str(e)})
+        for group in groups:
+            has_new = any(
+                not self.state.is_imported(f['id'], f.get('modifiedTime', ''))
+                for f in group['files']
+            )
+            if has_new:
+                results.append(self._import_month_group(group))
+            else:
+                results.append({'group': group['month_folder_name'], 'status': 'skipped'})
         return results
 
-    def full_historical_sync(self, progress_cb=None) -> List[Dict]:
+    def full_historical_sync(self, progress_cb=None, groups=None) -> List[Dict]:
         """
-        Import ALL files from all folders regardless of sync state.
-        Used for the initial "build the database" operation.
-        progress_cb: optional callable(current, total, file_name) for progress updates.
+        Import ALL month groups from all folders regardless of sync state.
+        groups: optional pre-computed list from get_month_groups() to avoid a second API call.
+        progress_cb: optional callable(current, total, label).
         """
-        # Collect all files first
-        all_files: List[Tuple[Dict, str, int]] = []  # (file, folder_id, year)
-        for folder in DRIVE_FOLDERS:
-            try:
-                files = self.drive.list_excel_files(folder['id'])
-                for f in files:
-                    all_files.append((f, folder['id'], folder['year']))
-            except Exception as e:
-                print(f"Could not list {folder['name']}: {e}")
-
-        total = len(all_files)
+        if groups is None:
+            groups = self.get_month_groups()
+        total   = len(groups)
         results = []
-        for i, (f, folder_id, year) in enumerate(all_files):
+        for i, group in enumerate(groups):
             if progress_cb:
-                progress_cb(i, total, f['name'])
-            result = self._import_file(f, folder_id, year)
-            results.append(result)
-
+                progress_cb(i, total, group['month_folder_name'])
+            results.append(self._import_month_group(group))
         if progress_cb:
             progress_cb(total, total, 'Done')
         return results
 
     def list_all_files(self) -> List[Dict]:
         """
-        List all files from all Drive folders (with sync status).
-        Used by the dashboard without importing anything.
+        List all month groups from Drive with their import status.
+        Used by the dashboard — returns one entry per month group (not per file).
         """
-        synced = {r['file_id']: r for r in self.state.get_all_files()}
-        all_files = []
-        for folder in DRIVE_FOLDERS:
+        synced    = {r['file_id']: r for r in self.state.get_all_files()}
+        all_items = []
+        for root_folder in DRIVE_FOLDERS:
             try:
-                files = self.drive.list_excel_files(folder['id'])
-                for f in files:
-                    state = synced.get(f['id'], {})
-                    all_files.append({
-                        'id':           f['id'],
-                        'name':         f['name'],
-                        'folder':       folder['name'],
-                        'folder_id':    folder['id'],
-                        'modifiedTime': f.get('modifiedTime', ''),
-                        'size':         f.get('size', 0),
-                        'status':       state.get('status', 'pending'),
-                        'imported_at':  state.get('imported_at', ''),
-                        'report_id':    state.get('report_id'),
+                subfolders = self.drive.list_subfolders(root_folder['id'])
+                for sf in sorted(subfolders, key=lambda x: x['name']):
+                    month_num = _extract_month_from_folder_name(sf['name'])
+                    if month_num is None:
+                        continue
+                    files = self.drive.list_excel_recursive(sf['id'])
+                    if not files:
+                        continue
+                    statuses = [synced.get(f['id'], {}).get('status', 'pending') for f in files]
+                    if all(s == 'imported' for s in statuses):
+                        status = 'imported'
+                    elif any(s == 'error' for s in statuses):
+                        status = 'error'
+                    else:
+                        status = 'pending'
+                    report_id = next(
+                        (synced[f['id']].get('report_id') for f in files
+                         if f['id'] in synced and synced[f['id']].get('status') == 'imported'),
+                        None
+                    )
+                    all_items.append({
+                        'id':           sf['id'],
+                        'name':         sf['name'],
+                        'folder':       root_folder['name'],
+                        'folder_id':    root_folder['id'],
+                        'file_count':   len(files),
+                        'status':       status,
+                        'report_id':    report_id,
                         'list_error':   None,
                     })
             except Exception as e:
                 err_msg = str(e)
-                print(f"Could not list {folder['name']}: {err_msg}")
-                # Surface error as a sentinel entry so the dashboard can show it
-                all_files.append({
-                    'id':           None,
-                    'name':         None,
-                    'folder':       folder['name'],
-                    'folder_id':    folder['id'],
-                    'list_error':   err_msg,
+                print(f"Could not list {root_folder['name']}: {err_msg}")
+                all_items.append({
+                    'id': None, 'name': None,
+                    'folder':    root_folder['name'],
+                    'folder_id': root_folder['id'],
+                    'list_error': err_msg,
                 })
-        return sorted([f for f in all_files if f['name']], key=lambda x: x['name'])
+        return sorted([f for f in all_items if f.get('name')], key=lambda x: x['name'])
 
     def get_sync_summary(self) -> Dict:
         stats = self.state.get_stats()
@@ -471,6 +630,61 @@ class DriveSyncOrchestrator:
         }
 
     # ── Internal ──────────────────────────────────────────────────────────────
+
+    def _import_month_group(self, group: Dict) -> Dict:
+        """
+        Download all brand files in a month group, combine into one DataFrame,
+        and run the full DALA pipeline for that calendar month.
+        """
+        from .ingestion import load_brand_file
+
+        year       = group['year']
+        month      = group['month']
+        start_date = f"{year}-{month:02d}-01"
+        last_day   = _calendar.monthrange(year, month)[1]
+        end_date   = f"{year}-{month:02d}-{last_day}"
+        label      = group['month_folder_name']
+
+        print(f"  Importing month group: {label} ({start_date} → {end_date})")
+        dfs, file_errors = [], []
+        for f in group['files']:
+            try:
+                buf        = self.drive.download_file(f['id'])
+                brand_name = _extract_brand_from_filename(f['name']) or f['name']
+                df         = load_brand_file(buf, brand_name)
+                if not df.empty:
+                    dfs.append(df)
+            except Exception as e:
+                file_errors.append(f"{f['name']}: {e}")
+
+        if not dfs:
+            err = f"No data loaded from {len(group['files'])} files. Sample errors: {'; '.join(file_errors[:3])}"
+            for f in group['files']:
+                self.state.mark_error(f['id'], group['root_folder_id'], f['name'],
+                                      f.get('modifiedTime', ''), err)
+            return {'group': label, 'status': 'error', 'error': err}
+
+        combined = pd.concat(dfs, ignore_index=True)
+        try:
+            summary   = _run_pipeline_from_df(combined, label, start_date, end_date, self.ds)
+            report_id = summary['report_id']
+            for f in group['files']:
+                self.state.mark_imported(f['id'], group['root_folder_id'], f['name'],
+                                         f.get('modifiedTime', ''), report_id)
+            return {
+                'group':      label,
+                'status':     'success',
+                'date_range': f"{start_date} to {end_date}",
+                'brands':     summary['brands'],
+                'rows':       summary['rows'],
+                'report_id':  report_id,
+            }
+        except Exception as e:
+            error_msg = str(e)
+            for f in group['files']:
+                self.state.mark_error(f['id'], group['root_folder_id'], f['name'],
+                                      f.get('modifiedTime', ''), error_msg)
+            return {'group': label, 'status': 'error', 'error': error_msg}
 
     def _import_file(self, file: Dict, folder_id: str, default_year: int) -> Dict:
         """Download and run the full generation pipeline for one Drive file."""

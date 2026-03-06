@@ -1877,9 +1877,9 @@ def api_drive_sync_full_import():
             from modules.drive_sync import DriveSyncOrchestrator
             orch = DriveSyncOrchestrator()
 
-            # First list all files to know the total
-            all_files_preview = orch.list_all_files()
-            total = len(all_files_preview)
+            # Discover month groups first so we know the total
+            groups = orch.get_month_groups()
+            total  = len(groups)
             ds.update_job(job_id, total=total, status='running',
                           current_brand='Connecting to Google Drive...')
 
@@ -1890,7 +1890,7 @@ def api_drive_sync_full_import():
                 pct = int(current / max(total_files, 1) * 100)
                 ds.update_job(job_id, progress=pct, current_brand=file_name)
 
-            results = orch.full_historical_sync(progress_cb=_progress)
+            results = orch.full_historical_sync(progress_cb=_progress, groups=groups)
             imported = sum(1 for r in results if r.get('status') == 'success')
             errors   = sum(1 for r in results if r.get('status') == 'error')
 

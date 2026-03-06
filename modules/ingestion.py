@@ -172,6 +172,51 @@ def get_all_brands(df):
     return set(df['Brand Partner'].unique())
 
 
+def load_brand_file(file_source, brand_name: str) -> pd.DataFrame:
+    """
+    Load an individual per-brand Tally-export file (wide multi-section format).
+
+    Excel layout:
+      Row 1 (Excel):  Section headers — "Exported from Tally", "Dala Sales & Deliveries", etc.
+      Row 2 (Excel):  Column labels  — "item name", "Date", "Particulars", "Vch Type", "Vch No.", "Quantity", "Value"
+      Row 3+ (Excel): Data rows
+
+    Only the first 7 columns ("Exported from Tally" section) are extracted.
+    The brand name is injected as the "Brand Partner" column.
+    """
+    df_raw = pd.read_excel(file_source, engine='openpyxl')
+    if df_raw.empty:
+        raise ValueError(f"Empty file for brand: {brand_name}")
+
+    # Row 0 of DataFrame = sub-header row ("item name", "Date", "Particulars", ...)
+    col_labels = df_raw.iloc[0, :7].tolist()
+
+    # Data starts at DataFrame row 1
+    data = df_raw.iloc[1:, :7].copy()
+    data.columns = col_labels
+
+    data = data.rename(columns={'item name': 'SKUs', 'Value': 'Sales_Value'})
+    data['Brand Partner'] = brand_name
+
+    data = data.dropna(subset=['SKUs', 'Date', 'Sales_Value'], how='all')
+    data['Date']         = pd.to_datetime(data['Date'], errors='coerce')
+    data['Quantity']     = pd.to_numeric(data['Quantity'],    errors='coerce').fillna(0)
+    data['Sales_Value']  = pd.to_numeric(data['Sales_Value'], errors='coerce').fillna(0)
+    data = data.dropna(subset=['Date']).reset_index(drop=True)
+
+    for col in ['Particulars', 'Vch Type', 'Vch No.']:
+        if col not in data.columns:
+            data[col] = ''
+
+    data['SKUs']         = data['SKUs'].astype(str).str.strip()
+    data['Particulars']  = data['Particulars'].astype(str).str.strip()
+    data['Vch Type']     = data['Vch Type'].astype(str).str.strip()
+    data['Vch No.']      = data['Vch No.'].astype(str).str.strip()
+    data['Brand Partner'] = data['Brand Partner'].astype(str).str.strip().apply(_normalize_brand_name)
+
+    return data[['Brand Partner', 'SKUs', 'Date', 'Particulars', 'Vch Type', 'Vch No.', 'Quantity', 'Sales_Value']]
+
+
 def _normalize_brand_name(name):
     """
     Normalize brand name to prevent duplicates.
