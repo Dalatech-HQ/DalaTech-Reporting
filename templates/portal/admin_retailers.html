@@ -1,0 +1,231 @@
+{% extends "portal/base.html" %}
+{% block title %}Retailer Management — Admin{% endblock %}
+{% block page_title %}Retailer Management <span class="badge badge-blue">Admin</span>{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-outline btn-sm" onclick="exportToCSV()">📥 Export CSV</button>
+<button class="btn btn-primary btn-sm" onclick="shareReport()">📤 Share Report</button>
+{% endblock %}
+
+{% block head %}
+<style>
+  .stats-row {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--white); border-radius: 10px; padding: 18px;
+    box-shadow: 0 2px 8px rgba(27,43,94,.07); text-align: center;
+  }
+  .stat-value {
+    font-size: 28px; font-weight: 800; color: var(--navy);
+  }
+  .stat-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--muted); margin-top: 4px;
+  }
+  .filter-bar {
+    display: flex; gap: 12px; margin-bottom: 20px;
+    background: var(--white); padding: 16px; border-radius: 10px;
+  }
+  .search-input {
+    flex: 1; padding: 8px 12px; border: 1.5px solid var(--gray);
+    border-radius: 6px; font-size: 13px;
+  }
+  .status-badge {
+    display: inline-block; padding: 3px 10px; border-radius: 12px;
+    font-size: 11px; font-weight: 700;
+  }
+  .status-active { background: rgba(30,132,73,.12); color: var(--green); }
+  .status-inactive { background: var(--gray); color: var(--muted); }
+  
+  /* Share Modal */
+  .modal-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,.5); z-index: 1000; align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-content {
+    background: white; border-radius: 12px; padding: 28px;
+    width: 90%; max-width: 500px; box-shadow: 0 20px 60px rgba(0,0,0,.3);
+  }
+  .modal-header {
+    font-size: 18px; font-weight: 700; color: var(--navy);
+    margin-bottom: 16px; padding-bottom: 12px;
+    border-bottom: 2px solid var(--gray);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- STATS ROW -->
+<div class="stats-row">
+  <div class="stat-card">
+    <div class="stat-value">{{ retailers|length }}</div>
+    <div class="stat-label">Total Brands</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ retailers|sum(attribute='store_count') }}</div>
+    <div class="stat-label">Total Retailers</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ retailers|sum(attribute='sku_count') }}</div>
+    <div class="stat-label">Unique SKUs</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">₦{{ "{:,.0f}".format(retailers|sum(attribute='total_revenue') / 1000000) }}M</div>
+    <div class="stat-label">Total Revenue</div>
+  </div>
+</div>
+
+<!-- FILTER BAR -->
+<div class="filter-bar">
+  <input type="text" class="search-input" id="searchInput" 
+         placeholder="🔍 Search brands or retailers..." onkeyup="filterTable()">
+  <select class="form-control" style="width: 140px;" id="statusFilter" onchange="filterTable()">
+    <option value="">All Status</option>
+    <option value="Active">Active</option>
+    <option value="Inactive">Inactive</option>
+  </select>
+</div>
+
+<!-- RETAILERS TABLE -->
+<div class="card">
+  <table class="data-table" id="retailersTable">
+    <thead>
+      <tr>
+        <th>Brand Partner</th>
+        <th style="text-align:center;">Store Count</th>
+        <th style="text-align:center;">SKU Count</th>
+        <th style="text-align:right;">Total Revenue</th>
+        <th style="text-align:center;">Last Order</th>
+        <th style="text-align:center;">Status</th>
+        <th style="text-align:center;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in retailers %}
+      <tr data-brand="{{ r.brand }}" data-status="{{ r.status }}">
+        <td><strong>{{ r.brand }}</strong></td>
+        <td style="text-align:center;">{{ r.store_count }}</td>
+        <td style="text-align:center;">{{ r.sku_count }}</td>
+        <td style="text-align:right;">₦{{ "{:,.0f}".format(r.total_revenue) }}</td>
+        <td style="text-align:center;">{{ r.last_order }}</td>
+        <td style="text-align:center;">
+          <span class="status-badge status-{{ r.status|lower }}">{{ r.status }}</span>
+        </td>
+        <td style="text-align:center;">
+          <button class="btn btn-sm btn-outline" onclick="viewDetails('{{ r.brand }}')">View</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- SHARE MODAL -->
+<div class="modal-overlay" id="shareModal">
+  <div class="modal-content">
+    <div class="modal-header">📤 Share Retailer Report</div>
+    <p class="text-muted" style="margin-bottom: 16px;">Generate a shareable link for brand partners</p>
+    
+    <div class="form-group">
+      <label class="form-label">Select Brand</label>
+      <select class="form-control" id="shareBrand">
+        <option value="all">All Brands (Summary)</option>
+        {% for r in retailers %}
+        <option value="{{ r.brand }}">{{ r.brand }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label">Recipient Email</label>
+      <input type="email" class="form-control" id="shareEmail" placeholder="brand@example.com">
+    </div>
+    
+    <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px;">
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="sendShare()">Generate & Send</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterTable() {
+  const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+  const statusFilter = document.getElementById('statusFilter').value;
+  const rows = document.querySelectorAll('#retailersTable tbody tr');
+  
+  rows.forEach(row => {
+    const brand = row.getAttribute('data-brand').toLowerCase();
+    const status = row.getAttribute('data-status');
+    
+    const matchesSearch = brand.includes(searchTerm);
+    const matchesStatus = !statusFilter || status === statusFilter;
+    
+    row.style.display = (matchesSearch && matchesStatus) ? '' : 'none';
+  });
+}
+
+function exportToCSV() {
+  const rows = document.querySelectorAll('#retailersTable tbody tr:not([style*="none"])');
+  let csv = 'Brand Partner,Store Count,SKU Count,Total Revenue,Last Order,Status\n';
+  
+  rows.forEach(row => {
+    const cells = row.querySelectorAll('td');
+    const brand = cells[0].textContent.trim();
+    const stores = cells[1].textContent.trim();
+    const skus = cells[2].textContent.trim();
+    const revenue = cells[3].textContent.trim().replace('₦', '').replace(/,/g, '');
+    const lastOrder = cells[4].textContent.trim();
+    const status = cells[5].textContent.trim();
+    
+    csv += `"${brand}",${stores},${skus},${revenue},${lastOrder},${status}\n`;
+  });
+  
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `retailer_report_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+}
+
+function shareReport() {
+  document.getElementById('shareModal').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('shareModal').classList.remove('active');
+}
+
+function sendShare() {
+  const brand = document.getElementById('shareBrand').value;
+  const email = document.getElementById('shareEmail').value;
+  
+  if (!email) {
+    alert('Please enter an email address');
+    return;
+  }
+  
+  // Simulate sending
+  alert(`Report for "${brand}" will be sent to ${email}`);
+  closeModal();
+}
+
+function viewDetails(brand) {
+  window.location.href = `/brand/${encodeURIComponent(brand.replace(/\s+/g, '-').toLowerCase())}`;
+}
+
+// Close modal on overlay click
+document.getElementById('shareModal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+</script>
+{% endblock %}

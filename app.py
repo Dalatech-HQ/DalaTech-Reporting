@@ -42,6 +42,12 @@ from modules.portfolio_generator import generate_portfolio_html
 from modules.data_store       import DataStore
 from modules.alerts           import check_and_save_alerts, run_portfolio_alerts
 from modules.predictor        import build_brand_forecasts, stock_depletion_date, growth_label, growth_color
+from modules.historical       import (
+    get_brand_monthly_history, get_portfolio_monthly_trend,
+    get_repeat_purchase_map_data, generate_insights,
+    get_color_scheme_for_month, get_monthly_metrics
+)
+from modules.geocoding        import is_geocoding_available
 
 # ── App config ────────────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -427,6 +433,144 @@ def generation_status(job_id):
     if not job:
         return jsonify({'success': False, 'error': 'Job not found'}), 404
     return jsonify({'success': True, **job})
+
+
+# ── Trends / Forecasting Dashboard ────────────────────────────────────────────
+
+@app.route('/trends')
+def trends():
+    """
+    Historical trend analysis dashboard with MoM growth,
+    color themes, and insights.
+    """
+    import pandas as pd
+    
+    # Load historical data
+    hist_path = os.path.join(BASE_DIR, '2024to2026salesreport.xlsx')
+    if not os.path.exists(hist_path):
+        return render_template('portal/trends.html', 
+                               error="Historical data not available",
+                               metrics=None, insights=None)
+    
+    try:
+        df = pd.read_excel(hist_path)
+        df['Date'] = pd.to_datetime(df['Date'])
+    except Exception as e:
+        return render_template('portal/trends.html',
+                               error=f"Error loading data: {e}",
+                               metrics=None, insights=None)
+    
+    # Get available months
+    df['YearMonth'] = df['Date'].dt.to_period('M')
+    available_ym = sorted(df['YearMonth'].unique())
+    available_months = [{'year': ym.year, 'month': ym.month, 
+                        'label': ym.strftime('%b %Y')} for ym in available_ym]
+    
+    # Get selected month (default to latest)
+    month_param = request.args.get('month', '')
+    if month_param:
+        year, month = map(int, month_param.split('-'))
+    else:
+        year, month = available_ym[-1].year, available_ym[-1].month
+    
+    # Calculate metrics
+    metrics = get_monthly_metrics(df, year, month)
+    if not metrics:
+        return render_template('portal/trends.html',
+                               error="No data for selected month",
+                               metrics=None, insights=None)
+    
+    # Get historical data for sparklines
+    historical = get_portfolio_monthly_trend(df)
+    
+    # Get insights
+    insights = generate_insights(historical)
+    
+    # Get color scheme
+    color_scheme = get_color_scheme_for_month(year, month)
+    
+    # Get top stores for this month
+    sales_df = df[(df['Date'].dt.year == year) & (df['Date'].dt.month == month) & 
+                  (df['Vch Type'] == 'Sales')]
+    
+    top_stores = []
+    if not sales_df.empty:
+        store_revenue = sales_df.groupby('Particulars')['Sales_Value'].sum().sort_values(ascending=False).head(10)
+        top_stores = [{'name': name, 'revenue': rev} for name, rev in store_revenue.items()]
+    
+    # Get top products
+    top_products = []
+    if not sales_df.empty:
+        product_revenue = sales_df.groupby('SKUs')['Sales_Value'].sum().sort_values(ascending=False).head(10)
+        top_products = [{'name': name, 'revenue': rev} for name, rev in product_revenue.items()]
+    
+    # Get map data
+    map_data = get_repeat_purchase_map_data(df, year, month, top_n=20)
+    
+    return render_template('portal/trends.html',
+                           metrics=metrics,
+                           insights=insights,
+                           historical=historical,
+                           historical_json=json.dumps(historical),
+                           top_stores=top_stores,
+                           top_stores_json=json.dumps(top_stores),
+                           top_products=top_products,
+                           top_products_json=json.dumps(top_products),
+                           map_data=map_data,
+                           color_scheme=color_scheme,
+                           available_months=available_months,
+                           current_year=year,
+                           current_month=month,
+                           alert_count=ds.get_unacknowledged_count())
+
+
+# ── How It Works (Public Documentation) ───────────────────────────────────────
+
+@app.route('/how-it-works')
+def how_it_works():
+    """Public documentation page explaining the system."""
+    return render_template('portal/docs.html', 
+                           alert_count=ds.get_unacknowledged_count())
+
+
+# ── Admin: Retailer Count ─────────────────────────────────────────────────────
+
+@app.route('/admin/retailers')
+def admin_retailers():
+    """Admin-only view of retailer counts per brand."""
+    # In production, add authentication check here
+    import pandas as pd
+    
+    hist_path = os.path.join(BASE_DIR, '2024to2026salesreport.xlsx')
+    if not os.path.exists(hist_path):
+        return render_template('portal/admin_retailers.html',
+                               retailers=[],
+                               alert_count=ds.get_unacknowledged_count())
+    
+    df = pd.read_excel(hist_path)
+    df['Date'] = pd.to_datetime(df['Date'])
+    
+    # Get latest month's retailer counts per brand
+    latest_date = df['Date'].max()
+    latest_month = df[df['Date'].dt.to_period('M') == latest_date.to_period('M')]
+    sales_data = latest_month[latest_month['Vch Type'] == 'Sales']
+    
+    retailer_stats = []
+    for brand in sorted(sales_data['Brand Partner'].unique()):
+        brand_data = sales_data[sales_data['Brand Partner'] == brand]
+        stats = {
+            'brand': brand,
+            'store_count': brand_data['Particulars'].nunique(),
+            'sku_count': brand_data['SKUs'].nunique(),
+            'total_revenue': brand_data['Sales_Value'].sum(),
+            'last_order': brand_data['Date'].max().strftime('%Y-%m-%d'),
+            'status': 'Active' if len(brand_data) > 0 else 'Inactive'
+        }
+        retailer_stats.append(stats)
+    
+    return render_template('portal/admin_retailers.html',
+                           retailers=retailer_stats,
+                           alert_count=ds.get_unacknowledged_count())
 
 
 # ── Home / Upload ─────────────────────────────────────────────────────────────

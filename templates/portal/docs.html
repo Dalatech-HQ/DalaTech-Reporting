@@ -1,0 +1,397 @@
+{% extends "portal/base.html" %}
+{% block title %}How It Works — DALA Analytics{% endblock %}
+{% block page_title %}How It Works{% endblock %}
+
+{% block head %}
+<style>
+  .docs-container {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  .doc-section {
+    background: var(--white);
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 8px rgba(27,43,94,.07);
+  }
+  .doc-section h2 {
+    color: var(--navy);
+    font-size: 20px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--gray);
+  }
+  .doc-section h3 {
+    color: var(--text);
+    font-size: 16px;
+    margin: 20px 0 12px;
+  }
+  .doc-section p {
+    line-height: 1.7;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+  .doc-section ul, .doc-section ol {
+    margin: 12px 0;
+    padding-left: 24px;
+  }
+  .doc-section li {
+    margin: 8px 0;
+    line-height: 1.6;
+  }
+  .doc-section code {
+    background: #f4f4f4;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: 'Consolas', monospace;
+    font-size: 13px;
+    color: #e83e8c;
+  }
+  .doc-section pre {
+    background: #2d2d2d;
+    color: #f8f8f2;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .highlight-box {
+    background: rgba(27,43,94,.06);
+    border-left: 4px solid var(--navy);
+    padding: 16px 20px;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0;
+  }
+  .warning-box {
+    background: rgba(232,25,44,.06);
+    border-left: 4px solid var(--red);
+    padding: 16px 20px;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0;
+  }
+  .success-box {
+    background: rgba(30,132,73,.06);
+    border-left: 4px solid var(--green);
+    padding: 16px 20px;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0;
+  }
+  .data-flow-diagram {
+    background: #f8f9fa;
+    border: 2px dashed var(--gray);
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    margin: 20px 0;
+  }
+  .flow-step {
+    display: inline-block;
+    background: var(--navy);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    margin: 8px;
+    font-weight: 600;
+  }
+  .flow-arrow {
+    font-size: 24px;
+    color: var(--muted);
+    margin: 0 8px;
+  }
+  .version-badge {
+    display: inline-block;
+    background: var(--green);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="docs-container">
+  
+  <!-- HEADER -->
+  <div style="text-align: center; margin-bottom: 32px;">
+    <h1 style="color: var(--navy); font-size: 32px; margin-bottom: 8px;">DALA Analytics Documentation</h1>
+    <p class="text-muted">Understanding the system for developers and power users</p>
+    <span class="version-badge">Version 2.1</span>
+  </div>
+
+  <!-- ARCHITECTURE OVERVIEW -->
+  <div class="doc-section">
+    <h2>🏗️ Architecture Overview</h2>
+    
+    <p>DALA Analytics is a Flask-based web application that processes Tally ERP export data to generate sales reports, insights, and forecasts for brand partners.</p>
+    
+    <div class="data-flow-diagram">
+      <div class="flow-step">📊 Tally Export (.xlsx)</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step">🔄 Ingestion</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step">📈 KPI Calculation</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step">💾 SQLite Storage</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step">🌐 Web Portal</div>
+    </div>
+    
+    <h3>Key Components</h3>
+    <ul>
+      <li><strong>Flask Web Server:</strong> Handles HTTP requests, serves templates and static files</li>
+      <li><strong>SQLite Database:</strong> Stores reports, KPIs, alerts, and brand tokens</li>
+      <li><strong>Pandas:</strong> Data manipulation and analysis engine</li>
+      <li><strong>Playwright:</strong> PDF generation from HTML templates</li>
+      <li><strong>Chart.js:</strong> Interactive visualizations in the browser</li>
+    </ul>
+  </div>
+
+  <!-- DATA FLOW -->
+  <div class="doc-section">
+    <h2>📊 Data Flow</h2>
+    
+    <h3>1. File Upload (Ingestion)</h3>
+    <p>When a Tally Excel file is uploaded:</p>
+    <ol>
+      <li><code>load_and_clean()</code> in <code>modules/ingestion.py</code> reads the file</li>
+      <li>Column names are standardized (e.g., 'Brand Partners' → 'Brand Partner')</li>
+      <li>Data types are converted (dates, numeric values)</li>
+      <li>Invalid rows are filtered out</li>
+    </ol>
+    
+    <div class="highlight-box">
+      <strong>Key File:</strong> <code>modules/ingestion.py</code> — Modify this to change how data is parsed.
+    </div>
+    
+    <h3>2. KPI Calculation</h3>
+    <p>For each brand, the system calculates:</p>
+    <ul>
+      <li>Total revenue and quantity sold</li>
+      <li>Unique stores and SKU count</li>
+      <li>Repeat purchase rate (% of stores with multiple orders)</li>
+      <li>Stock levels and days of cover</li>
+      <li>Week-over-week growth rates</li>
+      <li>Performance scores (0-100 grading system)</li>
+    </ul>
+    
+    <div class="highlight-box">
+      <strong>Key File:</strong> <code>modules/kpi.py</code> — Add new metrics here.
+    </div>
+    
+    <h3>3. Historical Analysis</h3>
+    <p>The <code>modules/historical.py</code> module provides:</p>
+    <ul>
+      <li>Month-over-Month (MoM) growth calculations</li>
+      <li>Trend detection (accelerating/decelerating/stable)</li>
+      <li>Insights generation ("What's working / not working")</li>
+      <li>Color scheme rotation by month</li>
+    </ul>
+  </div>
+
+  <!-- DATABASE SCHEMA -->
+  <div class="doc-section">
+    <h2>💾 Database Schema</h2>
+    
+    <p>The system uses SQLite with the following tables:</p>
+    
+    <h3>reports</h3>
+    <pre>id | month_label | start_date | end_date | total_revenue | brand_count | generated_at</pre>
+    
+    <h3>brand_kpis</h3>
+    <pre>id | report_id | brand_name | total_revenue | num_stores | repeat_pct | perf_grade | ...</pre>
+    
+    <h3>daily_sales</h3>
+    <pre>id | report_id | brand_name | date | revenue | qty</pre>
+    
+    <h3>alerts</h3>
+    <pre>id | report_id | brand_name | alert_type | severity | message | acknowledged</pre>
+    
+    <h3>brand_tokens</h3>
+    <pre>id | brand_name | token | email | whatsapp | active</pre>
+    
+    <div class="success-box">
+      <strong>Location:</strong> <code>dala_data.db</code> in project root. Use any SQLite browser to inspect.
+    </div>
+  </div>
+
+  <!-- MODULE GUIDE -->
+  <div class="doc-section">
+    <h2>📦 Module Guide</h2>
+    
+    <h3>modules/ingestion.py</h3>
+    <p>Data loading and cleaning functions:</p>
+    <ul>
+      <li><code>load_and_clean(file)</code> — Main entry point for file processing</li>
+      <li><code>filter_by_date(df, start, end)</code> — Date range filtering</li>
+      <li><code>split_by_brand(df)</code> — Separate data by brand partner</li>
+    </ul>
+    
+    <h3>modules/kpi.py</h3>
+    <p>Metric calculations:</p>
+    <ul>
+      <li><code>calculate_kpis(brand_df)</code> — Full KPI suite for a brand</li>
+      <li><code>calculate_perf_score(kpis, portfolio_avg)</code> — 0-100 scoring</li>
+      <li><code>generate_narrative(kpis)</code> — Human-readable summary</li>
+    </ul>
+    
+    <h3>modules/historical.py</h3>
+    <p>Trend analysis (NEW):</p>
+    <ul>
+      <li><code>get_brand_monthly_history(df, brand)</code> — Monthly metrics with MoM</li>
+      <li><code>generate_insights(history)</code> — AI-style recommendations</li>
+      <li><code>get_color_scheme_for_month(y, m)</code> — Monthly color rotation</li>
+    </ul>
+    
+    <h3>modules/charts_html.py</h3>
+    <p>Chart generation for PDF reports:</p>
+    <ul>
+      <li>14 chart types: top stores, products, trends, heatmaps, sparklines</li>
+      <li>Returns base64-encoded PNG images</li>
+    </ul>
+    
+    <h3>modules/geocoding.py</h3>
+    <p>Store location mapping (NEW):</p>
+    <ul>
+      <li><code>geocode_store(name)</code> — Convert store name to lat/lng</li>
+      <li>Caching system to minimize API calls</li>
+    </ul>
+  </div>
+
+  <!-- ADDING NEW FEATURES -->
+  <div class="doc-section">
+    <h2>➕ Adding New Features</h2>
+    
+    <h3>Step 1: Add Backend Logic</h3>
+    <p>Create or modify modules in <code>modules/</code>:</p>
+    <ol>
+      <li>Create your function (e.g., <code>modules/new_feature.py</code>)</li>
+      <li>Add unit tests if applicable</li>
+      <li>Import in <code>app.py</code></li>
+    </ol>
+    
+    <h3>Step 2: Create API Route</h3>
+    <p>Add to <code>app.py</code>:</p>
+    <pre>@app.route('/api/new-feature')
+def new_feature():
+    result = your_function()
+    return jsonify(result)</pre>
+    
+    <h3>Step 3: Build Frontend</h3>
+    <p>Create template in <code>templates/portal/</code>:</p>
+    <ol>
+      <li>Extend <code>base.html</code></li>
+      <li>Add navigation link in sidebar</li>
+      <li>Use Chart.js for visualizations</li>
+    </ol>
+    
+    <h3>Step 4: Update Documentation</h3>
+    <div class="warning-box">
+      <strong>REQUIRED:</strong> Update this page (<code>templates/portal/docs.html</code>) with your changes!
+      <br>Also update the version badge at the top.
+    </div>
+  </div>
+
+  <!-- CONFIGURATION -->
+  <div class="doc-section">
+    <h2>⚙️ Configuration</h2>
+    
+    <h3>Environment Variables</h3>
+    <table class="data-table" style="margin-top: 12px;">
+      <thead>
+        <tr>
+          <th>Variable</th>
+          <th>Purpose</th>
+          <th>Required?</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>SECRET_KEY</code></td>
+          <td>Flask session security</td>
+          <td>Yes (production)</td>
+        </tr>
+        <tr>
+          <td><code>GOOGLE_MAPS_API_KEY</code></td>
+          <td>Store geocoding for maps</td>
+          <td>No (optional)</td>
+        </tr>
+        <tr>
+          <td><code>SMTP_HOST</code>, <code>SMTP_USER</code>, etc.</td>
+          <td>Email delivery</td>
+          <td>No (optional)</td>
+        </tr>
+        <tr>
+          <td><code>TWILIO_ACCOUNT_SID</code>, etc.</td>
+          <td>WhatsApp delivery</td>
+          <td>No (optional)</td>
+        </tr>
+      </tbody>
+    </table>
+    
+    <h3>Google Sheets Integration</h3>
+    <p>To enable Google Sheets export:</p>
+    <ol>
+      <li>Run <code>python setup_oauth.py</code> to authenticate</li>
+      <li>Or place service account JSON at <code>google_credentials.json</code></li>
+      <li>Set folder ID in <code>google_folder_id.txt</code></li>
+    </ol>
+  </div>
+
+  <!-- CHANGELOG -->
+  <div class="doc-section">
+    <h2>📝 Changelog</h2>
+    
+    <h3>v2.1 (Current) — March 2026</h3>
+    <ul>
+      <li>✨ <strong>NEW:</strong> Trend Analysis dashboard with MoM growth tracking</li>
+      <li>✨ <strong>NEW:</strong> Historical data support (21 months: May 2024 → Feb 2026)</li>
+      <li>✨ <strong>NEW:</strong> Monthly color theme rotation</li>
+      <li>✨ <strong>NEW:</strong> "What is working / not working / next steps" insights</li>
+      <li>✨ <strong>NEW:</strong> Store repeat purchase analysis with map view</li>
+      <li>✨ <strong>NEW:</strong> Admin retailer count dashboard</li>
+      <li>✨ <strong>NEW:</strong> Public "How It Works" documentation</li>
+      <li>✨ <strong>NEW:</strong> Import Wizard with 6-step workflow</li>
+      <li>🎨 Enhanced dashboard UI with red theme matching PowerBI</li>
+      <li>📊 Interactive charts using Chart.js</li>
+      <li>🗺️ Google Maps integration for store geocoding</li>
+    </ul>
+    
+    <h3>v2.0 — February 2026</h3>
+    <ul>
+      <li>Initial release of DALA Analytics Portal</li>
+      <li>PDF and HTML report generation</li>
+      <li>Brand partner portal with token access</li>
+      <li>Smart alerts system</li>
+      <li>Email and WhatsApp delivery</li>
+    </ul>
+  </div>
+
+  <!-- CONTRIBUTING -->
+  <div class="doc-section">
+    <h2>🤝 Contributing</h2>
+    
+    <p>When making changes:</p>
+    
+    <div class="warning-box">
+      <strong>Checklist:</strong>
+      <ul style="margin: 8px 0;">
+        <li>☐ Update this documentation</li>
+        <li>☐ Increment version number</li>
+        <li>☐ Add changelog entry</li>
+        <li>☐ Test with historical data</li>
+        <li>☐ Verify mobile responsiveness</li>
+      </ul>
+    </div>
+    
+    <h3>Contact</h3>
+    <p>For questions or support, contact the DALA Technologies development team.</p>
+  </div>
+
+</div>
+
+{% endblock %}
