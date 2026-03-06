@@ -104,13 +104,24 @@ def api_preview():
 
     # ── Basic stats ───────────────────────────────────────────────────────────
     row_count = len(df)
-    date_min  = df['Date'].min()
-    date_max  = df['Date'].max()
+    
+    # For large historical files, limit preview to most recent 3 months
+    # to avoid timeouts while still giving useful preview
+    is_large_file = row_count > 10000
+    if is_large_file:
+        date_max_all = df['Date'].max()
+        date_min_preview = date_max_all - pd.Timedelta(days=90)
+        preview_df = df[df['Date'] >= date_min_preview].copy()
+    else:
+        preview_df = df
+    
+    date_min  = preview_df['Date'].min()
+    date_max  = preview_df['Date'].max()
     file_size_kb = round(file.content_length / 1024, 1) if file.content_length else 0
 
     # ── Vch type breakdown ────────────────────────────────────────────────────
-    vch_counts = df['Vch Type'].value_counts().to_dict()
-    sales_df = df[df['Vch Type'] == 'Sales']
+    vch_counts = preview_df['Vch Type'].value_counts().to_dict()
+    sales_df = preview_df[preview_df['Vch Type'] == 'Sales']
 
     # ── Brand analysis ────────────────────────────────────────────────────────
     known_brands = set(ds.get_all_brands_in_db())
