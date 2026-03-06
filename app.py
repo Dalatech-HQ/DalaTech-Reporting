@@ -1766,6 +1766,91 @@ def whatsapp_webhook():
     )
 
 
+# ── Google Drive Sync ──────────────────────────────────────────────────────────
+
+@app.route('/drive-sync')
+def drive_sync_dashboard():
+    """Admin dashboard for Google Drive sync status."""
+    alert_count = ds.get_unacknowledged_count()
+    
+    try:
+        from modules.drive_sync import SyncState, DRIVE_FOLDERS
+        sync_state = SyncState()
+        
+        # Get recent files for each folder
+        folders_data = []
+        for folder in DRIVE_FOLDERS:
+            folder_data = {
+                'name': folder['name'],
+                'id': folder['id'],
+                'recent_files': []
+            }
+            
+            # Get files for this folder from state
+            for file_id, file_info in sync_state.state.get('files', {}).items():
+                if file_info.get('folder_id') == folder['id']:
+                    folder_data['recent_files'].append({
+                        'name': file_info.get('name', 'Unknown'),
+                        'modifiedTime': file_info.get('modifiedTime', ''),
+                        'status': file_info.get('status', 'pending')
+                    })
+            
+            # Sort by modified time
+            folder_data['recent_files'].sort(
+                key=lambda x: x.get('modifiedTime', ''), 
+                reverse=True
+            )
+            folders_data.append(folder_data)
+        
+        return render_template('portal/drive_sync.html',
+                               sync_status='active',
+                               auto_sync=True,
+                               stats={
+                                   'total_imports': sync_state.state['stats']['total_imports'],
+                                   'total_errors': sync_state.state['stats']['total_errors'],
+                                   'files_tracked': len(sync_state.state['files']),
+                               },
+                               folders=folders_data,
+                               recent_activity=[],
+                               alert_count=alert_count)
+    except Exception as e:
+        return render_template('portal/drive_sync.html',
+                               sync_status='error',
+                               auto_sync=False,
+                               stats={'total_imports': 0, 'total_errors': 0, 'files_tracked': 0},
+                               folders=[],
+                               recent_activity=[{'type': 'error', 'time': datetime.now().strftime('%H:%M'), 'message': str(e)}],
+                               alert_count=alert_count)
+
+
+@app.route('/api/drive-sync/trigger', methods=['POST'])
+def api_drive_sync_trigger():
+    """Manually trigger a sync check."""
+    try:
+        from modules.drive_sync import DriveSyncOrchestrator
+        orchestrator = DriveSyncOrchestrator()
+        results = orchestrator.check_all_folders()
+        
+        success_count = sum(1 for r in results if r.get('status') == 'success')
+        error_count = sum(1 for r in results if r.get('status') == 'error')
+        
+        return jsonify({
+            'success': True,
+            'imported': success_count,
+            'errors': error_count,
+            'results': results
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/drive-sync/toggle', methods=['POST'])
+def api_drive_sync_toggle():
+    """Toggle automatic sync on/off."""
+    # TODO: Implement auto-sync toggle
+    return jsonify({'success': True, 'auto_sync': True})
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':

@@ -1,0 +1,258 @@
+{% extends "portal/base.html" %}
+{% block title %}Drive Sync - DALA Analytics{% endblock %}
+{% block page_title %}Google Drive Sync{% endblock %}
+
+{% block content %}
+<style>
+  .sync-card {
+    background: var(--white);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(27,43,94,.07);
+  }
+  .sync-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .sync-status.active { background: rgba(30,132,73,.1); color: var(--green); }
+  .sync-status.paused { background: rgba(192,146,42,.1); color: var(--amber); }
+  .sync-status.error { background: rgba(232,25,44,.1); color: var(--red); }
+  
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .stat-box {
+    background: var(--bg);
+    padding: 16px;
+    border-radius: 8px;
+    text-align: center;
+  }
+  .stat-number {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--navy);
+  }
+  .stat-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .5px;
+  }
+  
+  .folder-card {
+    border: 1.5px solid var(--gray);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .folder-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .folder-name {
+    font-weight: 700;
+    color: var(--navy);
+  }
+  .folder-id {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: monospace;
+  }
+  
+  .file-list {
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  .file-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--gray);
+    font-size: 12px;
+  }
+  .file-item:last-child { border-bottom: none; }
+  .file-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .file-status.imported { background: rgba(30,132,73,.1); color: var(--green); }
+  .file-status.error { background: rgba(232,25,44,.1); color: var(--red); }
+  .file-status.pending { background: rgba(46,134,193,.1); color: var(--blue); }
+  
+  .action-btn {
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all .15s;
+  }
+  .action-btn:disabled { opacity: .5; cursor: not-allowed; }
+  
+  .log-entry {
+    font-family: monospace;
+    font-size: 11px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--gray);
+  }
+  .log-entry.success { color: var(--green); }
+  .log-entry.error { color: var(--red); }
+  .log-entry.info { color: var(--muted); }
+</style>
+
+<!-- Status Overview -->
+<div class="sync-card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    <div>
+      <h3 style="color:var(--navy);margin-bottom:4px;">Sync Status</h3>
+      <p class="text-muted fs-sm">Automatic import from Google Drive folders</p>
+    </div>
+    <span class="sync-status {% if sync_status == 'active' %}active{% elif sync_status == 'error' %}error{% else %}paused{% endif %}">
+      {% if sync_status == 'active' %}🟢 Active{% elif sync_status == 'error' %}🔴 Error{% else %}🟡 Paused{% endif %}
+    </span>
+  </div>
+  
+  <div class="stat-grid">
+    <div class="stat-box">
+      <div class="stat-number">{{ stats.total_imports }}</div>
+      <div class="stat-label">Files Imported</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-number">{{ stats.total_errors }}</div>
+      <div class="stat-label">Errors</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-number">{{ stats.files_tracked }}</div>
+      <div class="stat-label">Files Tracked</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-number">{{ folders|length }}</div>
+      <div class="stat-label">Folders</div>
+    </div>
+  </div>
+  
+  <div style="display:flex;gap:12px;">
+    <button class="action-btn btn-primary" onclick="triggerSync()" id="syncBtn">
+      🔄 Check Now
+    </button>
+    <button class="action-btn btn-outline" onclick="toggleAutoSync()">
+      {% if auto_sync %}⏸ Pause Auto-Sync{% else %}▶ Resume Auto-Sync{% endif %}
+    </button>
+    <a href="/drive-sync/logs" class="action-btn btn-outline">📋 View Logs</a>
+  </div>
+</div>
+
+<!-- Folders -->
+<div class="sync-card">
+  <h4 style="color:var(--navy);margin-bottom:16px;">Monitored Folders</h4>
+  
+  {% for folder in folders %}
+  <div class="folder-card">
+    <div class="folder-header">
+      <div>
+        <div class="folder-name">{{ folder.name }}</div>
+        <div class="folder-id">{{ folder.id }}</div>
+      </div>
+      <a href="https://drive.google.com/drive/folders/{{ folder.id }}" target="_blank" class="btn btn-sm btn-outline">
+        Open in Drive ↗
+      </a>
+    </div>
+    
+    {% if folder.recent_files %}
+    <div class="file-list">
+      {% for file in folder.recent_files %}
+      <div class="file-item">
+        <div style="display:flex;align-items:center;gap:8px;">
+          📄 {{ file.name }}
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="text-muted fs-sm">{{ file.modifiedTime[:10] }}</span>
+          <span class="file-status {{ file.status }}">
+            {% if file.status == 'imported' %}✓ Imported{% elif file.status == 'error' %}✗ Error{% else %}⏳ Pending{% endif %}
+          </span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted fs-sm">No files processed yet</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Recent Activity -->
+<div class="sync-card">
+  <h4 style="color:var(--navy);margin-bottom:16px;">Recent Activity</h4>
+  
+  {% if recent_activity %}
+  <div class="file-list">
+    {% for activity in recent_activity %}
+    <div class="log-entry {{ activity.type }}">
+      [{{ activity.time }}] {{ activity.message }}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-muted fs-sm">No recent activity</p>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function triggerSync() {
+  const btn = document.getElementById('syncBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Checking...';
+  
+  try {
+    const res = await fetch('/api/drive-sync/trigger', { method: 'POST' });
+    const data = await res.json();
+    
+    if (data.success) {
+      alert(`Sync complete!\nImported: ${data.imported}\nErrors: ${data.errors}`);
+      location.reload();
+    } else {
+      alert('Sync failed: ' + data.error);
+    }
+  } catch (e) {
+    alert('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔄 Check Now';
+  }
+}
+
+async function toggleAutoSync() {
+  try {
+    const res = await fetch('/api/drive-sync/toggle', { method: 'POST' });
+    const data = await res.json();
+    
+    if (data.success) {
+      location.reload();
+    }
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+</script>
+{% endblock %}

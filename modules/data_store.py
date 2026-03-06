@@ -274,6 +274,17 @@ class DataStore:
             ).fetchone()
             return dict(row) if row else None
 
+    def get_report_by_date_range(self, start_date: str, end_date: str):
+        """Check if a report already exists for this date range."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT * FROM reports 
+                   WHERE start_date = ? AND end_date = ?
+                   ORDER BY generated_at DESC LIMIT 1""",
+                (start_date, end_date)
+            ).fetchone()
+            return dict(row) if row else None
+
     # ── Brand KPI operations ──────────────────────────────────────────────────
 
     def save_brand_kpis(self, report_id, brand_name, kpis,
