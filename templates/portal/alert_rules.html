@@ -1,0 +1,155 @@
+{% extends "portal/base.html" %}
+{% block title %}Alert Rules — DALA Analytics{% endblock %}
+{% block page_title %}Smart Alert Rules{% endblock %}
+
+{% block head %}
+<style>
+  .rules-layout { display:grid; grid-template-columns:380px 1fr; gap:24px; }
+  @media(max-width:900px){.rules-layout{grid-template-columns:1fr;}}
+  .metric-badge { font-size:11px; padding:2px 8px; border-radius:10px; background:rgba(27,43,94,.08); color:var(--navy); font-weight:600; }
+  .rule-row { display:grid; grid-template-columns:1fr auto auto; gap:12px; align-items:center; padding:14px 16px; border-radius:8px; background:var(--white); border:1px solid var(--gray); margin-bottom:8px; }
+  .rule-row.inactive { opacity:.5; }
+  .operator-display { font-size:18px; font-weight:800; color:var(--navy); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rules-layout">
+
+  <!-- New Rule Form -->
+  <div>
+    <div class="card">
+      <h3 class="text-navy fw-bold mb-2">Create Alert Rule</h3>
+      <p class="text-muted fs-sm mb-3">Rules run automatically on every new report import.</p>
+      <form method="POST" action="/api/save_alert_rule">
+        <div class="form-group">
+          <label class="form-label">Rule Name</label>
+          <input class="form-control" name="rule_name" placeholder="e.g. Revenue Drop Warning" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Apply To</label>
+          <select class="form-control" name="brand_filter">
+            <option value="all">All Brands</option>
+            {% for brand in all_brands %}
+            <option value="{{ brand }}">{{ brand }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Metric</label>
+          <select class="form-control" name="metric" id="metricSelect">
+            <option value="total_revenue">Total Revenue (₦)</option>
+            <option value="repeat_pct">Repeat Purchase Rate (%)</option>
+            <option value="num_stores">Store Count</option>
+            <option value="stock_days_cover">Stock Days Cover</option>
+            <option value="perf_score">Performance Score (0-100)</option>
+            <option value="wow_rev_change">WoW Revenue Change (%)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Condition</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <select class="form-control" name="operator">
+              <option value="lt">Less than (&lt;)</option>
+              <option value="lte">Less than or equal (≤)</option>
+              <option value="gt">Greater than (&gt;)</option>
+              <option value="gte">Greater than or equal (≥)</option>
+            </select>
+            <input class="form-control" name="threshold" type="number" step="any" placeholder="Value" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Severity</label>
+          <select class="form-control" name="severity">
+            <option value="high">High — Critical action needed</option>
+            <option value="medium" selected>Medium — Monitor closely</option>
+            <option value="low">Low — Informational</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Create Rule</button>
+      </form>
+    </div>
+
+    <!-- Built-in Rule Suggestions -->
+    <div class="card mt-3">
+      <h4 class="text-navy fw-bold mb-2">Suggested Rules</h4>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Click to pre-fill the form above.</div>
+      {% set suggestions = [
+        ('Revenue below ₦500K alert', 'all', 'total_revenue', 'lt', 500000, 'high'),
+        ('Repeat rate below 20%', 'all', 'repeat_pct', 'lt', 20, 'medium'),
+        ('Stock cover < 7 days critical', 'all', 'stock_days_cover', 'lt', 7, 'high'),
+        ('WoW revenue drop > 30%', 'all', 'wow_rev_change', 'lt', -30, 'high'),
+        ('Performance score below 40', 'all', 'perf_score', 'lt', 40, 'medium'),
+      ] %}
+      {% for sug in suggestions %}
+      <div onclick="prefill('{{ sug[0] }}','{{ sug[1] }}','{{ sug[2] }}','{{ sug[3] }}','{{ sug[4] }}','{{ sug[5] }}')"
+           style="padding:8px 12px;border-radius:6px;cursor:pointer;border:1px solid var(--gray);margin-bottom:6px;font-size:12px;font-weight:600;transition:background .15s;"
+           onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
+        {{ sug[0] }}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Existing Rules -->
+  <div>
+    <div class="card">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-navy fw-bold">Active Rules ({{ rules|length }})</h3>
+        <span class="badge badge-blue">{{ rules|selectattr('active','equalto',1)|list|length }} active</span>
+      </div>
+
+      {% if not rules %}
+      <div style="text-align:center;padding:40px;color:var(--muted);">
+        No rules yet. Create your first rule on the left.
+      </div>
+      {% else %}
+      {% for rule in rules %}
+      <div class="rule-row {% if not rule.active %}inactive{% endif %}">
+        <div>
+          <div style="font-weight:700;font-size:13px;">{{ rule.rule_name }}</div>
+          <div class="flex items-center gap-2 mt-1">
+            <span class="metric-badge">{{ rule.metric | replace('_',' ') | title }}</span>
+            <span class="operator-display">{% if rule.operator=='lt' %}&lt;{% elif rule.operator=='lte' %}≤{% elif rule.operator=='gt' %}&gt;{% else %}≥{% endif %}</span>
+            <span style="font-weight:700;">{{ rule.threshold }}</span>
+            {% if rule.brand_filter != 'all' %}
+            <span class="badge badge-blue" style="font-size:9px;">{{ rule.brand_filter }}</span>
+            {% endif %}
+          </div>
+        </div>
+        <span class="badge {% if rule.severity=='high' %}badge-red{% elif rule.severity=='medium' %}badge-amber{% else %}badge-blue{% endif %}">
+          {{ rule.severity | capitalize }}
+        </span>
+        <div style="display:flex;gap:6px;">
+          <form method="POST" action="/api/toggle_alert_rule" style="display:inline;">
+            <input type="hidden" name="rule_id" value="{{ rule.id }}">
+            <input type="hidden" name="active" value="{{ 0 if rule.active else 1 }}">
+            <button class="btn btn-outline btn-sm">{{ 'Pause' if rule.active else 'Enable' }}</button>
+          </form>
+          <form method="POST" action="/api/delete_alert_rule" style="display:inline;"
+                onsubmit="return confirm('Delete this rule?');">
+            <input type="hidden" name="rule_id" value="{{ rule.id }}">
+            <button class="btn btn-sm" style="background:rgba(232,25,44,.1);color:var(--red);border:none;">Delete</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function prefill(name, brand, metric, operator, threshold, severity) {
+  document.querySelector('[name=rule_name]').value = name;
+  document.querySelector('[name=brand_filter]').value = brand;
+  document.querySelector('[name=metric]').value = metric;
+  document.querySelector('[name=operator]').value = operator;
+  document.querySelector('[name=threshold]').value = threshold;
+  document.querySelector('[name=severity]').value = severity;
+  document.querySelector('[name=rule_name]').scrollIntoView({behavior:'smooth'});
+}
+</script>
+{% endblock %}

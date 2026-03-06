@@ -1,0 +1,177 @@
+{% extends "portal/base.html" %}
+{% block title %}Brand Leaderboard — DALA Analytics{% endblock %}
+{% block page_title %}Brand Leaderboard{% endblock %}
+
+{% block topbar_actions %}
+  {% if report %}
+  <span class="text-muted fs-sm">{{ report.month_label }}</span>
+  {% endif %}
+{% endblock %}
+
+{% block head %}
+<style>
+  .podium { display:flex; align-items:flex-end; justify-content:center; gap:12px; margin:28px 0; }
+  .podium-slot { text-align:center; }
+  .podium-block { border-radius:8px 8px 0 0; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; padding:12px 8px; }
+  .podium-1 { background:linear-gradient(135deg,#F5C518,#F0A500); height:120px; width:110px; }
+  .podium-2 { background:linear-gradient(135deg,#C0C0C0,#999); height:85px; width:100px; }
+  .podium-3 { background:linear-gradient(135deg,#CD7F32,#A0522D); height:65px; width:100px; }
+  .podium-medal { font-size:24px; }
+  .podium-name { font-size:11px; font-weight:700; color:white; text-align:center; margin-top:6px; word-break:break-word; line-height:1.3; }
+  .podium-revenue { font-size:10px; color:rgba(255,255,255,.85); margin-top:2px; }
+  .category-tabs { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
+  .cat-tab { padding:7px 16px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; border:2px solid var(--gray); background:var(--white); color:var(--muted); transition:all .15s; }
+  .cat-tab.active { background:var(--navy); color:white; border-color:var(--navy); }
+  .rank-row { display:grid; grid-template-columns:36px 1fr auto auto; gap:12px; align-items:center; padding:12px 16px; border-radius:8px; margin-bottom:6px; background:var(--white); box-shadow:0 1px 4px rgba(27,43,94,.06); }
+  .rank-row:hover { box-shadow:0 3px 10px rgba(27,43,94,.12); }
+  .rank-num { font-size:20px; font-weight:800; color:var(--muted); text-align:center; }
+  .rank-num.top3 { color:var(--navy); }
+  .rank-bar-wrap { height:6px; background:var(--gray); border-radius:3px; margin-top:4px; }
+  .rank-bar { height:100%; border-radius:3px; background:var(--navy); }
+  .award-badge { font-size:18px; }
+  .category-section { display:none; }
+  .category-section.active { display:block; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if not leaderboard %}
+<div class="card" style="text-align:center;padding:60px 40px;">
+  <div style="font-size:48px;margin-bottom:16px;">🏆</div>
+  <h3 style="color:var(--navy);margin-bottom:8px;">No Data Yet</h3>
+  <p class="text-muted">Import a Tally file to generate brand rankings.</p>
+  <a href="/import" class="btn btn-primary" style="margin-top:16px;">Import Data</a>
+</div>
+{% else %}
+
+<!-- Podium for top 3 revenue -->
+{% if leaderboard|length >= 3 %}
+<div class="card mb-3">
+  <h3 class="text-navy fw-bold" style="text-align:center;margin-bottom:4px;">Revenue Champions</h3>
+  <p class="text-muted" style="text-align:center;font-size:12px;margin-bottom:0;">{{ report.month_label if report }}</p>
+  <div class="podium">
+    <div class="podium-slot">
+      <div class="podium-block podium-2">
+        <div class="podium-medal">🥈</div>
+        <div class="podium-name">{{ leaderboard[1].brand_name }}</div>
+        <div class="podium-revenue">₦{{ "{:,.0f}".format(leaderboard[1].total_revenue / 1000) }}K</div>
+      </div>
+    </div>
+    <div class="podium-slot">
+      <div class="podium-block podium-1">
+        <div class="podium-medal">🥇</div>
+        <div class="podium-name">{{ leaderboard[0].brand_name }}</div>
+        <div class="podium-revenue">₦{{ "{:,.0f}".format(leaderboard[0].total_revenue / 1000) }}K</div>
+      </div>
+    </div>
+    <div class="podium-slot">
+      <div class="podium-block podium-3">
+        <div class="podium-medal">🥉</div>
+        <div class="podium-name">{{ leaderboard[2].brand_name }}</div>
+        <div class="podium-revenue">₦{{ "{:,.0f}".format(leaderboard[2].total_revenue / 1000) }}K</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Category Tabs -->
+<div class="category-tabs">
+  <div class="cat-tab active" onclick="showCat('revenue',this)">Revenue</div>
+  <div class="cat-tab" onclick="showCat('stores',this)">Store Reach</div>
+  <div class="cat-tab" onclick="showCat('repeat',this)">Repeat Rate</div>
+  <div class="cat-tab" onclick="showCat('score',this)">Performance Score</div>
+</div>
+
+<!-- Revenue Ranking -->
+<div class="category-section active" id="cat-revenue">
+  {% set max_rev = leaderboard[0].total_revenue if leaderboard else 1 %}
+  {% for b in leaderboard %}
+  <div class="rank-row">
+    <div class="rank-num {% if loop.index <= 3 %}top3{% endif %}">{{ loop.index }}</div>
+    <div>
+      <div style="font-weight:600;font-size:13px;">{{ b.brand_name }}</div>
+      <div class="rank-bar-wrap"><div class="rank-bar" style="width:{{ (b.total_revenue / max_rev * 100)|round }}%;background:{% if loop.index==1 %}#F0A500{% elif loop.index==2 %}#888{% elif loop.index==3 %}#CD7F32{% else %}var(--navy){% endif %};"></div></div>
+    </div>
+    <div style="text-align:right;">
+      <div class="fw-bold" style="font-size:14px;">₦{{ "{:,.0f}".format(b.total_revenue) }}</div>
+      <div class="fs-sm text-muted">{{ b.perf_grade }} grade</div>
+    </div>
+    <div class="award-badge">{% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% elif loop.index <= 10 %}⭐{% else %}{% endif %}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Store Reach Ranking -->
+{% set by_stores = leaderboard | sort(attribute='num_stores', reverse=True) %}
+<div class="category-section" id="cat-stores">
+  {% set max_stores = by_stores[0].num_stores if by_stores else 1 %}
+  {% for b in by_stores %}
+  <div class="rank-row">
+    <div class="rank-num {% if loop.index <= 3 %}top3{% endif %}">{{ loop.index }}</div>
+    <div>
+      <div style="font-weight:600;font-size:13px;">{{ b.brand_name }}</div>
+      <div class="rank-bar-wrap"><div class="rank-bar" style="width:{{ (b.num_stores / max_stores * 100)|round }}%;background:var(--blue);"></div></div>
+    </div>
+    <div style="text-align:right;">
+      <div class="fw-bold" style="font-size:14px;">{{ b.num_stores }} stores</div>
+      <div class="fs-sm text-muted">{{ b.unique_skus }} SKUs</div>
+    </div>
+    <div class="award-badge">{% if loop.index == 1 %}🏪{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% else %}{% endif %}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Repeat Rate Ranking -->
+{% set by_repeat = leaderboard | sort(attribute='repeat_pct', reverse=True) %}
+<div class="category-section" id="cat-repeat">
+  {% set max_rep = by_repeat[0].repeat_pct if by_repeat else 1 %}
+  {% for b in by_repeat %}
+  <div class="rank-row">
+    <div class="rank-num {% if loop.index <= 3 %}top3{% endif %}">{{ loop.index }}</div>
+    <div>
+      <div style="font-weight:600;font-size:13px;">{{ b.brand_name }}</div>
+      <div class="rank-bar-wrap"><div class="rank-bar" style="width:{{ (b.repeat_pct / [max_rep,1]|max * 100)|round }}%;background:var(--green);"></div></div>
+    </div>
+    <div style="text-align:right;">
+      <div class="fw-bold" style="font-size:14px;">{{ b.repeat_pct|round(1) }}%</div>
+      <div class="fs-sm text-muted">repeat stores</div>
+    </div>
+    <div class="award-badge">{% if loop.index == 1 %}🔁{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% else %}{% endif %}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Performance Score Ranking -->
+{% set by_score = leaderboard | sort(attribute='perf_score', reverse=True) %}
+<div class="category-section" id="cat-score">
+  {% set max_score = by_score[0].perf_score if by_score else 100 %}
+  {% for b in by_score %}
+  <div class="rank-row">
+    <div class="rank-num {% if loop.index <= 3 %}top3{% endif %}">{{ loop.index }}</div>
+    <div>
+      <div style="font-weight:600;font-size:13px;">{{ b.brand_name }}</div>
+      <div class="rank-bar-wrap"><div class="rank-bar" style="width:{{ b.perf_score }}%;background:{% if b.perf_score>=80 %}var(--green){% elif b.perf_score>=60 %}var(--blue){% elif b.perf_score>=40 %}var(--amber){% else %}var(--red){% endif %};"></div></div>
+    </div>
+    <div style="text-align:right;">
+      <div class="fw-bold" style="font-size:14px;">{{ b.perf_score }}/100</div>
+      <span class="grade-badge" style="background:{% if b.perf_grade=='A' %}#1E8449{% elif b.perf_grade=='B' %}#2E86C1{% elif b.perf_grade=='C' %}#C0922A{% else %}#E8192C{% endif %};">{{ b.perf_grade }}</span>
+    </div>
+    <div class="award-badge">{% if loop.index == 1 %}🏅{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% else %}{% endif %}</div>
+  </div>
+  {% endfor %}
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showCat(cat, el) {
+  document.querySelectorAll('.category-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.cat-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('cat-' + cat).classList.add('active');
+  el.classList.add('active');
+}
+</script>
+{% endblock %}

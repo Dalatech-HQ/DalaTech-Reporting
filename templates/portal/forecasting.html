@@ -1,0 +1,159 @@
+{% extends "portal/base.html" %}
+{% block title %}Forecasting — DALA Analytics{% endblock %}
+{% block page_title %}Forecasting & Predictions{% endblock %}
+
+{% block topbar_actions %}
+  <span class="text-muted fs-sm">Based on {{ report.month_label if report else 'latest data' }}</span>
+{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  .forecast-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:20px; }
+  .forecast-card { background:var(--white); border-radius:12px; padding:20px; box-shadow:0 2px 8px rgba(27,43,94,.08); border-left:4px solid var(--navy); position:relative; overflow:hidden; }
+  .forecast-card.growing  { border-left-color:#1E8449; }
+  .forecast-card.declining{ border-left-color:#E8192C; }
+  .forecast-card.stable   { border-left-color:#2E86C1; }
+  .forecast-value { font-size:26px; font-weight:800; color:var(--navy); margin:8px 0 2px; }
+  .forecast-delta { font-size:13px; font-weight:600; }
+  .forecast-delta.up   { color:#1E8449; }
+  .forecast-delta.down { color:#E8192C; }
+  .confidence-ring { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; }
+  .confidence-dot { width:8px; height:8px; border-radius:50%; }
+  .conf-high   { background:#1E8449; }
+  .conf-medium { background:#C0922A; }
+  .conf-low    { background:#7A849E; }
+  .depletion-bar { height:6px; border-radius:3px; background:var(--gray); margin:8px 0; overflow:hidden; }
+  .depletion-fill { height:100%; border-radius:3px; transition:width .4s; }
+  .stock-ok       { background:#1E8449; }
+  .stock-warning  { background:#C0922A; }
+  .stock-critical { background:#E8192C; }
+  .trend-spark { height:50px; margin-top:8px; }
+  .summary-cards { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:28px; }
+  @media(max-width:900px){.summary-cards{grid-template-columns:1fr 1fr;}}
+</style>
+{% endblock %}
+
+{% block content %}
+{% if not forecasts %}
+<div class="card" style="text-align:center;padding:60px 40px;">
+  <div style="font-size:48px;margin-bottom:16px;">🔮</div>
+  <h3 style="color:var(--navy);margin-bottom:8px;">No Forecast Data Yet</h3>
+  <p class="text-muted">Import at least 2 months of data to enable revenue forecasting and trend analysis.</p>
+  <a href="/import" class="btn btn-primary" style="margin-top:16px;">Import Data</a>
+</div>
+{% else %}
+
+<!-- Summary Strip -->
+<div class="summary-cards">
+  <div class="kpi-card green">
+    <div class="kpi-label">Growing Brands</div>
+    <div class="kpi-value">{{ growing_count }}</div>
+    <div class="kpi-sub">Upward revenue trend</div>
+  </div>
+  <div class="kpi-card red">
+    <div class="kpi-label">Declining Brands</div>
+    <div class="kpi-value">{{ declining_count }}</div>
+    <div class="kpi-sub">Needs attention</div>
+  </div>
+  <div class="kpi-card blue">
+    <div class="kpi-label">Stable Brands</div>
+    <div class="kpi-value">{{ stable_count }}</div>
+    <div class="kpi-sub">Consistent performance</div>
+  </div>
+  <div class="kpi-card amber">
+    <div class="kpi-label">Stock Warnings</div>
+    <div class="kpi-value">{{ stock_warning_count }}</div>
+    <div class="kpi-sub">Critical or watch</div>
+  </div>
+</div>
+
+<!-- Portfolio Forecast Chart -->
+<div class="card mb-3">
+  <div class="flex items-center justify-between mb-2">
+    <h3 class="text-navy fw-bold">Portfolio Revenue Forecast — Next Month</h3>
+    <span class="badge badge-blue">{{ forecasts|length }} brands</span>
+  </div>
+  <canvas id="portfolioForecastChart" height="80"></canvas>
+</div>
+
+<!-- Brand Forecast Cards -->
+<h3 class="text-navy fw-bold mb-2">Brand-Level Forecasts</h3>
+<div class="forecast-grid">
+{% for brand, fc in forecasts.items() %}
+{% set dep = depletions.get(brand, {}) %}
+{% set trend_class = 'growing' if fc.growth_label == 'Growing' else ('declining' if fc.growth_label == 'Declining' else 'stable') %}
+<div class="forecast-card {{ trend_class }}">
+  <div class="flex items-center justify-between">
+    <div style="font-size:13px;font-weight:700;color:var(--text);">{{ brand }}</div>
+    <span class="badge {% if fc.growth_label == 'Growing' %}badge-green{% elif fc.growth_label == 'Declining' %}badge-red{% else %}badge-blue{% endif %}">
+      {{ fc.growth_label }}
+    </span>
+  </div>
+  <div class="forecast-value">₦{{ "{:,.0f}".format(fc.forecast) }}</div>
+  <div class="forecast-delta {% if fc.pct_change >= 0 %}up{% else %}down{% endif %}">
+    {% if fc.pct_change >= 0 %}▲{% else %}▼{% endif %}
+    {{ fc.pct_change|abs|round(1) }}% vs last month
+  </div>
+  <div class="flex items-center gap-2 mt-1">
+    <div class="confidence-ring">
+      <div class="confidence-dot conf-{{ fc.confidence.lower() }}"></div>
+      {{ fc.confidence }} confidence
+    </div>
+    <span class="text-muted fs-sm">· {{ fc.data_points }} months data</span>
+  </div>
+
+  {% if dep.urgency in ('critical','warning') %}
+  <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--gray);">
+    <div class="flex items-center justify-between fs-sm">
+      <span class="text-muted">Stock depletion</span>
+      <span class="fw-bold {% if dep.urgency == 'critical' %}text-red{% else %}" style="color:var(--amber){% endif %}">
+        {{ dep.days_remaining }}d left
+      </span>
+    </div>
+    <div class="depletion-bar">
+      <div class="depletion-fill stock-{{ dep.urgency }}"
+           style="width:{{ [dep.days_remaining / 30 * 100, 100]|min }}%"></div>
+    </div>
+    <div class="fs-sm text-muted">Depletes {{ dep.depletion_date }}</div>
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const forecasts = {{ forecasts_json | safe }};
+if (Object.keys(forecasts).length > 0) {
+  const brands = Object.keys(forecasts).slice(0, 20);
+  const forecastVals = brands.map(b => forecasts[b].forecast);
+  const colors = brands.map(b => {
+    const lbl = forecasts[b].growth_label;
+    return lbl === 'Growing' ? '#1E8449' : lbl === 'Declining' ? '#E8192C' : '#2E86C1';
+  });
+  new Chart(document.getElementById('portfolioForecastChart'), {
+    type: 'bar',
+    data: {
+      labels: brands,
+      datasets: [{
+        label: 'Forecast Revenue (₦)',
+        data: forecastVals,
+        backgroundColor: colors,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { ticks: { callback: v => '₦' + (v/1000000).toFixed(1) + 'M' } },
+        x: { ticks: { maxRotation: 45, font: { size: 10 } } }
+      }
+    }
+  });
+}
+</script>
+{% endblock %}

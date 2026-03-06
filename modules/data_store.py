@@ -113,10 +113,57 @@ class DataStore:
                     created_at  TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS brand_targets (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    brand_name   TEXT NOT NULL,
+                    month_label  TEXT NOT NULL,
+                    target_revenue REAL DEFAULT 0,
+                    target_stores  INTEGER DEFAULT 0,
+                    target_repeat_pct REAL DEFAULT 0,
+                    set_by       TEXT DEFAULT 'manual',
+                    created_at   TEXT NOT NULL,
+                    UNIQUE(brand_name, month_label)
+                );
+
+                CREATE TABLE IF NOT EXISTS alert_rules (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    rule_name    TEXT NOT NULL,
+                    brand_filter TEXT DEFAULT 'all',
+                    metric       TEXT NOT NULL,
+                    operator     TEXT NOT NULL,
+                    threshold    REAL NOT NULL,
+                    severity     TEXT DEFAULT 'medium',
+                    active       INTEGER DEFAULT 1,
+                    created_at   TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS activity_log (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    action       TEXT NOT NULL,
+                    detail       TEXT,
+                    brand_name   TEXT,
+                    report_id    INTEGER,
+                    created_at   TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS scheduled_reports (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    label        TEXT NOT NULL,
+                    cron_expr    TEXT NOT NULL,
+                    file_path    TEXT,
+                    start_offset INTEGER DEFAULT 1,
+                    end_offset   INTEGER DEFAULT 0,
+                    active       INTEGER DEFAULT 1,
+                    last_run     TEXT,
+                    created_at   TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_bkpis_report ON brand_kpis(report_id);
                 CREATE INDEX IF NOT EXISTS idx_daily_report ON daily_sales(report_id);
                 CREATE INDEX IF NOT EXISTS idx_daily_brand  ON daily_sales(brand_name);
                 CREATE INDEX IF NOT EXISTS idx_alerts_report ON alerts(report_id);
+                CREATE INDEX IF NOT EXISTS idx_activity_log ON activity_log(created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_targets_brand ON brand_targets(brand_name);
             """)
 
     # ── Report operations ─────────────────────────────────────────────────────
@@ -382,3 +429,143 @@ class DataStore:
                 (report_id, brand_a, brand_b)
             ).fetchall()
             return {r['brand_name']: dict(r) for r in rows}
+
+    # ── Target operations ─────────────────────────────────────────────────────
+
+    def set_target(self, brand_name, month_label, target_revenue=0,
+                   target_stores=0, target_repeat_pct=0, set_by='manual'):
+        now = datetime.now().isoformat(timespec='seconds')
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO brand_targets
+                   (brand_name, month_label, target_revenue, target_stores,
+                    target_repeat_pct, set_by, created_at)
+                   VALUES (?,?,?,?,?,?,?)
+                   ON CONFLICT(brand_name, month_label) DO UPDATE SET
+                     target_revenue=excluded.target_revenue,
+                     target_stores=excluded.target_stores,
+                     target_repeat_pct=excluded.target_repeat_pct,
+                     set_by=excluded.set_by""",
+                (brand_name, month_label, target_revenue, target_stores,
+                 target_repeat_pct, set_by, now)
+            )
+
+    def get_target(self, brand_name, month_label):
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM brand_targets WHERE brand_name=? AND month_label=?",
+                (brand_name, month_label)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_all_targets(self, month_label=None):
+        with self._connect() as conn:
+            if month_label:
+                rows = conn.execute(
+                    "SELECT * FROM brand_targets WHERE month_label=? ORDER BY brand_name",
+                    (month_label,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM brand_targets ORDER BY month_label DESC, brand_name"
+                ).fetchall()
+            return [dict(r) for r in rows]
+
+    # ── Alert rule operations ─────────────────────────────────────────────────
+
+    def save_alert_rule(self, rule_name, brand_filter, metric, operator,
+                        threshold, severity='medium'):
+        now = datetime.now().isoformat(timespec='seconds')
+        with self._connect() as conn:
+            cur = conn.execute(
+                """INSERT INTO alert_rules
+                   (rule_name, brand_filter, metric, operator, threshold, severity, active, created_at)
+                   VALUES (?,?,?,?,?,?,1,?)""",
+                (rule_name, brand_filter, metric, operator, threshold, severity, now)
+            )
+            return cur.lastrowid
+
+    def get_alert_rules(self, active_only=True):
+        with self._connect() as conn:
+            if active_only:
+                rows = conn.execute(
+                    "SELECT * FROM alert_rules WHERE active=1 ORDER BY created_at DESC"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM alert_rules ORDER BY created_at DESC"
+                ).fetchall()
+            return [dict(r) for r in rows]
+
+    def toggle_alert_rule(self, rule_id, active):
+        with self._connect() as conn:
+            conn.execute("UPDATE alert_rules SET active=? WHERE id=?", (1 if active else 0, rule_id))
+
+    def delete_alert_rule(self, rule_id):
+        with self._connect() as conn:
+            conn.execute("DELETE FROM alert_rules WHERE id=?", (rule_id,))
+
+    # ── Activity log operations ───────────────────────────────────────────────
+
+    def log_activity(self, action, detail=None, brand_name=None, report_id=None):
+        now = datetime.now().isoformat(timespec='seconds')
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO activity_log (action, detail, brand_name, report_id, created_at) VALUES (?,?,?,?,?)",
+                (action, detail, brand_name, report_id, now)
+            )
+
+    def get_activity_log(self, limit=50):
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(
+                "SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()]
+
+    # ── SKU analytics queries ─────────────────────────────────────────────────
+
+    def get_top_skus_all_brands(self, report_id, limit=20):
+        """Return top SKUs by revenue across all brands for a report."""
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(
+                """SELECT brand_name, unique_skus, total_revenue
+                   FROM brand_kpis WHERE report_id=?
+                   ORDER BY total_revenue DESC LIMIT ?""",
+                (report_id, limit)
+            ).fetchall()]
+
+    def get_leaderboard(self, report_id):
+        """Return brands ranked across 4 categories for a report."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT brand_name, total_revenue, num_stores, repeat_pct,
+                          perf_score, perf_grade, unique_skus, avg_revenue_per_store
+                   FROM brand_kpis WHERE report_id=?
+                   ORDER BY total_revenue DESC""",
+                (report_id,)
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_scheduled_reports(self):
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(
+                "SELECT * FROM scheduled_reports ORDER BY created_at DESC"
+            ).fetchall()]
+
+    def save_scheduled_report(self, label, cron_expr, file_path=None,
+                               start_offset=1, end_offset=0):
+        now = datetime.now().isoformat(timespec='seconds')
+        with self._connect() as conn:
+            cur = conn.execute(
+                """INSERT INTO scheduled_reports
+                   (label, cron_expr, file_path, start_offset, end_offset, active, created_at)
+                   VALUES (?,?,?,?,?,1,?)""",
+                (label, cron_expr, file_path, start_offset, end_offset, now)
+            )
+            return cur.lastrowid
+
+    def update_scheduled_last_run(self, schedule_id):
+        now = datetime.now().isoformat(timespec='seconds')
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE scheduled_reports SET last_run=? WHERE id=?", (now, schedule_id)
+            )

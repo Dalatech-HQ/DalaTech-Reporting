@@ -4,394 +4,396 @@
 
 {% block head %}
 <style>
-  .docs-container {
-    max-width: 900px;
-    margin: 0 auto;
-  }
-  .doc-section {
-    background: var(--white);
-    border-radius: 12px;
-    padding: 28px;
-    margin-bottom: 24px;
-    box-shadow: 0 2px 8px rgba(27,43,94,.07);
-  }
-  .doc-section h2 {
-    color: var(--navy);
-    font-size: 20px;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 2px solid var(--gray);
-  }
-  .doc-section h3 {
-    color: var(--text);
-    font-size: 16px;
-    margin: 20px 0 12px;
-  }
-  .doc-section p {
-    line-height: 1.7;
-    color: var(--text);
-    margin-bottom: 12px;
-  }
-  .doc-section ul, .doc-section ol {
-    margin: 12px 0;
-    padding-left: 24px;
-  }
-  .doc-section li {
-    margin: 8px 0;
-    line-height: 1.6;
-  }
-  .doc-section code {
-    background: #f4f4f4;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-family: 'Consolas', monospace;
-    font-size: 13px;
-    color: #e83e8c;
-  }
-  .doc-section pre {
-    background: #2d2d2d;
-    color: #f8f8f2;
-    padding: 16px;
-    border-radius: 8px;
-    overflow-x: auto;
-    font-size: 13px;
-    line-height: 1.5;
-  }
-  .highlight-box {
-    background: rgba(27,43,94,.06);
-    border-left: 4px solid var(--navy);
-    padding: 16px 20px;
-    border-radius: 0 8px 8px 0;
-    margin: 16px 0;
-  }
-  .warning-box {
-    background: rgba(232,25,44,.06);
-    border-left: 4px solid var(--red);
-    padding: 16px 20px;
-    border-radius: 0 8px 8px 0;
-    margin: 16px 0;
-  }
-  .success-box {
-    background: rgba(30,132,73,.06);
-    border-left: 4px solid var(--green);
-    padding: 16px 20px;
-    border-radius: 0 8px 8px 0;
-    margin: 16px 0;
-  }
-  .data-flow-diagram {
-    background: #f8f9fa;
-    border: 2px dashed var(--gray);
-    border-radius: 12px;
-    padding: 24px;
-    text-align: center;
-    margin: 20px 0;
-  }
-  .flow-step {
-    display: inline-block;
-    background: var(--navy);
-    color: white;
-    padding: 12px 20px;
-    border-radius: 8px;
-    margin: 8px;
-    font-weight: 600;
-  }
-  .flow-arrow {
-    font-size: 24px;
-    color: var(--muted);
-    margin: 0 8px;
-  }
-  .version-badge {
-    display: inline-block;
-    background: var(--green);
-    color: white;
-    padding: 4px 12px;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 700;
-  }
+  .docs-container { max-width:960px; margin:0 auto; }
+  .doc-section { background:var(--white); border-radius:12px; padding:28px; margin-bottom:24px; box-shadow:0 2px 8px rgba(27,43,94,.07); }
+  .doc-section h2 { color:var(--navy); font-size:19px; margin-bottom:16px; padding-bottom:12px; border-bottom:2px solid var(--gray); }
+  .doc-section h3 { color:var(--text); font-size:15px; margin:20px 0 10px; font-weight:700; }
+  .doc-section h4 { color:var(--muted); font-size:13px; margin:12px 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; }
+  .doc-section p { line-height:1.75; color:var(--text); margin-bottom:10px; font-size:13px; }
+  .doc-section ul, .doc-section ol { margin:10px 0; padding-left:22px; }
+  .doc-section li { margin:6px 0; line-height:1.65; font-size:13px; }
+  .doc-section code { background:#f0f2f8; padding:2px 7px; border-radius:4px; font-family:'Consolas',monospace; font-size:12px; color:#e83e8c; }
+  .doc-section pre { background:#1B2B5E; color:#f8f8f2; padding:16px; border-radius:8px; overflow-x:auto; font-size:12px; line-height:1.5; }
+  .highlight-box { background:rgba(27,43,94,.05); border-left:4px solid var(--navy); padding:14px 18px; border-radius:0 8px 8px 0; margin:14px 0; }
+  .warning-box { background:rgba(232,25,44,.05); border-left:4px solid var(--red); padding:14px 18px; border-radius:0 8px 8px 0; margin:14px 0; }
+  .success-box { background:rgba(30,132,73,.05); border-left:4px solid var(--green); padding:14px 18px; border-radius:0 8px 8px 0; margin:14px 0; }
+  .info-box { background:rgba(46,134,193,.05); border-left:4px solid var(--blue); padding:14px 18px; border-radius:0 8px 8px 0; margin:14px 0; }
+  .data-flow { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:20px; background:#f8f9fa; border-radius:10px; border:2px dashed var(--gray); margin:16px 0; }
+  .flow-step { background:var(--navy); color:white; padding:10px 16px; border-radius:8px; font-weight:600; font-size:12px; }
+  .flow-arrow { font-size:18px; color:var(--muted); }
+  .version-badge { background:var(--green); color:white; padding:4px 12px; border-radius:12px; font-size:12px; font-weight:700; }
+  .feature-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:12px 0; }
+  @media(max-width:700px){.feature-grid{grid-template-columns:1fr;}}
+  .feature-chip { background:var(--bg); border:1px solid var(--gray); border-radius:8px; padding:10px 14px; font-size:12px; }
+  .feature-chip strong { display:block; color:var(--navy); margin-bottom:2px; }
+  .api-route { font-family:'Consolas',monospace; background:#1B2B5E; color:#79D2FF; padding:10px 14px; border-radius:6px; font-size:12px; margin:6px 0; display:block; }
+  .api-method { color:#FFD479; font-weight:700; margin-right:8px; }
+  .table-mini { width:100%; border-collapse:collapse; font-size:12px; margin:10px 0; }
+  .table-mini th { background:var(--navy); color:white; padding:7px 10px; font-size:10px; text-transform:uppercase; }
+  .table-mini td { padding:7px 10px; border-bottom:1px solid var(--gray); }
+  .table-mini tr:last-child td { border:none; }
 </style>
 {% endblock %}
 
 {% block content %}
-
 <div class="docs-container">
-  
+
   <!-- HEADER -->
-  <div style="text-align: center; margin-bottom: 32px;">
-    <h1 style="color: var(--navy); font-size: 32px; margin-bottom: 8px;">DALA Analytics Documentation</h1>
-    <p class="text-muted">Understanding the system for developers and power users</p>
-    <span class="version-badge">Version 2.1</span>
+  <div style="text-align:center;margin-bottom:32px;">
+    <h1 style="color:var(--navy);font-size:30px;margin-bottom:8px;">DALA Analytics — System Documentation</h1>
+    <p class="text-muted">Everything you need to understand, operate, and extend the platform.</p>
+    <span class="version-badge">Version 3.0</span>
+    <span style="margin-left:8px;font-size:12px;color:var(--muted);">Updated March 2026</span>
   </div>
 
-  <!-- ARCHITECTURE OVERVIEW -->
+  <!-- WHAT IS DALA ANALYTICS -->
   <div class="doc-section">
-    <h2>🏗️ Architecture Overview</h2>
-    
-    <p>DALA Analytics is a Flask-based web application that processes Tally ERP export data to generate sales reports, insights, and forecasts for brand partners.</p>
-    
-    <div class="data-flow-diagram">
-      <div class="flow-step">📊 Tally Export (.xlsx)</div>
-      <span class="flow-arrow">→</span>
-      <div class="flow-step">🔄 Ingestion</div>
-      <span class="flow-arrow">→</span>
-      <div class="flow-step">📈 KPI Calculation</div>
-      <span class="flow-arrow">→</span>
-      <div class="flow-step">💾 SQLite Storage</div>
-      <span class="flow-arrow">→</span>
-      <div class="flow-step">🌐 Web Portal</div>
+    <h2>What is DALA Analytics?</h2>
+    <p>DALA Analytics is a full-stack web application built for DALA Technologies to process monthly sales data exported from Tally ERP. It automatically generates brand-level performance reports, tracks historical trends, forecasts future revenue, and delivers insights directly to brand partners — all from a single Tally Excel upload.</p>
+
+    <div class="data-flow">
+      <div class="flow-step">Tally Export (.xlsx / .csv)</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">Import Wizard</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">KPI Calculation</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">SQLite Database</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">Reports + Dashboards</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">Brand Portal / Delivery</div>
     </div>
-    
-    <h3>Key Components</h3>
-    <ul>
-      <li><strong>Flask Web Server:</strong> Handles HTTP requests, serves templates and static files</li>
-      <li><strong>SQLite Database:</strong> Stores reports, KPIs, alerts, and brand tokens</li>
-      <li><strong>Pandas:</strong> Data manipulation and analysis engine</li>
-      <li><strong>Playwright:</strong> PDF generation from HTML templates</li>
-      <li><strong>Chart.js:</strong> Interactive visualizations in the browser</li>
-    </ul>
   </div>
 
-  <!-- DATA FLOW -->
+  <!-- ALL PAGES & FEATURES -->
   <div class="doc-section">
-    <h2>📊 Data Flow</h2>
-    
-    <h3>1. File Upload (Ingestion)</h3>
-    <p>When a Tally Excel file is uploaded:</p>
+    <h2>All Pages & Features</h2>
+
+    <h3>Home ( <code>/</code> )</h3>
+    <p>The home page shows the latest report summary, quick-access upload card, recent report history, and system health. It's your starting point for every new month's analysis.</p>
+
+    <h3>Import Data ( <code>/import</code> )</h3>
+    <p>A 6-step intelligent wizard that guides you from raw file to full report set:</p>
     <ol>
-      <li><code>load_and_clean()</code> in <code>modules/ingestion.py</code> reads the file</li>
-      <li>Column names are standardized (e.g., 'Brand Partners' → 'Brand Partner')</li>
-      <li>Data types are converted (dates, numeric values)</li>
-      <li>Invalid rows are filtered out</li>
+      <li><strong>Upload</strong> — Drag-drop a Tally .xlsx or .csv file. Select the date range you want to analyse.</li>
+      <li><strong>Analyzing</strong> — The file is instantly profiled in under 3 seconds (no reports generated yet). You see brand count, row count, date coverage, and quality issues.</li>
+      <li><strong>Review</strong> — Full preview: brand revenue bars, date calendar heatmap, top stores, top products, data quality score (0–100), missing-brand warnings, vs-last-month comparison.</li>
+      <li><strong>Configure</strong> — Choose exactly which brands to include. Override dates if needed.</li>
+      <li><strong>Generating</strong> — Live per-brand progress bars while PDFs, HTMLs, and database records are built in the background. Page polls every 600ms.</li>
+      <li><strong>Done</strong> — Direct links to Dashboard, Brand list, Portfolio HTML, and Alerts.</li>
     </ol>
-    
     <div class="highlight-box">
-      <strong>Key File:</strong> <code>modules/ingestion.py</code> — Modify this to change how data is parsed.
+      <strong>Large files:</strong> CSV files are read in 50,000-row chunks so even multi-year datasets (hundreds of MB) are processed without running out of memory. Excel files up to ~2 GB are supported.
     </div>
-    
-    <h3>2. KPI Calculation</h3>
-    <p>For each brand, the system calculates:</p>
+
+    <h3>Trends ( <code>/trends</code> )</h3>
+    <p>Historical trend analysis across all months of imported data (currently 21 months: May 2024 – Feb 2026).</p>
     <ul>
-      <li>Total revenue and quantity sold</li>
-      <li>Unique stores and SKU count</li>
-      <li>Repeat purchase rate (% of stores with multiple orders)</li>
-      <li>Stock levels and days of cover</li>
-      <li>Week-over-week growth rates</li>
-      <li>Performance scores (0-100 grading system)</li>
+      <li>Month-over-Month (MoM) revenue growth with colour-coded change indicators</li>
+      <li>Monthly colour theme rotation for visual variety</li>
+      <li>"What is working / not working / next steps" AI-style insight bullets</li>
+      <li>Store repeat purchase analysis with interactive Google Maps</li>
+      <li>Top stores by revenue with regional clustering</li>
     </ul>
-    
+
+    <h3>Dashboard ( <code>/dashboard</code> )</h3>
+    <p>Portfolio-level KPI overview for the most recently generated report. Shows total revenue, brand count, alert strip, and brand ranking table. All numbers come from the SQLite database — no file reading on load.</p>
+
+    <h3>Brand Partners ( <code>/brands</code> )</h3>
+    <p>Searchable table of all brands with performance grade badges, PDF/HTML download links, portal token sharing, and email/WhatsApp delivery buttons.</p>
+
+    <h3>Brand Detail ( <code>/brand/&lt;name&gt;</code> )</h3>
+    <p>Deep-dive for a single brand: KPI cards, 12-month Chart.js revenue history, forecast + stock depletion date, performance scorecard bars, and a one-click "Sync to Google Sheets" button.</p>
+
+    <h3>Forecasting ( <code>/forecasting</code> ) — NEW in v3.0</h3>
+    <p>Uses <code>modules/predictor.py</code> to project next month's revenue for every brand using a linear least-squares trend fitted to historical data.</p>
+    <ul>
+      <li>Growing / Stable / Declining classification per brand</li>
+      <li>Confidence level: High (≥6 months, R² ≥ 0.7), Medium, Low</li>
+      <li>Stock depletion date with urgency colour (critical / warning / ok)</li>
+      <li>Portfolio bar chart showing all 28 brands' forecasts side by side</li>
+    </ul>
+
+    <h3>Brand Leaderboard ( <code>/leaderboard</code> ) — NEW in v3.0</h3>
+    <p>Gamified brand rankings with Gold/Silver/Bronze podium for top 3 revenue brands. Four switchable categories: Revenue, Store Reach, Repeat Rate, Performance Score. Inline progress bars show each brand's relative standing.</p>
+
+    <h3>SKU Analytics ( <code>/sku-analytics</code> ) — NEW in v3.0</h3>
+    <p>Product-level analysis. Top 15 SKUs by revenue (horizontal bar chart), SKU count by brand (doughnut chart), and a searchable/filterable table covering every SKU in the current report. One-click CSV export.</p>
+
+    <h3>Targets ( <code>/targets</code> ) — NEW in v3.0</h3>
+    <p>Set monthly revenue targets per brand. Each brand card shows a circular progress ring (green ≥ 80%, amber 50–79%, red &lt; 50%). Summary cards show On Track / At Risk / Off Track / No Target counts portfolio-wide. Targets survive across imports and are stored in the <code>brand_targets</code> SQLite table.</p>
+
+    <h3>History ( <code>/history</code> )</h3>
+    <p>Month selector with Chart.js bar chart showing portfolio revenue across all imported months. Click any month to drill into that report.</p>
+
+    <h3>Compare ( <code>/compare</code> )</h3>
+    <p>Side-by-side comparison of any two brands from the same report. KPI cards, performance scores, and a VS divider layout.</p>
+
+    <h3>Alerts ( <code>/alerts</code> )</h3>
+    <p>Smart alert dashboard. Alerts are auto-generated on every import by <code>modules/alerts.py</code> (8 built-in rules). Unacknowledged count shown as red badge on nav and topbar bell. Click "Acknowledge" to dismiss.</p>
+
+    <h3>Alert Rules ( <code>/alert-rules</code> ) — NEW in v3.0</h3>
+    <p>Custom alert rule builder. Create rules that fire on any metric (revenue, repeat %, stock days, WoW change, performance score) with any comparison operator and threshold. Rules can be paused, resumed, or deleted. 5 pre-built suggestion templates included.</p>
+
+    <h3>Settings ( <code>/settings</code> )</h3>
+    <p>SMTP email config display, Twilio WhatsApp config, and brand token management table where you can update email/WhatsApp contacts per brand, regenerate access tokens, and copy portal links.</p>
+
+    <h3>Brand Portal ( <code>/portal/&lt;token&gt;</code> )</h3>
+    <p>Standalone brand-facing view (no sidebar). Each brand gets a unique UUID token link. Shows their KPIs, performance grade circle, revenue forecast, 12-month history chart, and PDF download button. Tokens can be regenerated from Settings.</p>
+
+    <h3>How It Works ( <code>/how-it-works</code> )</h3>
+    <p>This page. Always updated to reflect the current state of the system.</p>
+  </div>
+
+  <!-- DATA PIPELINE -->
+  <div class="doc-section">
+    <h2>Data Pipeline</h2>
+
+    <h3>1. File Ingestion ( <code>modules/ingestion.py</code> )</h3>
+    <p>Accepts <code>.xlsx</code>, <code>.xls</code> (Tally OLE2 format), and <code>.csv</code> files.</p>
+    <ul>
+      <li>Excel: tries <code>openpyxl</code> first, falls back to <code>xlrd</code> for binary .xls</li>
+      <li>CSV: reads in 50,000-row chunks (<code>chunksize=50000</code>) — no RAM ceiling</li>
+      <li>Column renames applied: <code>Brand Partners → Brand Partner</code>, <code>Retailers → SKUs</code>, <code>Value → Sales_Value</code></li>
+      <li>Type casting: dates parsed, quantities / values converted to float, strings stripped</li>
+      <li>Rows with unparseable dates are dropped</li>
+    </ul>
+
+    <h3>2. KPI Calculation ( <code>modules/kpi.py</code> )</h3>
+    <p>Per-brand metrics computed from the date-filtered DataFrame:</p>
+    <table class="table-mini">
+      <thead><tr><th>KPI</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>total_revenue / total_qty</td><td>Sum of Sales rows</td></tr>
+        <tr><td>num_stores</td><td>Unique Particulars (supermarkets/outlets)</td></tr>
+        <tr><td>unique_skus</td><td>Unique Retailers (product names)</td></tr>
+        <tr><td>repeat_pct</td><td>% stores with 2+ distinct Vch No. (reorders)</td></tr>
+        <tr><td>stock_days_cover</td><td>Closing stock ÷ avg daily sales</td></tr>
+        <tr><td>perf_score / perf_grade</td><td>Composite 0–100 score → A/B/C/D</td></tr>
+        <tr><td>wow_rev_change</td><td>Week-over-week revenue % change</td></tr>
+        <tr><td>peak_date / peak_revenue</td><td>Highest single-day revenue</td></tr>
+      </tbody>
+    </table>
+
+    <h3>3. Database Storage ( <code>modules/data_store.py</code> )</h3>
+    <p>SQLite with WAL journaling. Six tables:</p>
+    <table class="table-mini">
+      <thead><tr><th>Table</th><th>Contents</th></tr></thead>
+      <tbody>
+        <tr><td>reports</td><td>One row per import run (dates, totals, brand count)</td></tr>
+        <tr><td>brand_kpis</td><td>Full KPI set per brand per report</td></tr>
+        <tr><td>daily_sales</td><td>Daily revenue + qty per brand per report</td></tr>
+        <tr><td>alerts</td><td>Auto-generated alerts from each import</td></tr>
+        <tr><td>brand_tokens</td><td>UUID portal tokens + contact details per brand</td></tr>
+        <tr><td>brand_targets</td><td>Monthly revenue targets set manually</td></tr>
+        <tr><td>alert_rules</td><td>Custom threshold rules for auto-alerts</td></tr>
+        <tr><td>activity_log</td><td>Audit trail: imports, syncs, target changes</td></tr>
+      </tbody>
+    </table>
+
+    <h3>4. Alert Generation ( <code>modules/alerts.py</code> )</h3>
+    <p>8 built-in rules checked after every import:</p>
+    <ul>
+      <li>Revenue vs portfolio average (below 50% → high alert)</li>
+      <li>MoM revenue drop &gt; 25% (high) or &gt; 10% (medium)</li>
+      <li>Low stock: closing stock &lt; 7 days cover</li>
+      <li>No reorders in the period</li>
+      <li>Single-SKU risk (only 1 product generating all revenue)</li>
+      <li>Brand inactive (no sales rows in date range)</li>
+      <li>Revenue milestones: ₦5M, ₦10M, ₦20M crossed</li>
+      <li>Portfolio concentration risk (top brand &gt; 40% of total)</li>
+    </ul>
+    <p>Custom rules from the Alert Rules page layer on top of these built-in rules.</p>
+
+    <h3>5. Forecasting ( <code>modules/predictor.py</code> )</h3>
+    <p>Linear least-squares trend fitted to all available monthly revenue history.</p>
+    <ul>
+      <li>Forecast = last known revenue + slope</li>
+      <li>R² determines confidence: High (≥ 0.7, ≥ 6 months), Medium (≥ 0.4, ≥ 3 months), Low otherwise</li>
+      <li>Stock depletion date = report end date + stock_days_cover</li>
+      <li>Growth label: Growing (+5%/mo slope), Declining (−5%), Stable</li>
+    </ul>
+
+    <h3>6. Report Generation</h3>
+    <p>Two output formats per brand:</p>
+    <ul>
+      <li><strong>PDF</strong> — Generated by Playwright (Chromium) rendering an HTML template. Contains charts, narrative, KPI tables. Stored in <code>output/pdf/</code>.</li>
+      <li><strong>Interactive HTML</strong> — Standalone Plotly-powered report. No server needed to open. Stored in <code>output/html/</code>.</li>
+      <li><strong>Portfolio HTML</strong> — Single file covering all brands with a brand selector dropdown (client-side, zero server calls). Stored in <code>output/html/</code>.</li>
+    </ul>
+  </div>
+
+  <!-- GOOGLE INTEGRATIONS -->
+  <div class="doc-section">
+    <h2>Google Integrations</h2>
+
+    <h3>Google Maps ( <code>modules/geocoding.py</code> )</h3>
+    <p>Store names from the <code>Particulars</code> column (e.g., "Jendol Supermarket, Ajah") are geocoded via the Google Maps Geocoding API to latitude/longitude coordinates. These power the interactive store map in the Trends page.</p>
+    <ul>
+      <li>Requires <code>GOOGLE_MAPS_API_KEY</code> environment variable</li>
+      <li>Results are cached to minimise API calls</li>
+      <li>Map shows bubble size = store revenue, colour = revenue intensity</li>
+    </ul>
+
+    <h3>Google Sheets ( <code>modules/sheets.py</code> )</h3>
+    <p>Each brand's data can be pushed to a branded Google Sheet with DALA formatting (navy header, frozen row, alternating rows, view-only link sharing).</p>
+    <ul>
+      <li>Auth: uses <code>google_credentials.json</code> (service account) or <code>google_token.json</code> (OAuth2 via <code>python setup_oauth.py</code>)</li>
+      <li>Trigger from Brand Detail page → "Sync to Sheets" button, or via <code>POST /api/sync_sheets/&lt;brand&gt;</code></li>
+      <li>Returns a shareable URL embeddable in PDFs</li>
+    </ul>
+  </div>
+
+  <!-- DELIVERY -->
+  <div class="doc-section">
+    <h2>Report Delivery ( <code>modules/delivery.py</code> )</h2>
+
+    <h3>Email</h3>
+    <p>PDF reports sent via SMTP (Gmail App Password recommended). Each brand's PDF is attached. Configure in environment variables or Settings page.</p>
+    <pre>SMTP_HOST=smtp.gmail.com  SMTP_PORT=587
+SMTP_USER=your@gmail.com  SMTP_PASSWORD=app-password</pre>
+
+    <h3>WhatsApp</h3>
+    <p>Summary messages sent via Twilio WhatsApp API. The message includes brand name, revenue, top store, repeat rate, and grade. Requires a Twilio WhatsApp-enabled number.</p>
+    <pre>TWILIO_ACCOUNT_SID=ACxx...  TWILIO_AUTH_TOKEN=...
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886</pre>
+
+    <div class="info-box">
+      Both email and WhatsApp contact details per brand are set in <strong>Settings → Brand Token Management</strong>.
+    </div>
+  </div>
+
+  <!-- REST API -->
+  <div class="doc-section">
+    <h2>REST API v1 — NEW in v3.0</h2>
+    <p>Public JSON endpoints for integrations (Tally API, Power BI, external dashboards).</p>
+
+    <code class="api-route"><span class="api-method">GET</span>/api/v1/brands — All brands with latest KPIs</code>
+    <code class="api-route"><span class="api-method">GET</span>/api/v1/kpis/&lt;brand_name&gt; — 24-month KPI history for one brand</code>
+    <code class="api-route"><span class="api-method">GET</span>/api/v1/alerts — All unacknowledged alerts (JSON)</code>
+    <code class="api-route"><span class="api-method">GET</span>/api/v1/portfolio — Portfolio monthly revenue trend</code>
+    <code class="api-route"><span class="api-method">GET</span>/api/export/brands?format=csv — Download brand KPIs as CSV</code>
+    <code class="api-route"><span class="api-method">GET</span>/api/export/skus?format=csv — Download SKU summary as CSV</code>
+    <code class="api-route"><span class="api-method">GET</span>/api/export/alerts — Download all alerts as CSV</code>
+    <code class="api-route"><span class="api-method">POST</span>/api/sync_sheets/&lt;brand&gt; — Push brand data to Google Sheets</code>
+
     <div class="highlight-box">
-      <strong>Key File:</strong> <code>modules/kpi.py</code> — Add new metrics here.
-    </div>
-    
-    <h3>3. Historical Analysis</h3>
-    <p>The <code>modules/historical.py</code> module provides:</p>
-    <ul>
-      <li>Month-over-Month (MoM) growth calculations</li>
-      <li>Trend detection (accelerating/decelerating/stable)</li>
-      <li>Insights generation ("What's working / not working")</li>
-      <li>Color scheme rotation by month</li>
-    </ul>
-  </div>
-
-  <!-- DATABASE SCHEMA -->
-  <div class="doc-section">
-    <h2>💾 Database Schema</h2>
-    
-    <p>The system uses SQLite with the following tables:</p>
-    
-    <h3>reports</h3>
-    <pre>id | month_label | start_date | end_date | total_revenue | brand_count | generated_at</pre>
-    
-    <h3>brand_kpis</h3>
-    <pre>id | report_id | brand_name | total_revenue | num_stores | repeat_pct | perf_grade | ...</pre>
-    
-    <h3>daily_sales</h3>
-    <pre>id | report_id | brand_name | date | revenue | qty</pre>
-    
-    <h3>alerts</h3>
-    <pre>id | report_id | brand_name | alert_type | severity | message | acknowledged</pre>
-    
-    <h3>brand_tokens</h3>
-    <pre>id | brand_name | token | email | whatsapp | active</pre>
-    
-    <div class="success-box">
-      <strong>Location:</strong> <code>dala_data.db</code> in project root. Use any SQLite browser to inspect.
-    </div>
-  </div>
-
-  <!-- MODULE GUIDE -->
-  <div class="doc-section">
-    <h2>📦 Module Guide</h2>
-    
-    <h3>modules/ingestion.py</h3>
-    <p>Data loading and cleaning functions:</p>
-    <ul>
-      <li><code>load_and_clean(file)</code> — Main entry point for file processing</li>
-      <li><code>filter_by_date(df, start, end)</code> — Date range filtering</li>
-      <li><code>split_by_brand(df)</code> — Separate data by brand partner</li>
-    </ul>
-    
-    <h3>modules/kpi.py</h3>
-    <p>Metric calculations:</p>
-    <ul>
-      <li><code>calculate_kpis(brand_df)</code> — Full KPI suite for a brand</li>
-      <li><code>calculate_perf_score(kpis, portfolio_avg)</code> — 0-100 scoring</li>
-      <li><code>generate_narrative(kpis)</code> — Human-readable summary</li>
-    </ul>
-    
-    <h3>modules/historical.py</h3>
-    <p>Trend analysis (NEW):</p>
-    <ul>
-      <li><code>get_brand_monthly_history(df, brand)</code> — Monthly metrics with MoM</li>
-      <li><code>generate_insights(history)</code> — AI-style recommendations</li>
-      <li><code>get_color_scheme_for_month(y, m)</code> — Monthly color rotation</li>
-    </ul>
-    
-    <h3>modules/charts_html.py</h3>
-    <p>Chart generation for PDF reports:</p>
-    <ul>
-      <li>14 chart types: top stores, products, trends, heatmaps, sparklines</li>
-      <li>Returns base64-encoded PNG images</li>
-    </ul>
-    
-    <h3>modules/geocoding.py</h3>
-    <p>Store location mapping (NEW):</p>
-    <ul>
-      <li><code>geocode_store(name)</code> — Convert store name to lat/lng</li>
-      <li>Caching system to minimize API calls</li>
-    </ul>
-  </div>
-
-  <!-- ADDING NEW FEATURES -->
-  <div class="doc-section">
-    <h2>➕ Adding New Features</h2>
-    
-    <h3>Step 1: Add Backend Logic</h3>
-    <p>Create or modify modules in <code>modules/</code>:</p>
-    <ol>
-      <li>Create your function (e.g., <code>modules/new_feature.py</code>)</li>
-      <li>Add unit tests if applicable</li>
-      <li>Import in <code>app.py</code></li>
-    </ol>
-    
-    <h3>Step 2: Create API Route</h3>
-    <p>Add to <code>app.py</code>:</p>
-    <pre>@app.route('/api/new-feature')
-def new_feature():
-    result = your_function()
-    return jsonify(result)</pre>
-    
-    <h3>Step 3: Build Frontend</h3>
-    <p>Create template in <code>templates/portal/</code>:</p>
-    <ol>
-      <li>Extend <code>base.html</code></li>
-      <li>Add navigation link in sidebar</li>
-      <li>Use Chart.js for visualizations</li>
-    </ol>
-    
-    <h3>Step 4: Update Documentation</h3>
-    <div class="warning-box">
-      <strong>REQUIRED:</strong> Update this page (<code>templates/portal/docs.html</code>) with your changes!
-      <br>Also update the version badge at the top.
+      All endpoints return JSON unless a CSV format is specified. No authentication is required for GET endpoints (add Railway basic auth if needed in production).
     </div>
   </div>
 
   <!-- CONFIGURATION -->
   <div class="doc-section">
-    <h2>⚙️ Configuration</h2>
-    
-    <h3>Environment Variables</h3>
-    <table class="data-table" style="margin-top: 12px;">
-      <thead>
-        <tr>
-          <th>Variable</th>
-          <th>Purpose</th>
-          <th>Required?</th>
-        </tr>
-      </thead>
+    <h2>Configuration — Environment Variables</h2>
+    <table class="table-mini">
+      <thead><tr><th>Variable</th><th>Purpose</th><th>Required?</th></tr></thead>
       <tbody>
-        <tr>
-          <td><code>SECRET_KEY</code></td>
-          <td>Flask session security</td>
-          <td>Yes (production)</td>
-        </tr>
-        <tr>
-          <td><code>GOOGLE_MAPS_API_KEY</code></td>
-          <td>Store geocoding for maps</td>
-          <td>No (optional)</td>
-        </tr>
-        <tr>
-          <td><code>SMTP_HOST</code>, <code>SMTP_USER</code>, etc.</td>
-          <td>Email delivery</td>
-          <td>No (optional)</td>
-        </tr>
-        <tr>
-          <td><code>TWILIO_ACCOUNT_SID</code>, etc.</td>
-          <td>WhatsApp delivery</td>
-          <td>No (optional)</td>
-        </tr>
+        <tr><td><code>SECRET_KEY</code></td><td>Flask session encryption</td><td>Yes (production)</td></tr>
+        <tr><td><code>PORT</code></td><td>HTTP port (default 5000)</td><td>Auto (Railway sets it)</td></tr>
+        <tr><td><code>GOOGLE_MAPS_API_KEY</code></td><td>Store geocoding + Trends map</td><td>Optional</td></tr>
+        <tr><td><code>SMTP_HOST / SMTP_PORT</code></td><td>Email delivery server</td><td>Optional</td></tr>
+        <tr><td><code>SMTP_USER / SMTP_PASSWORD</code></td><td>Gmail credentials</td><td>Optional</td></tr>
+        <tr><td><code>SMTP_FROM</code></td><td>Sender address</td><td>Optional</td></tr>
+        <tr><td><code>TWILIO_ACCOUNT_SID</code></td><td>WhatsApp delivery</td><td>Optional</td></tr>
+        <tr><td><code>TWILIO_AUTH_TOKEN</code></td><td>Twilio auth</td><td>Optional</td></tr>
+        <tr><td><code>TWILIO_WHATSAPP_FROM</code></td><td>Twilio sender number</td><td>Optional</td></tr>
       </tbody>
     </table>
-    
-    <h3>Google Sheets Integration</h3>
-    <p>To enable Google Sheets export:</p>
+
+    <h3>Google Credentials Setup</h3>
     <ol>
-      <li>Run <code>python setup_oauth.py</code> to authenticate</li>
-      <li>Or place service account JSON at <code>google_credentials.json</code></li>
-      <li>Set folder ID in <code>google_folder_id.txt</code></li>
+      <li>Go to <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a></li>
+      <li>Create or open project <code>dala-report-automation</code></li>
+      <li>Enable: Sheets API, Drive API, Maps JavaScript API, Geocoding API</li>
+      <li>Service Account JSON already at <code>google_credentials.json</code> — do not commit</li>
+      <li>For Drive file ownership: run <code>python setup_oauth.py</code> once to create <code>google_token.json</code></li>
+      <li>Set target Google Drive folder in <code>google_folder_id.txt</code></li>
     </ol>
+
+    <h3>Railway Deployment</h3>
+    <p>The app deploys to Railway via <code>nixpacks.toml</code> which installs Chromium + all X11 libs for Playwright PDF generation. The gunicorn start command is set to 2 workers with a 120s timeout.</p>
+    <div class="success-box">
+      Push to <code>main</code> branch on GitHub → Railway auto-deploys in ~3 minutes.
+    </div>
+  </div>
+
+  <!-- MODULE GUIDE -->
+  <div class="doc-section">
+    <h2>Module Reference</h2>
+    <div class="feature-grid">
+      <div class="feature-chip"><strong>modules/ingestion.py</strong>load_and_clean, filter_by_date, split_by_brand. Handles xlsx/xls/csv. CSV is chunked.</div>
+      <div class="feature-chip"><strong>modules/kpi.py</strong>calculate_kpis, calculate_perf_score, generate_narrative. Core analytics per brand.</div>
+      <div class="feature-chip"><strong>modules/historical.py</strong>MoM trends, colour themes, insight generation, repeat purchase mapping.</div>
+      <div class="feature-chip"><strong>modules/charts.py</strong>5 matplotlib chart generators → PNG bytes (for ReportLab PDF).</div>
+      <div class="feature-chip"><strong>modules/charts_html.py</strong>14 Plotly chart types → HTML strings (for interactive reports).</div>
+      <div class="feature-chip"><strong>modules/html_generator.py</strong>Builds full-page interactive Plotly HTML report per brand.</div>
+      <div class="feature-chip"><strong>modules/pdf_generator_html.py</strong>Playwright renders HTML → PDF. Falls back gracefully if Chromium missing.</div>
+      <div class="feature-chip"><strong>modules/portfolio_generator.py</strong>Builds the multi-brand portfolio HTML with brand dropdown.</div>
+      <div class="feature-chip"><strong>modules/data_store.py</strong>SQLite layer. All reads/writes go through DataStore class.</div>
+      <div class="feature-chip"><strong>modules/alerts.py</strong>8 built-in alert rules. check_and_save_alerts, run_portfolio_alerts.</div>
+      <div class="feature-chip"><strong>modules/predictor.py</strong>Linear forecasting, stock depletion, growth labels.</div>
+      <div class="feature-chip"><strong>modules/delivery.py</strong>send_report_email, send_whatsapp_summary via Twilio.</div>
+      <div class="feature-chip"><strong>modules/sheets.py</strong>push_brand_to_sheets via Google Sheets API.</div>
+      <div class="feature-chip"><strong>modules/geocoding.py</strong>geocode_store, geocode_stores_batch via Google Maps.</div>
+    </div>
   </div>
 
   <!-- CHANGELOG -->
   <div class="doc-section">
-    <h2>📝 Changelog</h2>
-    
-    <h3>v2.1 (Current) — March 2026</h3>
+    <h2>Changelog</h2>
+
+    <h3>v3.0 — March 2026 (Current)</h3>
     <ul>
-      <li>✨ <strong>NEW:</strong> Trend Analysis dashboard with MoM growth tracking</li>
-      <li>✨ <strong>NEW:</strong> Historical data support (21 months: May 2024 → Feb 2026)</li>
-      <li>✨ <strong>NEW:</strong> Monthly color theme rotation</li>
-      <li>✨ <strong>NEW:</strong> "What is working / not working / next steps" insights</li>
-      <li>✨ <strong>NEW:</strong> Store repeat purchase analysis with map view</li>
-      <li>✨ <strong>NEW:</strong> Admin retailer count dashboard</li>
-      <li>✨ <strong>NEW:</strong> Public "How It Works" documentation</li>
-      <li>✨ <strong>NEW:</strong> Import Wizard with 6-step workflow</li>
-      <li>🎨 Enhanced dashboard UI with red theme matching PowerBI</li>
-      <li>📊 Interactive charts using Chart.js</li>
-      <li>🗺️ Google Maps integration for store geocoding</li>
+      <li><strong>NEW:</strong> Forecasting Dashboard — per-brand revenue forecasts with confidence, depletion dates, portfolio chart</li>
+      <li><strong>NEW:</strong> Brand Leaderboard — podium + 4 category rankings (Revenue, Stores, Repeat, Score)</li>
+      <li><strong>NEW:</strong> SKU Analytics — top SKUs, brand SKU mix, searchable/filterable table, CSV export</li>
+      <li><strong>NEW:</strong> Target Setting — monthly revenue targets with circular progress rings and On Track/At Risk/Off Track summary</li>
+      <li><strong>NEW:</strong> Alert Rules Builder — custom thresholds on any metric, operator, brand filter; pause/resume/delete</li>
+      <li><strong>NEW:</strong> REST API v1 — /api/v1/brands, /api/v1/kpis, /api/v1/alerts, /api/v1/portfolio</li>
+      <li><strong>NEW:</strong> Data Export — CSV/JSON download for brands, SKUs, alerts</li>
+      <li><strong>NEW:</strong> Google Sheets sync button on Brand Detail page</li>
+      <li><strong>NEW:</strong> Notification bell in topbar with unread alert count</li>
+      <li><strong>NEW:</strong> CSV + chunked large-file ingestion (50k rows/chunk)</li>
+      <li><strong>NEW:</strong> Activity log (audit trail) for all imports, syncs, and target changes</li>
+      <li><strong>NEW:</strong> Intelligence section in sidebar (Forecasting, Leaderboard, SKU Analytics, Targets)</li>
+      <li><strong>NEW:</strong> brand_targets, alert_rules, activity_log, scheduled_reports tables in SQLite</li>
     </ul>
-    
+
+    <h3>v2.1 — March 2026</h3>
+    <ul>
+      <li>Trend Analysis dashboard with MoM growth tracking and colour themes</li>
+      <li>21 months historical data support (May 2024 → Feb 2026)</li>
+      <li>Import Wizard with 6-step workflow and live generation progress</li>
+      <li>Google Maps integration for store geocoding in Trends</li>
+      <li>Interactive portfolio dashboard with brand dropdown</li>
+    </ul>
+
     <h3>v2.0 — February 2026</h3>
     <ul>
-      <li>Initial release of DALA Analytics Portal</li>
-      <li>PDF and HTML report generation</li>
-      <li>Brand partner portal with token access</li>
-      <li>Smart alerts system</li>
-      <li>Email and WhatsApp delivery</li>
+      <li>DALA Analytics Portal launched</li>
+      <li>PDF and interactive HTML report generation (28 brands)</li>
+      <li>Brand partner portal with UUID token access</li>
+      <li>Smart alerts system (8 rules)</li>
+      <li>Email (SMTP) and WhatsApp (Twilio) delivery</li>
+      <li>SQLite persistence layer</li>
     </ul>
   </div>
 
-  <!-- CONTRIBUTING -->
+  <!-- ADDING FEATURES -->
   <div class="doc-section">
-    <h2>🤝 Contributing</h2>
-    
-    <p>When making changes:</p>
-    
+    <h2>Adding New Features</h2>
+    <ol>
+      <li><strong>Backend:</strong> Create or extend a module in <code>modules/</code></li>
+      <li><strong>Route:</strong> Add <code>@app.route</code> to <code>app.py</code></li>
+      <li><strong>Template:</strong> Create <code>templates/portal/yourpage.html</code> extending <code>base.html</code></li>
+      <li><strong>Nav:</strong> Add link to sidebar in <code>templates/portal/base.html</code></li>
+      <li><strong>Docs:</strong> Update this page and bump the version badge</li>
+    </ol>
     <div class="warning-box">
-      <strong>Checklist:</strong>
-      <ul style="margin: 8px 0;">
-        <li>☐ Update this documentation</li>
-        <li>☐ Increment version number</li>
-        <li>☐ Add changelog entry</li>
-        <li>☐ Test with historical data</li>
-        <li>☐ Verify mobile responsiveness</li>
-      </ul>
+      <strong>Required checklist:</strong> Update this documentation · Increment version number · Add changelog entry · Test with the historical Excel file · Verify CSV export still works · Push to GitHub
     </div>
-    
-    <h3>Contact</h3>
-    <p>For questions or support, contact the DALA Technologies development team.</p>
   </div>
 
 </div>
-
 {% endblock %}

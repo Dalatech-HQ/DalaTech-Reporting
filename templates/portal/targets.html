@@ -1,0 +1,125 @@
+{% extends "portal/base.html" %}
+{% block title %}Targets — DALA Analytics{% endblock %}
+{% block page_title %}Target Setting & Tracking{% endblock %}
+
+{% block head %}
+<style>
+  .target-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:20px; }
+  .target-card { background:var(--white); border-radius:12px; padding:20px; box-shadow:0 2px 8px rgba(27,43,94,.07); }
+  .progress-ring-wrap { position:relative; width:80px; height:80px; flex-shrink:0; }
+  .progress-ring-wrap svg { transform:rotate(-90deg); }
+  .ring-pct { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; color:var(--navy); }
+  .target-input-row { display:flex; gap:8px; align-items:center; margin-top:8px; }
+  .target-input-row input { flex:1; padding:6px 10px; border:1.5px solid var(--gray); border-radius:6px; font-size:12px; }
+  .month-selector { display:flex; gap:8px; margin-bottom:24px; flex-wrap:wrap; align-items:center; }
+  .month-selector select { padding:8px 12px; border:1.5px solid var(--gray); border-radius:7px; font-size:13px; }
+  .progress-bar-lg { height:10px; border-radius:5px; background:var(--gray); overflow:hidden; margin:8px 0; }
+  .progress-bar-fill { height:100%; border-radius:5px; transition:width .4s; }
+  .on-track  { background:var(--green); }
+  .warning   { background:var(--amber); }
+  .off-track { background:var(--red); }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Month Selector -->
+<div class="card mb-3">
+  <div class="month-selector">
+    <label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);">Month:</label>
+    <select id="monthSelect" onchange="window.location='?month='+this.value">
+      {% for m in available_months %}
+      <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+    <span class="text-muted fs-sm">Set revenue, store reach, and repeat rate targets per brand</span>
+  </div>
+</div>
+
+{% if not brands %}
+<div class="card" style="text-align:center;padding:60px 40px;">
+  <div style="font-size:48px;margin-bottom:16px;">🎯</div>
+  <h3 style="color:var(--navy);margin-bottom:8px;">No Brands Yet</h3>
+  <p class="text-muted">Import data first to set targets.</p>
+  <a href="/import" class="btn btn-primary" style="margin-top:16px;">Import Data</a>
+</div>
+{% else %}
+
+<!-- Summary -->
+<div class="grid-4 mb-3">
+  <div class="kpi-card green">
+    <div class="kpi-label">On Track</div>
+    <div class="kpi-value">{{ on_track_count }}</div>
+    <div class="kpi-sub">Brands >= 80% target</div>
+  </div>
+  <div class="kpi-card amber">
+    <div class="kpi-label">At Risk</div>
+    <div class="kpi-value">{{ at_risk_count }}</div>
+    <div class="kpi-sub">Brands 50–79%</div>
+  </div>
+  <div class="kpi-card red">
+    <div class="kpi-label">Off Track</div>
+    <div class="kpi-value">{{ off_track_count }}</div>
+    <div class="kpi-sub">Brands < 50%</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">No Target Set</div>
+    <div class="kpi-value">{{ no_target_count }}</div>
+    <div class="kpi-sub">Set targets below</div>
+  </div>
+</div>
+
+<!-- Target Cards -->
+<div class="target-grid">
+{% for b in brands %}
+{% set t = targets.get(b.brand_name, {}) %}
+{% set actual = b.total_revenue %}
+{% set target_rev = t.target_revenue if t else 0 %}
+{% set pct = [((actual / target_rev * 100)|round)|int, 100]|min if target_rev > 0 else 0 %}
+{% set status = 'on-track' if pct >= 80 else ('warning' if pct >= 50 else 'off-track') %}
+
+<div class="target-card">
+  <div class="flex items-center gap-2" style="margin-bottom:12px;">
+    <div class="progress-ring-wrap">
+      <svg width="80" height="80" viewBox="0 0 80 80">
+        <circle cx="40" cy="40" r="32" fill="none" stroke="var(--gray)" stroke-width="8"/>
+        <circle cx="40" cy="40" r="32" fill="none"
+          stroke="{% if pct >= 80 %}#1E8449{% elif pct >= 50 %}#C0922A{% elif target_rev > 0 %}#E8192C{% else %}var(--gray){% endif %}"
+          stroke-width="8"
+          stroke-dasharray="{{ (pct / 100 * 201.06)|round }} 201.06"
+          stroke-linecap="round"/>
+      </svg>
+      <div class="ring-pct">{% if target_rev > 0 %}{{ pct }}%{% else %}—{% endif %}</div>
+    </div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ b.brand_name }}</div>
+      <div class="fs-sm text-muted">Actual: ₦{{ "{:,.0f}".format(actual) }}</div>
+      {% if target_rev > 0 %}
+      <div class="fs-sm text-muted">Target: ₦{{ "{:,.0f}".format(target_rev) }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if target_rev > 0 %}
+  <div class="progress-bar-lg">
+    <div class="progress-bar-fill {{ status }}" style="width:{{ pct }}%;"></div>
+  </div>
+  {% endif %}
+
+  <!-- Set / Update Target Form -->
+  <form method="POST" action="/api/set_target" style="margin-top:10px;">
+    <input type="hidden" name="brand_name" value="{{ b.brand_name }}">
+    <input type="hidden" name="month_label" value="{{ selected_month }}">
+    <div class="fs-sm text-muted fw-bold" style="margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">Set Revenue Target</div>
+    <div class="target-input-row">
+      <input type="number" name="target_revenue" placeholder="₦ Target revenue"
+             value="{{ t.target_revenue|int if t else '' }}" min="0" step="10000">
+      <button type="submit" class="btn btn-navy btn-sm">Set</button>
+    </div>
+  </form>
+</div>
+{% endfor %}
+</div>
+
+{% endif %}
+{% endblock %}

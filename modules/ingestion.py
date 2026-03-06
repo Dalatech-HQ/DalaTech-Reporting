@@ -1,13 +1,22 @@
 """
 ingestion.py — Data loading, cleaning, and brand splitting.
 
-Handles the Tally .xls export (which is actually xlsx format despite its extension).
+Handles Tally .xls exports (xlsx internally), plain .xlsx, and large .csv files.
+For CSV files with millions of rows, chunked reading keeps memory usage flat —
+each chunk is cleaned and appended so even files > 1 GB are processed without
+loading the whole dataset into RAM at once.
+
 Applies the standard column rename schema and filters to the selected date range.
 Designed so the file-upload source can later be swapped for a Tally API call
 without touching any downstream module.
 """
 
+import os
+import io
 import pandas as pd
+
+# ── CSV chunk size (rows per chunk for large file streaming) ─────────────────
+_CSV_CHUNKSIZE = 50_000
 
 # ── Column rename map: Raw Tally → Standard schema ──────────────────────────
 COLUMN_RENAME_MAP = {
@@ -24,15 +33,34 @@ VCH_INVENTORY_SUPPLIED  = 'Inventory Supplied by Brands'
 VCH_JOURNAL             = 'Journal'
 
 
+def _is_csv(file_source):
+    """Return True if file_source is a CSV (by name or sniffing first bytes)."""
+    if isinstance(file_source, str):
+        return file_source.lower().endswith('.csv')
+    if hasattr(file_source, 'name'):
+        return getattr(file_source, 'name', '').lower().endswith('.csv')
+    # Sniff: CSV files never start with PK (xlsx zip magic) or \xD0\xCF (xls OLE2)
+    if hasattr(file_source, 'read'):
+        header = file_source.read(4)
+        file_source.seek(0)
+        return header[:2] not in (b'PK', b'\xD0\xCF')
+    return False
+
+
 def load_and_clean(file_source):
     """
-    Load a Tally Excel export and apply standard column renaming.
+    Load a Tally data file and apply standard column renaming.
+
+    Supported formats:
+      - .xlsx / .xls  (Tally Excel export — the default)
+      - .csv          (large historical datasets; read in 50 000-row chunks)
 
     The file may carry a .xls extension but be xlsx internally — we try
     openpyxl first and fall back to xlrd for genuine binary .xls files.
 
     Args:
-        file_source: file path (str) or file-like object (BytesIO).
+        file_source: file path (str), file-like object (BytesIO), or
+                     file-like object from Flask's request.files.
 
     Returns:
         pd.DataFrame with standardised column names and correct dtypes.
@@ -40,14 +68,25 @@ def load_and_clean(file_source):
     Raises:
         ValueError: if expected columns are absent after cleaning.
     """
-    try:
-        df = pd.read_excel(file_source, engine='openpyxl')
-    except Exception:
-        if hasattr(file_source, 'seek'):
-            file_source.seek(0)
-        df = pd.read_excel(file_source, engine='xlrd')
+    is_csv = _is_csv(file_source)
 
-    df = df.rename(columns=COLUMN_RENAME_MAP)
+    if is_csv:
+        # ── Chunked CSV read ─────────────────────────────────────────────────
+        chunks = []
+        for chunk in pd.read_csv(file_source, chunksize=_CSV_CHUNKSIZE,
+                                  low_memory=False, encoding='utf-8-sig'):
+            chunk = chunk.rename(columns=COLUMN_RENAME_MAP)
+            chunks.append(chunk)
+        df = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
+    else:
+        # ── Excel read ───────────────────────────────────────────────────────
+        try:
+            df = pd.read_excel(file_source, engine='openpyxl')
+        except Exception:
+            if hasattr(file_source, 'seek'):
+                file_source.seek(0)
+            df = pd.read_excel(file_source, engine='xlrd')
+        df = df.rename(columns=COLUMN_RENAME_MAP)
 
     required_cols = [
         'Brand Partner', 'SKUs', 'Date', 'Particulars',

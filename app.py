@@ -1120,6 +1120,340 @@ def list_files():
     return jsonify({'pdfs': pdfs, 'htmls': htmls})
 
 
+# ── Forecasting Dashboard ─────────────────────────────────────────────────────
+
+@app.route('/forecasting')
+def forecasting():
+    alert_count = ds.get_unacknowledged_count()
+    report      = ds.get_latest_report()
+    all_brands  = ds.get_all_brands_in_db()
+    if not all_brands:
+        return render_template('portal/forecasting.html', forecasts={},
+                               forecasts_json='{}', depletions={},
+                               growing_count=0, declining_count=0,
+                               stable_count=0, stock_warning_count=0,
+                               report=None, alert_count=alert_count)
+
+    brand_histories = {b: list(reversed(ds.get_brand_history(b, limit=12)))
+                       for b in all_brands}
+    forecasts = build_brand_forecasts(brand_histories)
+
+    # Latest KPIs for stock depletion
+    latest_report = ds.get_latest_report()
+    depletions = {}
+    if latest_report:
+        for bk in ds.get_all_brand_kpis(latest_report['id']):
+            depletions[bk['brand_name']] = stock_depletion_date(bk)
+
+    growing_count  = sum(1 for f in forecasts.values() if f['growth_label'] == 'Growing')
+    declining_count= sum(1 for f in forecasts.values() if f['growth_label'] == 'Declining')
+    stable_count   = sum(1 for f in forecasts.values() if f['growth_label'] == 'Stable')
+    stock_warning_count = sum(1 for d in depletions.values()
+                              if d.get('urgency') in ('critical', 'warning'))
+
+    # Serialise forecasts to JSON (no numpy types)
+    import json as _json
+    forecasts_safe = {k: {kk: (float(vv) if isinstance(vv, (int, float, np.floating)) else vv)
+                           for kk, vv in v.items()} for k, v in forecasts.items()}
+
+    return render_template('portal/forecasting.html',
+                           forecasts=forecasts, forecasts_json=_json.dumps(forecasts_safe),
+                           depletions=depletions, report=report,
+                           growing_count=growing_count, declining_count=declining_count,
+                           stable_count=stable_count, stock_warning_count=stock_warning_count,
+                           alert_count=alert_count)
+
+
+# ── Brand Leaderboard ─────────────────────────────────────────────────────────
+
+@app.route('/leaderboard')
+def leaderboard():
+    alert_count = ds.get_unacknowledged_count()
+    report = ds.get_latest_report()
+    if not report:
+        return render_template('portal/leaderboard.html', leaderboard=[],
+                               report=None, alert_count=alert_count)
+    lb = ds.get_leaderboard(report['id'])
+    return render_template('portal/leaderboard.html', leaderboard=lb,
+                           report=report, alert_count=alert_count)
+
+
+# ── SKU Analytics ─────────────────────────────────────────────────────────────
+
+@app.route('/sku-analytics')
+def sku_analytics():
+    import json as _json
+    alert_count = ds.get_unacknowledged_count()
+    report = ds.get_latest_report()
+    if not report:
+        return render_template('portal/sku_analytics.html', sku_data=[], sku_json='[]',
+                               brand_sku_counts_json='[]', brands=[], report=None,
+                               alert_count=alert_count)
+
+    # Build SKU data from the raw file via daily_sales (proxy: brand + skus)
+    # For a real SKU breakdown we read from the latest in-memory data via DB
+    brand_kpis_rows = ds.get_all_brand_kpis(report['id'])
+
+    # Approximate SKU list from daily_sales aggregated at brand level
+    # (Full SKU detail requires re-reading the raw file — we use brand summary here)
+    sku_data = []
+    brand_sku_counts = []
+    for bk in brand_kpis_rows:
+        brand_sku_counts.append({'brand': bk['brand_name'], 'sku_count': bk['unique_skus']})
+        # Revenue-per-sku estimate for visual
+        if bk['unique_skus'] > 0:
+            rev_per_sku = bk['total_revenue'] / bk['unique_skus']
+            qty_per_sku = bk['total_qty'] / bk['unique_skus']
+            sku_data.append({
+                'name': f"{bk['brand_name']} — Avg SKU",
+                'brand': bk['brand_name'],
+                'revenue': round(rev_per_sku, 0),
+                'qty': round(qty_per_sku, 0),
+                'stores': bk['num_stores'],
+            })
+
+    sku_data.sort(key=lambda x: x['revenue'], reverse=True)
+    brands = [bk['brand_name'] for bk in brand_kpis_rows]
+
+    return render_template('portal/sku_analytics.html',
+                           sku_data=sku_data,
+                           sku_json=_json.dumps(sku_data),
+                           brand_sku_counts_json=_json.dumps(brand_sku_counts),
+                           brands=brands, report=report, alert_count=alert_count)
+
+
+# ── Target Setting ────────────────────────────────────────────────────────────
+
+@app.route('/targets')
+def targets():
+    alert_count = ds.get_unacknowledged_count()
+    report = ds.get_latest_report()
+
+    # Month selector
+    all_reports = ds.get_all_reports()
+    available_months = [r['month_label'] for r in all_reports]
+    selected_month = request.args.get('month', available_months[0] if available_months else '')
+
+    # Current KPIs for selected month
+    brands_data = []
+    if report:
+        for bk in ds.get_all_brand_kpis(report['id']):
+            brands_data.append(bk)
+
+    # Get targets for selected month
+    targets_list = ds.get_all_targets(selected_month)
+    targets_map  = {t['brand_name']: t for t in targets_list}
+
+    on_track_count  = sum(1 for b in brands_data
+                          if targets_map.get(b['brand_name'], {}).get('target_revenue', 0) > 0
+                          and b['total_revenue'] / targets_map[b['brand_name']]['target_revenue'] >= 0.8)
+    at_risk_count   = sum(1 for b in brands_data
+                          if targets_map.get(b['brand_name'], {}).get('target_revenue', 0) > 0
+                          and 0.5 <= b['total_revenue'] / targets_map[b['brand_name']]['target_revenue'] < 0.8)
+    off_track_count = sum(1 for b in brands_data
+                          if targets_map.get(b['brand_name'], {}).get('target_revenue', 0) > 0
+                          and b['total_revenue'] / targets_map[b['brand_name']]['target_revenue'] < 0.5)
+    no_target_count = sum(1 for b in brands_data
+                          if not targets_map.get(b['brand_name'], {}).get('target_revenue', 0))
+
+    return render_template('portal/targets.html',
+                           brands=brands_data, targets=targets_map,
+                           available_months=available_months,
+                           selected_month=selected_month, report=report,
+                           on_track_count=on_track_count, at_risk_count=at_risk_count,
+                           off_track_count=off_track_count, no_target_count=no_target_count,
+                           alert_count=alert_count)
+
+
+@app.route('/api/set_target', methods=['POST'])
+def api_set_target():
+    brand_name    = request.form.get('brand_name', '').strip()
+    month_label   = request.form.get('month_label', '').strip()
+    target_revenue= float(request.form.get('target_revenue', 0) or 0)
+    if not brand_name or not month_label:
+        return redirect(url_for('targets'))
+    ds.set_target(brand_name, month_label, target_revenue=target_revenue)
+    ds.log_activity('target_set', f'Target ₦{target_revenue:,.0f} for {brand_name} ({month_label})', brand_name)
+    return redirect(url_for('targets', month=month_label))
+
+
+# ── Alert Rules ───────────────────────────────────────────────────────────────
+
+@app.route('/alert-rules')
+def alert_rules_view():
+    alert_count = ds.get_unacknowledged_count()
+    rules       = ds.get_alert_rules(active_only=False)
+    all_brands  = ds.get_all_brands_in_db()
+    return render_template('portal/alert_rules.html', rules=rules,
+                           all_brands=all_brands, alert_count=alert_count)
+
+
+@app.route('/api/save_alert_rule', methods=['POST'])
+def api_save_alert_rule():
+    ds.save_alert_rule(
+        rule_name   = request.form.get('rule_name', '').strip(),
+        brand_filter= request.form.get('brand_filter', 'all'),
+        metric      = request.form.get('metric', ''),
+        operator    = request.form.get('operator', 'lt'),
+        threshold   = float(request.form.get('threshold', 0) or 0),
+        severity    = request.form.get('severity', 'medium'),
+    )
+    ds.log_activity('alert_rule_created', request.form.get('rule_name', ''))
+    return redirect(url_for('alert_rules_view'))
+
+
+@app.route('/api/toggle_alert_rule', methods=['POST'])
+def api_toggle_alert_rule():
+    rule_id = int(request.form.get('rule_id', 0))
+    active  = int(request.form.get('active', 1))
+    ds.toggle_alert_rule(rule_id, active)
+    return redirect(url_for('alert_rules_view'))
+
+
+@app.route('/api/delete_alert_rule', methods=['POST'])
+def api_delete_alert_rule():
+    rule_id = int(request.form.get('rule_id', 0))
+    ds.delete_alert_rule(rule_id)
+    return redirect(url_for('alert_rules_view'))
+
+
+# ── Google Sheets Sync ────────────────────────────────────────────────────────
+
+@app.route('/api/sync_sheets/<path:brand_name>', methods=['POST'])
+def api_sync_sheets(brand_name):
+    try:
+        from modules.sheets import push_brand_to_sheets
+        report = ds.get_latest_report()
+        if not report:
+            return jsonify({'success': False, 'error': 'No report data found'}), 404
+        bk = ds.get_brand_kpis_single(report['id'], brand_name)
+        if not bk:
+            return jsonify({'success': False, 'error': 'Brand not in latest report'}), 404
+        url = push_brand_to_sheets(brand_name, report['start_date'], report['end_date'])
+        ds.log_activity('sheets_sync', f'Synced to Google Sheets', brand_name, report['id'])
+        return jsonify({'success': True, 'url': url})
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+# ── REST API v1 ───────────────────────────────────────────────────────────────
+
+@app.route('/api/v1/brands')
+def api_v1_brands():
+    """REST: list all brands with latest KPIs."""
+    report = ds.get_latest_report()
+    if not report:
+        return jsonify({'brands': [], 'report': None})
+    kpis = ds.get_all_brand_kpis(report['id'])
+    # Strip non-serialisable fields
+    clean = []
+    for k in kpis:
+        clean.append({
+            'brand_name': k['brand_name'],
+            'total_revenue': k['total_revenue'],
+            'total_qty': k['total_qty'],
+            'num_stores': k['num_stores'],
+            'unique_skus': k['unique_skus'],
+            'repeat_pct': k['repeat_pct'],
+            'perf_grade': k['perf_grade'],
+            'perf_score': k['perf_score'],
+            'stock_days_cover': k['stock_days_cover'],
+        })
+    return jsonify({'brands': clean, 'report': {'id': report['id'], 'month_label': report['month_label']}})
+
+
+@app.route('/api/v1/kpis/<path:brand_name>')
+def api_v1_kpis(brand_name):
+    """REST: full KPI history for a brand."""
+    history = ds.get_brand_history(brand_name, limit=24)
+    return jsonify({'brand': brand_name, 'history': history})
+
+
+@app.route('/api/v1/alerts')
+def api_v1_alerts():
+    """REST: unacknowledged alerts."""
+    alerts = ds.get_alerts(unacknowledged_only=True)
+    return jsonify({'alerts': alerts, 'count': len(alerts)})
+
+
+@app.route('/api/v1/portfolio')
+def api_v1_portfolio():
+    """REST: portfolio monthly trend."""
+    trend = ds.get_portfolio_monthly_trend(limit=24)
+    return jsonify({'trend': trend})
+
+
+# ── Data Export ───────────────────────────────────────────────────────────────
+
+@app.route('/api/export/brands')
+def api_export_brands():
+    """Export brand KPIs as CSV or JSON."""
+    fmt    = request.args.get('format', 'csv')
+    report = ds.get_latest_report()
+    if not report:
+        abort(404)
+    kpis = ds.get_all_brand_kpis(report['id'])
+    if fmt == 'json':
+        return jsonify(kpis)
+    # CSV
+    import csv, io as _io
+    buf = _io.StringIO()
+    if kpis:
+        writer = csv.DictWriter(buf, fieldnames=kpis[0].keys())
+        writer.writeheader()
+        writer.writerows(kpis)
+    buf.seek(0)
+    return app.response_class(buf.getvalue(), mimetype='text/csv',
+                               headers={'Content-Disposition':
+                                        f'attachment; filename=brands_{report["month_label"]}.csv'})
+
+
+@app.route('/api/export/skus')
+def api_export_skus():
+    """Export SKU summary as CSV."""
+    report = ds.get_latest_report()
+    if not report:
+        abort(404)
+    kpis = ds.get_all_brand_kpis(report['id'])
+    import csv, io as _io
+    buf = _io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(['Brand', 'Unique SKUs', 'Total Revenue', 'Revenue per SKU'])
+    for bk in kpis:
+        rev_per = (bk['total_revenue'] / bk['unique_skus']) if bk['unique_skus'] else 0
+        writer.writerow([bk['brand_name'], bk['unique_skus'],
+                         round(bk['total_revenue'], 0), round(rev_per, 0)])
+    buf.seek(0)
+    return app.response_class(buf.getvalue(), mimetype='text/csv',
+                               headers={'Content-Disposition':
+                                        f'attachment; filename=skus_{report["month_label"]}.csv'})
+
+
+@app.route('/api/export/alerts')
+def api_export_alerts():
+    """Export alerts as CSV."""
+    alerts = ds.get_alerts()
+    import csv, io as _io
+    buf = _io.StringIO()
+    if alerts:
+        writer = csv.DictWriter(buf, fieldnames=['brand_name', 'alert_type', 'severity',
+                                                  'message', 'created_at', 'acknowledged'])
+        writer.writeheader()
+        for a in alerts:
+            writer.writerow({k: a.get(k, '') for k in writer.fieldnames})
+    buf.seek(0)
+    return app.response_class(buf.getvalue(), mimetype='text/csv',
+                               headers={'Content-Disposition': 'attachment; filename=alerts.csv'})
+
+
+# ── Activity Log API ──────────────────────────────────────────────────────────
+
+@app.route('/api/activity')
+def api_activity():
+    limit = min(int(request.args.get('limit', 50)), 200)
+    return jsonify(ds.get_activity_log(limit=limit))
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
