@@ -75,7 +75,15 @@ ds = DataStore()
 
 
 def _money_2dp(value):
-    """Format currency-like floats consistently for exports/UI payloads."""
+    """Format currency-like floats consistently for UI display."""
+    try:
+        return f"{float(value):,.2f}"
+    except (TypeError, ValueError):
+        return "0.00"
+
+
+def _money_csv_2dp(value):
+    """Format currency-like floats for CSV/export payloads without separators."""
     try:
         return f"{float(value):.2f}"
     except (TypeError, ValueError):
@@ -2367,7 +2375,7 @@ def api_export_brands():
             sanitized = {}
             for key, value in row.items():
                 if key in money_fields and isinstance(value, (int, float)):
-                    sanitized[key] = _money_2dp(value)
+                    sanitized[key] = _money_csv_2dp(value)
                 else:
                     sanitized[key] = value
             writer.writerow(sanitized)
@@ -2391,7 +2399,7 @@ def api_export_skus():
     for bk in kpis:
         rev_per = (bk['total_revenue'] / bk['unique_skus']) if bk['unique_skus'] else 0
         writer.writerow([bk['brand_name'], bk['unique_skus'],
-                         _money_2dp(bk['total_revenue']), _money_2dp(rev_per)])
+                         _money_csv_2dp(bk['total_revenue']), _money_csv_2dp(rev_per)])
     buf.seek(0)
     return app.response_class(buf.getvalue(), mimetype='text/csv',
                                headers={'Content-Disposition':
