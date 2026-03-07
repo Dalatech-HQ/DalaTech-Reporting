@@ -1401,17 +1401,6 @@ def api_report_pdf(report_id, brand_name):
     if not kpis:
         abort(404)
 
-    # Use stored AI narrative if available, otherwise build a concise fallback
-    ai_narrative = ds.get_narrative(report_id, brand_name)
-    if not ai_narrative:
-        rev = kpis['total_revenue']
-        rev_fmt = f"₦{rev/1e6:.1f}M" if rev >= 1e6 else f"₦{rev:,.0f}"
-        ai_narrative = (
-            f"{brand_name} recorded {rev_fmt} in revenue across "
-            f"{kpis['trading_days']} trading days, reaching {kpis['num_stores']} stores. "
-            f"Repeat purchase rate: {kpis['repeat_pct']:.0f}%."
-        )
-
     all_bk          = ds.get_all_brand_kpis(report_id)
     total_portfolio = sum(b['total_revenue'] for b in all_bk)
     avg_portfolio   = total_portfolio / max(len(all_bk), 1)
@@ -1428,7 +1417,6 @@ def api_report_pdf(report_id, brand_name):
             end_date=report['end_date'],
             portfolio_avg_revenue=avg_portfolio,
             total_portfolio_revenue=total_portfolio,
-            ai_narrative=ai_narrative,
         )
         pdf_bytes = render_pdf_bytes(html_content)
     except Exception as e:
@@ -1452,16 +1440,6 @@ def api_report_html(report_id, brand_name):
     if not kpis:
         abort(404)
 
-    ai_narrative = ds.get_narrative(report_id, brand_name)
-    if not ai_narrative:
-        rev = kpis['total_revenue']
-        rev_fmt = f"₦{rev/1e6:.1f}M" if rev >= 1e6 else f"₦{rev:,.0f}"
-        ai_narrative = (
-            f"{brand_name} recorded {rev_fmt} in revenue across "
-            f"{kpis['trading_days']} trading days, reaching {kpis['num_stores']} stores. "
-            f"Repeat purchase rate: {kpis['repeat_pct']:.0f}%."
-        )
-
     all_bk          = ds.get_all_brand_kpis(report_id)
     total_portfolio = sum(b['total_revenue'] for b in all_bk)
     avg_portfolio   = total_portfolio / max(len(all_bk), 1)
@@ -1474,7 +1452,6 @@ def api_report_html(report_id, brand_name):
             end_date=report['end_date'],
             portfolio_avg_revenue=avg_portfolio,
             total_portfolio_revenue=total_portfolio,
-            ai_narrative=ai_narrative,
         )
     except Exception as e:
         return jsonify({'error': str(e)}), 500

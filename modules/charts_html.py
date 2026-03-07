@@ -195,14 +195,13 @@ def chart_daily_trend(daily_sales_df, width_in=6.5, height_in=1.8) -> str:
     return _save_base64(fig)
 
 
-def chart_reorder(reorder_df, width_in=6.0, height_in=2.2) -> str:
+def chart_reorder(reorder_df, width_in=6.0, height_in=1.7) -> str:
     """Horizontal bar chart — stores by order count."""
     df = reorder_df.copy()
     if df.empty:
         return ""
     
-    df = df.head(10).iloc[::-1].reset_index(drop=True)
-    n = len(df)
+    df = df.head(8).iloc[::-1].reset_index(drop=True)
     
     fig, ax = plt.subplots(figsize=(width_in, height_in))
     
@@ -215,23 +214,23 @@ def chart_reorder(reorder_df, width_in=6.0, height_in=2.2) -> str:
     for bar, val in zip(bars, df['Order Count']):
         label = f'{int(val)} order{"s" if val != 1 else ""}'
         ax.text(val + max_orders*0.02, bar.get_y() + bar.get_height()/2,
-                label, va='center', ha='left', fontsize=8)
+                label, va='center', ha='left', fontsize=7)
     
     ax.set_xlim(0, max_orders * 1.3)
     ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.spines['left'].set_visible(False)
-    ax.tick_params(axis='y', length=0, labelsize=8)
-    ax.tick_params(axis='x', labelsize=7, colors=C_MUTED)
-    ax.set_xlabel('Number of Orders', fontsize=8, color=C_MUTED)
+    ax.tick_params(axis='y', length=0, labelsize=6.5)
+    ax.tick_params(axis='x', labelsize=6.5, colors=C_MUTED)
+    ax.set_xlabel('Number of Orders', fontsize=7, color=C_MUTED)
     ax.grid(axis='x', alpha=0.3, color=C_GRAY)
     
-    plt.tight_layout()
+    plt.tight_layout(pad=0.2)
     return _save_base64(fig)
 
 
-def chart_store_heatmap(store_heatmap_df, width_in=6.2, height_in=2.2) -> str:
+def chart_store_heatmap(store_heatmap_df, width_in=6.2, height_in=1.5) -> str:
     """
     Matplotlib heatmap — top stores (rows) x dates (columns). For PDF page 2.
     """
@@ -245,10 +244,12 @@ def chart_store_heatmap(store_heatmap_df, width_in=6.2, height_in=2.2) -> str:
     pivot = df.pivot_table(index='Store', columns='Date', values='Orders',
                             fill_value=0, aggfunc='sum')
     pivot = pivot.reindex(sorted(pivot.columns), axis=1)
+    store_rank = pivot.sum(axis=1).sort_values(ascending=False)
+    pivot = pivot.loc[store_rank.head(8).index]
 
     n_stores = len(pivot)
     n_dates  = len(pivot.columns)
-    height_in = max(1.8, min(3.5, n_stores * 0.35 + 0.8))
+    height_in = max(1.25, min(1.7, n_stores * 0.12 + 0.65))
 
     fig, ax = plt.subplots(figsize=(width_in, height_in))
 
@@ -260,20 +261,20 @@ def chart_store_heatmap(store_heatmap_df, width_in=6.2, height_in=2.2) -> str:
 
     ax.set_yticks(range(n_stores))
     ax.set_yticklabels(
-        [s[:22] + ('…' if len(s) > 22 else '') for s in pivot.index],
-        fontsize=6.5, color=C_TEXT
+        [s[:20] + ('…' if len(s) > 20 else '') for s in pivot.index],
+        fontsize=5.8, color=C_TEXT
     )
 
     date_labels = [d.strftime('%d %b') for d in pivot.columns]
     tick_step = max(1, n_dates // 10)
     ax.set_xticks(range(0, n_dates, tick_step))
-    ax.set_xticklabels(date_labels[::tick_step], rotation=45, ha='right', fontsize=6.5)
+    ax.set_xticklabels(date_labels[::tick_step], rotation=45, ha='right', fontsize=5.6)
     ax.tick_params(axis='both', length=0)
 
     for spine in ax.spines.values():
         spine.set_visible(False)
 
-    plt.tight_layout(pad=0.3)
+    plt.tight_layout(pad=0.15)
     return _save_base64(fig)
 
 

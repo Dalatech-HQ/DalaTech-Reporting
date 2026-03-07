@@ -102,13 +102,8 @@ def render_pdf_report_html(brand_name: str, kpis: dict,
         for _, r in kpis['supply_summary'].iterrows()
     ]
 
-    # ── Narrative — AI (Gemini) takes priority, fallback to rule-based ─────────
-    if ai_narrative:
-        narrative = ai_narrative
-        narrative_source = 'ai'
-    else:
-        narrative = generate_narrative(brand_name, kpis, start_date, end_date)
-        narrative_source = 'rule'
+    # Reports always use the deterministic analysis summary.
+    narrative = generate_narrative(brand_name, kpis, start_date, end_date)
 
     # ── Dates ──────────────────────────────────────────────────────────────────
     start_dt      = datetime.strptime(start_date, '%Y-%m-%d')
@@ -130,7 +125,6 @@ def render_pdf_report_html(brand_name: str, kpis: dict,
         end_date=display_end,
         kpis=kpis,
         narrative=narrative,
-        narrative_source=narrative_source,
         sheets_url=sheets_url,
         logo_path=logo_data,
         perf=perf,

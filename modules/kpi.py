@@ -260,9 +260,7 @@ def calculate_kpis(brand_df):
 
 def generate_narrative(brand_name, kpis, start_date, end_date):
     """
-    Auto-generate a 4–5 sentence plain-English insight paragraph.
-
-    Phase 4 will extend this with more pattern detection.
+    Generate a deterministic business summary for report exports.
     """
     start  = pd.Timestamp(start_date)
     end    = pd.Timestamp(end_date)
@@ -271,56 +269,80 @@ def generate_narrative(brand_name, kpis, start_date, end_date):
     def fmt(v):
         return f"₦{v:,.0f}"
 
-    # S1: Overall summary
+    def fmt_qty(v):
+        return f"{float(v):,.1f}"
+
+    def wow_phrase(value):
+        value = float(value or 0)
+        if value >= 1:
+            return f"up {value:.1f}% versus the prior week"
+        if value <= -1:
+            return f"down {abs(value):.1f}% versus the prior week"
+        return "largely flat versus the prior week"
+
+    total_tracked = int(kpis['repeat_stores'] + kpis['single_stores'])
+    repeat_rate = float(kpis.get('repeat_pct', 0) or 0)
+    stock_total = float(kpis.get('total_closing_stock', 0) or 0)
+    stock_days = float(kpis.get('stock_days_cover', 0) or 0)
+    inv_status = kpis.get('inv_health_status') or 'No Stock Data'
+
+    if inv_status == 'Healthy':
+        action_line = "Stock cover remains healthy, so the focus should stay on protecting sell-through in the strongest outlets."
+    elif inv_status == 'Watch':
+        action_line = "Stock cover is tightening, so the faster-moving SKUs should be replenished early in the next cycle."
+    elif inv_status == 'Low Stock':
+        action_line = "Stock cover is low, so replenishing the fastest-moving SKUs should be the immediate priority."
+    elif inv_status == 'Overstocked':
+        action_line = "Stock is sitting above the ideal level, so pushing sell-through on slower lines should be the priority."
+    else:
+        action_line = "Warehouse stock records should be reviewed alongside sales performance before the next planning cycle."
+
     s1 = (
-        f"Between {period}, {brand_name} generated {fmt(kpis['total_revenue'])} "
-        f"in total sales revenue across {kpis['num_stores']} "
-        f"supermarket{'s' if kpis['num_stores'] != 1 else ''}, "
-        f"moving {kpis['total_qty']:.1f} carton pack{'s' if kpis['total_qty'] != 1 else ''} "
-        f"across {kpis['unique_skus']} SKU{'s' if kpis['unique_skus'] != 1 else ''}."
+        f"From {period}, {brand_name} generated {fmt(kpis['total_revenue'])} in revenue, "
+        f"sold {fmt_qty(kpis['total_qty'])} packs, and reached {kpis['num_stores']} "
+        f"store{'s' if kpis['num_stores'] != 1 else ''} across {kpis['unique_skus']} SKU"
+        f"{'s' if kpis['unique_skus'] != 1 else ''}. "
+        f"Average revenue per store closed at {fmt(kpis['avg_revenue_per_store'])}."
     )
 
-    # S2: Top store
     s2 = (
-        f"{kpis['top_store_name']} was the top-performing outlet, "
-        f"accounting for {kpis['top_store_pct']:.1f}% of total revenue "
-        f"({fmt(kpis['top_store_revenue'])})."
+        f"The strongest outlet was {kpis['top_store_name']}, contributing "
+        f"{kpis['top_store_pct']:.1f}% of sales worth {fmt(kpis['top_store_revenue'])}. "
+        f"The leading SKU by volume was {kpis['top_sku']}, with {fmt_qty(kpis['top_sku_qty'])} packs sold."
     )
 
-    # S3: Peak day
     if kpis['peak_date'] is not None:
         s3 = (
-            f"Sales activity peaked on {pd.Timestamp(kpis['peak_date']).strftime('%B %d')} "
-            f"with {fmt(kpis['peak_revenue'])} in revenue "
-            f"({kpis['peak_qty']:.1f} packs sold that day)."
+            f"Sales peaked on {pd.Timestamp(kpis['peak_date']).strftime('%B %d')} at "
+            f"{fmt(kpis['peak_revenue'])} from {fmt_qty(kpis['peak_qty'])} packs. "
+            f"Revenue finished {wow_phrase(kpis.get('wow_rev_change', 0))}, while quantity ended {wow_phrase(kpis.get('wow_qty_change', 0))}."
         )
     else:
-        s3 = ""
+        s3 = (
+            f"Revenue finished {wow_phrase(kpis.get('wow_rev_change', 0))}, "
+            f"while quantity ended {wow_phrase(kpis.get('wow_qty_change', 0))}."
+        )
 
-    # S4: Reorder insight
-    total_tracked = kpis['repeat_stores'] + kpis['single_stores']
-    if kpis['repeat_stores'] > 0:
+    if total_tracked > 0:
         s4 = (
-            f"Of the {total_tracked} stores stocked, {kpis['repeat_stores']} "
-            f"placed repeat orders during the period — indicating consistent demand "
-            f"at those locations."
+            f"{kpis['repeat_stores']} of the {total_tracked} tracked stores reordered during the period, "
+            f"which puts repeat purchase at {repeat_rate:.0f}%."
         )
         if kpis['single_stores'] > 0:
             s4 += (
-                f" {kpis['single_stores']} store{'s' if kpis['single_stores'] != 1 else ''} "
-                f"placed only a single order and represent an opportunity for follow-up."
+                f" The remaining {kpis['single_stores']} store{'s' if kpis['single_stores'] != 1 else ''} "
+                f"ordered once and should be the clearest follow-up opportunities."
             )
     else:
-        s4 = (
-            f"All {total_tracked} stores placed single orders during this period — "
-            f"focused outreach to drive repeat stocking is recommended."
-        )
+        s4 = "No reorder activity was captured in the tracked store set for this period."
 
-    # S5: Top SKU
-    s5 = (
-        f"The best-performing product by volume was {kpis['top_sku']}, "
-        f"with {kpis['top_sku_qty']:.1f} carton pack{'s' if kpis['top_sku_qty'] != 1 else ''} sold."
-    )
+    if stock_total > 0:
+        s5 = (
+            f"Closing stock ended at {fmt_qty(stock_total)} packs, equal to about {stock_days:.1f} days of cover, "
+            f"and inventory is currently marked {inv_status}. {action_line}"
+        )
+    else:
+        s5 = action_line
 
     return ' '.join(s for s in [s1, s2, s3, s4, s5] if s)
 

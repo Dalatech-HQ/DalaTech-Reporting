@@ -383,8 +383,8 @@ def render_html_report(brand_name: str, kpis: dict,
         for _, r in kpis['supply_summary'].iterrows()
     ]
 
-    # ── Narrative ─────────────────────────────────────────────────────────────
-    narrative = ai_narrative or generate_narrative(brand_name, kpis, start_date, end_date)
+    # Reports always use the deterministic analysis summary.
+    narrative = generate_narrative(brand_name, kpis, start_date, end_date)
 
     # ── Dates ─────────────────────────────────────────────────────────────────
     start_dt = datetime.strptime(start_date, '%Y-%m-%d')
