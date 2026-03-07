@@ -22,7 +22,7 @@ Routes:
   GET  /api/reports         JSON list of all reports
 """
 
-import os, io, json, traceback, shutil, uuid, threading
+import os, io, json, traceback, shutil, uuid, threading, tempfile
 from datetime import datetime
 from functools import wraps
 import numpy as np
@@ -40,6 +40,7 @@ _JOBS = {}   # kept for legacy compatibility only — new code uses ds.get_job()
 from modules.ingestion        import load_and_clean, filter_by_date, split_by_brand
 from modules.kpi              import calculate_kpis, calculate_perf_score, generate_narrative
 from modules.pdf_generator_html import generate_pdf_html
+from modules.pdf_generator      import generate_pdf as generate_pdf_reportlab
 from modules.pdf_generator_html import render_pdf_report_html, render_pdf_bytes
 from modules.html_generator   import generate_html, render_html_report
 from modules.portfolio_generator import generate_portfolio_html
@@ -1419,8 +1420,31 @@ def api_report_pdf(report_id, brand_name):
             total_portfolio_revenue=total_portfolio,
         )
         pdf_bytes = render_pdf_bytes(html_content)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception as html_pdf_error:
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
+                temp_path = temp_file.name
+            generate_pdf_reportlab(
+                output_path=temp_path,
+                brand_name=brand_name,
+                kpis=kpis,
+                start_date=report['start_date'],
+                end_date=report['end_date'],
+            )
+            with open(temp_path, 'rb') as fh:
+                pdf_bytes = fh.read()
+        except Exception as fallback_error:
+            return jsonify({
+                'error': str(html_pdf_error),
+                'fallback_error': str(fallback_error),
+            }), 500
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
 
     return send_file(
         io.BytesIO(pdf_bytes),
