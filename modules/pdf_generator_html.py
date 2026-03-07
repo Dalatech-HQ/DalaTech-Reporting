@@ -8,6 +8,7 @@ Page 2: Inventory detail, performance scorecard, store heatmap
 
 import os
 import base64
+import glob
 import shutil
 from datetime import datetime
 
@@ -155,6 +156,15 @@ def render_pdf_bytes(html_content: str) -> bytes:
         try:
             browser = p.chromium.launch(**launch_options)
         except Exception:
+            nix_candidates = []
+            for pattern in (
+                '/nix/store/*/bin/chromium',
+                '/nix/store/*/bin/chromium-browser',
+                '/nix/store/*/bin/google-chrome',
+                '/nix/store/*chromium*/bin/chromium',
+                '/nix/store/*chromium*/bin/chromium-browser',
+            ):
+                nix_candidates.extend(glob.glob(pattern))
             candidates = [
                 os.getenv('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'),
                 shutil.which('chromium'),
@@ -162,6 +172,7 @@ def render_pdf_bytes(html_content: str) -> bytes:
                 shutil.which('google-chrome'),
                 '/usr/bin/chromium',
                 '/usr/bin/chromium-browser',
+                *nix_candidates,
             ]
             for candidate in candidates:
                 if candidate and os.path.exists(candidate):
