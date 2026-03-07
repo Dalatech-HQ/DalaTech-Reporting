@@ -50,7 +50,7 @@
       <div style="margin-top:10px;display:flex;gap:20px;">
         <div>
           <div class="kpi-label">Revenue</div>
-          <div style="font-size:15px;font-weight:800;color:var(--red);">₦{{ "{:,.0f}".format(latest.total_revenue) }}</div>
+          <div style="font-size:15px;font-weight:800;color:var(--red);">₦{{ latest.total_revenue | money2 }}</div>
         </div>
         <div>
           <div class="kpi-label">Brands</div>

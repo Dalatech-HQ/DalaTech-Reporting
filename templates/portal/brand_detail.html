@@ -76,7 +76,7 @@
     <div style="display:flex;flex-direction:column;gap:12px;">
       <div>
         <div class="kpi-label">Next Month Forecast</div>
-        <div style="font-size:22px;font-weight:800;color:var(--navy);">₦{{ "{:,.0f}".format(forecast.forecast) }}</div>
+        <div style="font-size:22px;font-weight:800;color:var(--navy);">₦{{ forecast.forecast | money2 }}</div>
         {% if forecast.pct_change > 0 %}
         <span class="badge badge-green">▲ {{ forecast.pct_change }}% projected</span>
         {% elif forecast.pct_change < 0 %}
@@ -107,7 +107,7 @@
             <div>
               <strong style="color:var(--navy);">{{ label }}:</strong>
               {% if hz.eligible %}
-                ₦{{ "{:,.0f}".format(hz.low) }} to ₦{{ "{:,.0f}".format(hz.high) }}
+                ₦{{ hz.low | money2 }} to ₦{{ hz.high | money2 }}
               {% else %}
                 {{ hz.reason }}
               {% endif %}
@@ -206,7 +206,7 @@
       {% for s in churned_stores[:15] %}
       <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--gray);font-size:12px;">
         <span>{{ s.store_name }}</span>
-        <span class="text-muted">₦{{ "{:,.0f}".format(s.prev_revenue) }} prev.</span>
+        <span class="text-muted">₦{{ s.prev_revenue | money2 }} prev.</span>
       </div>
       {% endfor %}
       {% if churned_stores|length > 15 %}<div class="text-muted fs-sm" style="margin-top:6px;">... and {{ churned_stores|length - 15 }} more</div>{% endif %}
@@ -221,7 +221,7 @@
       {% for s in new_stores[:15] %}
       <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--gray);font-size:12px;">
         <span>{{ s.store_name }}</span>
-        <span style="color:var(--green);font-weight:600;">₦{{ "{:,.0f}".format(s.prev_revenue) }}</span>
+        <span style="color:var(--green);font-weight:600;">₦{{ s.prev_revenue | money2 }}</span>
       </div>
       {% endfor %}
       {% if new_stores|length > 15 %}<div class="text-muted fs-sm" style="margin-top:6px;">... and {{ new_stores|length - 15 }} more</div>{% endif %}

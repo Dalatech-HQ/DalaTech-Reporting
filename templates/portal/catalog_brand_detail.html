@@ -14,7 +14,7 @@
   <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{{ skus|length }}</div><div class="text-muted fs-sm">Approved SKUs</div></div>
   <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{{ aliases|length }}</div><div class="text-muted fs-sm">Brand aliases</div></div>
   <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{{ review_queue|length }}</div><div class="text-muted fs-sm">Pending SKU reviews</div></div>
-  <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{% if latest_kpis %}₦{{ "{:,.0f}".format(latest_kpis.total_revenue) }}{% else %}—{% endif %}</div><div class="text-muted fs-sm">Latest revenue</div></div>
+  <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{% if latest_kpis %}₦{{ latest_kpis.total_revenue | money2 }}{% else %}—{% endif %}</div><div class="text-muted fs-sm">Latest revenue</div></div>
 </div>
 
 <div class="grid-2" style="margin-bottom:24px;">

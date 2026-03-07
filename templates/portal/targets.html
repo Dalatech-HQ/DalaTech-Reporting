@@ -93,9 +93,9 @@
     </div>
     <div style="flex:1;min-width:0;">
       <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ b.brand_name }}</div>
-      <div class="fs-sm text-muted">Actual: ₦{{ "{:,.0f}".format(actual) }}</div>
+      <div class="fs-sm text-muted">Actual: ₦{{ actual | money2 }}</div>
       {% if target_rev > 0 %}
-      <div class="fs-sm text-muted">Target: ₦{{ "{:,.0f}".format(target_rev) }}</div>
+      <div class="fs-sm text-muted">Target: ₦{{ target_rev | money2 }}</div>
       {% endif %}
     </div>
   </div>

@@ -94,9 +94,9 @@
           <td>{{ loop.index }}</td>
           <td style="font-weight:600;">{{ sku.name }}</td>
           <td><span class="badge badge-blue">{{ sku.brand }}</span></td>
-          <td>{{ "{:,.0f}".format(sku.revenue) }}</td>
+          <td>₦{{ sku.revenue | money2 }}</td>
           <td>{{ "{:,.1f}".format(sku.qty) }}</td>
-          <td>{% if sku.avg_price %}₦{{ "{:,.0f}".format(sku.avg_price) }}{% else %}—{% endif %}</td>
+          <td>{% if sku.avg_price %}₦{{ sku.avg_price | money2 }}{% else %}—{% endif %}</td>
           <td>
             <div class="rank-bar-wrap" style="width:100px;height:6px;background:var(--gray);border-radius:3px;display:inline-block;">
               <div style="width:{{ (sku.revenue / max_rev * 100)|round }}%;height:6px;border-radius:3px;background:var(--navy);"></div>

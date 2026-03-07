@@ -17,6 +17,8 @@ import pandas as pd
 
 from .brand_names import canonicalize_brand_name
 
+_CATALOG_STORE = None
+
 # ── CSV chunk size (rows per chunk for large file streaming) ─────────────────
 _CSV_CHUNKSIZE = 50_000
 
@@ -47,6 +49,35 @@ def _is_csv(file_source):
         file_source.seek(0)
         return header[:2] not in (b'PK', b'\xD0\xCF')
     return False
+
+
+def _resolve_known_brand_name(raw_name: str) -> str:
+    """
+    Map approved aliases to their canonical brand names without blocking unknown imports.
+    Unknown names still fall back to lightweight normalization.
+    """
+    global _CATALOG_STORE
+
+    canonical = canonicalize_brand_name(raw_name)
+    if not canonical:
+        return ''
+
+    if _CATALOG_STORE is None:
+        try:
+            from .data_store import DataStore
+            _CATALOG_STORE = DataStore()
+        except Exception:
+            _CATALOG_STORE = False
+
+    if _CATALOG_STORE:
+        try:
+            brand = _CATALOG_STORE.resolve_brand_master(raw_name)
+            if brand:
+                return brand['canonical_name']
+        except Exception:
+            pass
+
+    return canonical
 
 
 def load_and_clean(file_source):
@@ -107,7 +138,7 @@ def load_and_clean(file_source):
     df['Sales_Value']  = pd.to_numeric(df['Sales_Value'], errors='coerce').fillna(0)
     
     # Normalize brand names to prevent duplicates (Wilson vs Wilson's, etc.)
-    df['Brand Partner'] = df['Brand Partner'].astype(str).str.strip().apply(canonicalize_brand_name)
+    df['Brand Partner'] = df['Brand Partner'].astype(str).str.strip().apply(_resolve_known_brand_name)
     df['SKUs']          = df['SKUs'].astype(str).str.strip()
     df['Particulars']   = df['Particulars'].astype(str).str.strip()
     df['Vch Type']      = df['Vch Type'].astype(str).str.strip()
@@ -214,7 +245,7 @@ def load_brand_file(file_source, brand_name: str) -> pd.DataFrame:
     data['Particulars']  = data['Particulars'].astype(str).str.strip()
     data['Vch Type']     = data['Vch Type'].astype(str).str.strip()
     data['Vch No.']      = data['Vch No.'].astype(str).str.strip()
-    data['Brand Partner'] = data['Brand Partner'].astype(str).str.strip().apply(canonicalize_brand_name)
+    data['Brand Partner'] = data['Brand Partner'].astype(str).str.strip().apply(_resolve_known_brand_name)
 
     return data[['Brand Partner', 'SKUs', 'Date', 'Particulars', 'Vch Type', 'Vch No.', 'Quantity', 'Sales_Value']]
 

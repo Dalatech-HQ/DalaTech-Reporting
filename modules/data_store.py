@@ -636,48 +636,239 @@ class DataStore:
                 )
             )
 
-    def get_brand_detail_json(self, report_id, brand_name):
-        """Return the stored detail JSON dict, or None."""
+    def canonical_brand_name(self, brand_name):
+        brand = self.resolve_brand_master(brand_name)
+        if brand:
+            return brand['canonical_name']
+        return canonicalize_brand_name(brand_name)
+
+    def analytics_brand_name(self, brand_name):
+        canonical = self.canonical_brand_name(brand_name)
+        compare_key = normalize_brand_compare_key(canonical)
+        if not compare_key:
+            return canonical
+
+        candidates = []
+        for brand in self.get_all_brand_master(status='all'):
+            candidate_name = brand.get('canonical_name', '')
+            if normalize_brand_compare_key(candidate_name) != compare_key:
+                continue
+            if self.is_catalog_distinct('brand', canonical, candidate_name):
+                continue
+            candidates.append(candidate_name)
+
+        if not candidates:
+            return canonical
+        return min(set(candidates), key=lambda name: (len(normalize_name_key(name)), name.lower()))
+
+    def _get_brand_family_names(self, brand_name):
+        names = {
+            str(brand_name or '').strip(),
+            canonicalize_brand_name(brand_name),
+        }
+        target_canonical = canonicalize_brand_name(brand_name)
+        target_compare = normalize_brand_compare_key(self.analytics_brand_name(brand_name))
+        brand = self.resolve_brand_master(brand_name)
+        if brand:
+            names.update({
+                brand.get('brand_name', ''),
+                brand.get('canonical_name', ''),
+            })
+            for alias in self.get_brand_aliases(brand['id']):
+                names.add(alias.get('alias_name', ''))
+            target_canonical = brand.get('canonical_name') or target_canonical
+
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM brand_detail_json WHERE report_id=? AND brand_name=?",
-                (report_id, brand_name)
-            ).fetchone()
-            return dict(row) if row else None
+            rows = conn.execute(
+                """SELECT brand_name FROM brand_kpis
+                   UNION
+                   SELECT brand_name FROM daily_sales
+                   UNION
+                   SELECT brand_name FROM brand_detail_json"""
+            ).fetchall()
+        for row in rows:
+            candidate = row['brand_name']
+            if not candidate:
+                continue
+            candidate_canonical = canonicalize_brand_name(candidate)
+            same_canonical = candidate_canonical == target_canonical
+            same_compare = normalize_brand_compare_key(self.analytics_brand_name(candidate)) == target_compare
+            if same_canonical or same_compare:
+                names.add(candidate)
+        return sorted(name for name in names if name)
+
+    def _merge_brand_kpi_rows(self, rows, order_desc=False):
+        merged = {}
+        for row in rows or []:
+            canonical = self.analytics_brand_name(row.get('brand_name'))
+            report_key = row.get('report_id', row.get('start_date', ''))
+            key = (canonical, report_key)
+            entry = merged.setdefault(key, {
+                **row,
+                'brand_name': canonical,
+                'total_revenue': 0.0,
+                'total_qty': 0.0,
+                'num_stores': 0,
+                'repeat_stores': 0,
+                'single_stores': 0,
+                'closing_stock_total': 0.0,
+                'portfolio_share_pct': 0.0,
+                'top_store_revenue': 0.0,
+                'peak_revenue': 0.0,
+                'wow_rev_change_weight': 0.0,
+                'wow_qty_change_weight': 0.0,
+            })
+
+            revenue = float(row.get('total_revenue', 0) or 0)
+            qty = float(row.get('total_qty', 0) or 0)
+            entry['total_revenue'] += revenue
+            entry['total_qty'] += qty
+            entry['num_stores'] += int(row.get('num_stores', 0) or 0)
+            entry['repeat_stores'] += int(row.get('repeat_stores', 0) or 0)
+            entry['single_stores'] += int(row.get('single_stores', 0) or 0)
+            entry['closing_stock_total'] += float(row.get('closing_stock_total', 0) or 0)
+            entry['portfolio_share_pct'] += float(row.get('portfolio_share_pct', 0) or 0)
+
+            entry['unique_skus'] = max(int(entry.get('unique_skus', 0) or 0), int(row.get('unique_skus', 0) or 0))
+            entry['trading_days'] = max(int(entry.get('trading_days', 0) or 0), int(row.get('trading_days', 0) or 0))
+            current_cover = entry.get('stock_days_cover', 0) or 0
+            row_cover = row.get('stock_days_cover', 0) or 0
+            if current_cover == 0:
+                entry['stock_days_cover'] = row_cover
+            elif row_cover:
+                entry['stock_days_cover'] = min(current_cover, row_cover)
+
+            perf_score = int(row.get('perf_score', 0) or 0)
+            if perf_score >= int(entry.get('perf_score', 0) or 0):
+                for field in (
+                    'perf_grade', 'perf_score', 'perf_revenue_score',
+                    'perf_loyalty_score', 'perf_reach_score',
+                    'perf_activity_score', 'inv_health_status',
+                ):
+                    entry[field] = row.get(field)
+
+            if float(row.get('top_store_revenue', 0) or 0) >= float(entry.get('top_store_revenue', 0) or 0):
+                entry['top_store_name'] = row.get('top_store_name')
+                entry['top_store_revenue'] = float(row.get('top_store_revenue', 0) or 0)
+
+            if float(row.get('peak_revenue', 0) or 0) >= float(entry.get('peak_revenue', 0) or 0):
+                entry['peak_date'] = row.get('peak_date')
+                entry['peak_revenue'] = float(row.get('peak_revenue', 0) or 0)
+
+            entry['wow_rev_change_weight'] += float(row.get('wow_rev_change', 0) or 0) * max(revenue, 1)
+            entry['wow_qty_change_weight'] += float(row.get('wow_qty_change', 0) or 0) * max(qty, 1)
+
+        results = []
+        for entry in merged.values():
+            stores = int(entry.get('num_stores', 0) or 0)
+            qty = float(entry.get('total_qty', 0) or 0)
+            revenue = float(entry.get('total_revenue', 0) or 0)
+            entry['avg_revenue_per_store'] = (revenue / stores) if stores else 0.0
+            entry['repeat_pct'] = ((float(entry.get('repeat_stores', 0) or 0) / stores) * 100) if stores else 0.0
+            entry['wow_rev_change'] = (
+                entry.pop('wow_rev_change_weight', 0.0) / max(revenue, 1)
+                if revenue else 0.0
+            )
+            entry['wow_qty_change'] = (
+                entry.pop('wow_qty_change_weight', 0.0) / max(qty, 1)
+                if qty else 0.0
+            )
+            results.append(entry)
+
+        results.sort(key=lambda row: (row.get('start_date') or '', row.get('brand_name') or ''), reverse=order_desc)
+        return results
+
+    def get_brand_detail_json(self, report_id, brand_name):
+        """Return merged detail JSON for a canonical brand, or None."""
+        brand_names = self._get_brand_family_names(brand_name)
+        placeholders = ','.join('?' for _ in brand_names)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""SELECT * FROM brand_detail_json
+                    WHERE report_id=? AND brand_name IN ({placeholders})""",
+                [report_id, *brand_names]
+            ).fetchall()
+
+        if not rows:
+            return None
+        if len(rows) == 1:
+            return dict(rows[0])
+
+        json_fields = (
+            'top_stores_json', 'product_value_json', 'product_qty_json',
+            'closing_stock_json', 'pickup_json', 'supply_json',
+            'reorder_json', 'heatmap_json',
+        )
+        merged = {
+            'report_id': report_id,
+            'brand_name': self.analytics_brand_name(brand_name),
+        }
+        for field in json_fields:
+            records = []
+            for row in rows:
+                try:
+                    records.extend(json.loads(row[field] or '[]'))
+                except Exception:
+                    continue
+            merged[field] = json.dumps(records)
+        return merged
 
     def get_brand_history(self, brand_name, limit=12):
-        """Return brand KPIs across all reports, newest first."""
+        """Return canonical brand KPIs across all reports, newest first."""
+        brand_names = self._get_brand_family_names(brand_name)
+        placeholders = ','.join('?' for _ in brand_names)
         with self._connect() as conn:
-            return [dict(r) for r in conn.execute(
-                """SELECT bk.*, r.month_label, r.start_date, r.end_date
-                   FROM brand_kpis bk JOIN reports r ON bk.report_id = r.id
-                   WHERE bk.brand_name=? ORDER BY r.start_date DESC LIMIT ?""",
-                (brand_name, limit)
-            ).fetchall()]
+            rows = conn.execute(
+                f"""SELECT bk.*, r.month_label, r.start_date, r.end_date
+                    FROM brand_kpis bk
+                    JOIN reports r ON bk.report_id = r.id
+                    WHERE bk.brand_name IN ({placeholders})
+                    ORDER BY r.start_date DESC""",
+                brand_names
+            ).fetchall()
+        merged = self._merge_brand_kpi_rows([dict(r) for r in rows], order_desc=True)
+        return merged[:limit]
 
     def get_all_brand_kpis(self, report_id):
-        """Return all brand KPIs for a given report."""
+        """Return canonical brand KPIs for a given report."""
         with self._connect() as conn:
-            return [dict(r) for r in conn.execute(
+            rows = conn.execute(
                 "SELECT * FROM brand_kpis WHERE report_id=? ORDER BY total_revenue DESC",
                 (report_id,)
-            ).fetchall()]
+            ).fetchall()
+        return self._merge_brand_kpi_rows([dict(r) for r in rows], order_desc=True)
 
     def get_brand_kpis_single(self, report_id, brand_name):
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM brand_kpis WHERE report_id=? AND brand_name=?",
-                (report_id, brand_name)
-            ).fetchone()
-            return dict(row) if row else None
+        target_name = self.analytics_brand_name(brand_name)
+        for row in self.get_all_brand_kpis(report_id):
+            if row.get('brand_name') == target_name:
+                return row
+        return None
 
     def get_daily_sales(self, report_id, brand_name=None):
         with self._connect() as conn:
             if brand_name:
+                brand_names = self._get_brand_family_names(brand_name)
+                placeholders = ','.join('?' for _ in brand_names)
                 rows = conn.execute(
-                    "SELECT * FROM daily_sales WHERE report_id=? AND brand_name=? ORDER BY date",
-                    (report_id, brand_name)
+                    f"""SELECT * FROM daily_sales
+                        WHERE report_id=? AND brand_name IN ({placeholders})
+                        ORDER BY date""",
+                    [report_id, *brand_names]
                 ).fetchall()
+                merged = {}
+                for row in rows:
+                    record = dict(row)
+                    entry = merged.setdefault(record['date'], {
+                        'report_id': report_id,
+                        'brand_name': self.analytics_brand_name(brand_name),
+                        'date': record['date'],
+                        'revenue': 0.0,
+                        'qty': 0.0,
+                    })
+                    entry['revenue'] += float(record.get('revenue', 0) or 0)
+                    entry['qty'] += float(record.get('qty', 0) or 0)
+                return [merged[key] for key in sorted(merged)]
             else:
                 rows = conn.execute(
                     "SELECT * FROM daily_sales WHERE report_id=? ORDER BY date",
@@ -686,12 +877,13 @@ class DataStore:
             return [dict(r) for r in rows]
 
     def get_all_brands_in_db(self):
-        """Return sorted list of all brand names ever stored."""
+        """Return sorted canonical list of all brand names ever stored."""
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT DISTINCT brand_name FROM brand_kpis ORDER BY brand_name"
             ).fetchall()
-            return [r['brand_name'] for r in rows]
+            brands = {self.analytics_brand_name(r['brand_name']) for r in rows if r['brand_name']}
+            return sorted(brands)
 
     def get_report_by_month(self, year: int, month: int):
         """Return report row whose start_date falls in the given year+month, or None."""
@@ -706,7 +898,8 @@ class DataStore:
     def get_yoy_kpis(self, report_id: int):
         """
         Return a dict {brand_name: brand_kpis_row} for the same calendar month
-        one year prior to the given report_id.  Returns {} if no matching report.
+        one year prior to the given report_id.
+        Returns {} if no matching report OR if report types differ (e.g. weekly vs monthly).
         """
         report = self.get_report(report_id)
         if not report:
@@ -720,13 +913,17 @@ class DataStore:
             return {}
         if not prev_report:
             return {}
+        # Only compare reports of the same type to avoid week vs month distortion
+        if prev_report.get('report_type') != report.get('report_type'):
+            return {}
         rows = self.get_all_brand_kpis(prev_report['id'])
         return {r['brand_name']: r for r in rows}
 
     def get_portfolio_yoy(self, report_id: int):
         """
         Return (prev_report, prev_total_revenue, prev_total_qty, prev_total_stores)
-        for the same calendar month last year.  Returns (None, 0, 0, 0) if unavailable.
+        for the same calendar month last year.  Returns (None, 0, 0, 0) if unavailable
+        or if report types differ (e.g. weekly vs monthly).
         """
         report = self.get_report(report_id)
         if not report:
@@ -738,6 +935,9 @@ class DataStore:
         except Exception:
             return None, 0, 0, 0
         if not prev_report:
+            return None, 0, 0, 0
+        # Only compare same report type to avoid week vs month distortion
+        if prev_report.get('report_type') != report.get('report_type'):
             return None, 0, 0, 0
         return (
             prev_report,

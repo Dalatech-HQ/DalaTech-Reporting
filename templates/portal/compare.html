@@ -55,7 +55,7 @@
     </div>
     <div class="card">
       {% set metrics = [
-        ('Revenue', '₦'+'{:,.0f}'.format(a.total_revenue), '₦'+'{:,.0f}'.format(b.total_revenue), a.total_revenue > b.total_revenue),
+        ('Revenue', '₦' ~ (a.total_revenue | money2), '₦' ~ (b.total_revenue | money2), a.total_revenue > b.total_revenue),
         ('Qty Sold', '{:,.1f} packs'.format(a.total_qty), '{:,.1f} packs'.format(b.total_qty), a.total_qty > b.total_qty),
         ('Stores', a.num_stores|string, b.num_stores|string, a.num_stores > b.num_stores),
         ('Repeat %', a.repeat_pct|string+'%', b.repeat_pct|string+'%', a.repeat_pct > b.repeat_pct),

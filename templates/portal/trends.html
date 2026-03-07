@@ -186,7 +186,7 @@
 <div class="kpi-row">
   <div class="kpi-card-large">
     <div class="kpi-header">Total Sales Revenue</div>
-    <div class="kpi-value-large">₦{{ "{:,.0f}".format(metrics.total_revenue) }}</div>
+    <div class="kpi-value-large">₦{{ metrics.total_revenue | money2 }}</div>
     {% if metrics.revenue_mom is defined %}
       {% if metrics.revenue_mom > 0 %}
       <span class="mom-badge mom-positive">▲ {{ metrics.revenue_mom }}% MoM</span>
@@ -303,7 +303,7 @@
       <div class="store-rank">{{ loop.index }}</div>
       <div class="store-name">{{ store.store_name[:50] }}</div>
       <div class="store-visits">{{ store.visit_count }} visits</div>
-      <div class="store-revenue">₦{{ "{:,.0f}".format(store.total_revenue) }}</div>
+      <div class="store-revenue">₦{{ store.total_revenue | money2 }}</div>
       <span class="badge {% if store.repeat_category == 'Frequent (5+)' %}badge-red{% elif store.repeat_category == 'Regular (2-4)' %}badge-amber{% else %}badge-muted{% endif %}">
         {{ store.repeat_category }}
       </span>

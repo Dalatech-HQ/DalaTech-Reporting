@@ -81,6 +81,11 @@ def _money_2dp(value):
     except (TypeError, ValueError):
         return "0.00"
 
+
+@app.template_filter('money2')
+def money2_filter(value):
+    return _money_2dp(value)
+
 # ── Admin Auth ────────────────────────────────────────────────────────────────
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '')
 
@@ -263,7 +268,7 @@ def _merge_depletions_by_brand(brand_kpis_rows):
     """Collapse obvious duplicate brand variants into one depletion summary."""
     merged = {}
     for row in brand_kpis_rows or []:
-        brand_name = canonicalize_brand_name(row.get('brand_name', ''))
+        brand_name = ds.analytics_brand_name(row.get('brand_name', ''))
         depletion = stock_depletion_date(row)
         existing = merged.get(brand_name)
         if not existing or depletion.get('days_remaining', 10**9) < existing.get('days_remaining', 10**9):
@@ -1291,7 +1296,7 @@ def brand_detail(brand_name):
     hist_oldest = list(reversed(history))
 
     # Forecast
-    canonical_brand = canonicalize_brand_name(brand_name)
+    canonical_brand = ds.analytics_brand_name(brand_name)
     forecast = build_brand_forecasts({brand_name: hist_oldest}).get(canonical_brand, {})
 
     # Daily sales
@@ -1482,7 +1487,7 @@ def brand_portal(token):
     kpis    = ds.get_brand_kpis_single(report_id, brand_name) if report_id else None
     history = ds.get_brand_history(brand_name, limit=12)
     hist_oldest = list(reversed(history))
-    forecast = build_brand_forecasts({brand_name: hist_oldest}).get(canonicalize_brand_name(brand_name), {})
+    forecast = build_brand_forecasts({brand_name: hist_oldest}).get(ds.analytics_brand_name(brand_name), {})
     daily   = ds.get_daily_sales(report_id, brand_name) if report_id else []
 
     # PDF link

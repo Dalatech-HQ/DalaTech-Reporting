@@ -54,21 +54,21 @@
       <div class="podium-block podium-2">
         <div class="podium-medal">🥈</div>
         <div class="podium-name">{{ leaderboard[1].brand_name }}</div>
-        <div class="podium-revenue">₦{{ "{:,.0f}".format(leaderboard[1].total_revenue / 1000) }}K</div>
+        <div class="podium-revenue">₦{{ leaderboard[1].total_revenue | money2 }}</div>
       </div>
     </div>
     <div class="podium-slot">
       <div class="podium-block podium-1">
         <div class="podium-medal">🥇</div>
         <div class="podium-name">{{ leaderboard[0].brand_name }}</div>
-        <div class="podium-revenue">₦{{ "{:,.0f}".format(leaderboard[0].total_revenue / 1000) }}K</div>
+        <div class="podium-revenue">₦{{ leaderboard[0].total_revenue | money2 }}</div>
       </div>
     </div>
     <div class="podium-slot">
       <div class="podium-block podium-3">
         <div class="podium-medal">🥉</div>
         <div class="podium-name">{{ leaderboard[2].brand_name }}</div>
-        <div class="podium-revenue">₦{{ "{:,.0f}".format(leaderboard[2].total_revenue / 1000) }}K</div>
+        <div class="podium-revenue">₦{{ leaderboard[2].total_revenue | money2 }}</div>
       </div>
     </div>
   </div>
@@ -94,7 +94,7 @@
       <div class="rank-bar-wrap"><div class="rank-bar" style="width:{{ (b.total_revenue / max_rev * 100)|round }}%;background:{% if loop.index==1 %}#F0A500{% elif loop.index==2 %}#888{% elif loop.index==3 %}#CD7F32{% else %}var(--navy){% endif %};"></div></div>
     </div>
     <div style="text-align:right;">
-      <div class="fw-bold" style="font-size:14px;">₦{{ "{:,.0f}".format(b.total_revenue) }}</div>
+      <div class="fw-bold" style="font-size:14px;">₦{{ b.total_revenue | money2 }}</div>
       <div class="fs-sm text-muted">{{ b.perf_grade }} grade</div>
     </div>
     <div class="award-badge">{% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% elif loop.index <= 10 %}⭐{% else %}{% endif %}</div>

@@ -229,6 +229,8 @@ def multi_horizon_revenue_forecast(history, horizons=(1, 3, 6, 12)):
             'pct_change': 0,
             'data_points': 0,
             'consecutive_months': 0,
+            'growth_label': 'Insufficient Data',
+            'growth_color': growth_color('Insufficient Data'),
             'eligible_horizons': [],
             'horizons': {},
         }
