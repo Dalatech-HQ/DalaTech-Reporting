@@ -156,9 +156,15 @@ def render_pdf_bytes(html_content: str) -> bytes:
     }
     with sync_playwright() as p:
         browser = None
-        try:
-            browser = p.chromium.launch(**launch_options)
-        except Exception as launch_error:
+        launch_errors = []
+
+        def _launch(executable_path=None):
+            opts = dict(launch_options)
+            if executable_path:
+                opts['executable_path'] = executable_path
+            return p.chromium.launch(**opts)
+
+        def _candidate_paths():
             shell_candidates = []
             if os.name != 'nt':
                 try:
@@ -166,7 +172,8 @@ def render_pdf_bytes(html_content: str) -> bytes:
                         [
                             '/bin/sh', '-lc',
                             "command -v chromium || command -v chromium-browser || command -v google-chrome || "
-                            "find /nix/store -type f \\( -name chromium -o -name chromium-browser -o -name google-chrome \\) 2>/dev/null | head -n 10"
+                            "command -v .chromium-wrapped || "
+                            "find /nix/store -type f \\( -name chromium -o -name chromium-browser -o -name google-chrome -o -name .chromium-wrapped \\) 2>/dev/null | head -n 20"
                         ],
                         capture_output=True,
                         text=True,
@@ -176,29 +183,53 @@ def render_pdf_bytes(html_content: str) -> bytes:
                     shell_candidates = [line.strip() for line in probe.stdout.splitlines() if line.strip()]
                 except Exception:
                     shell_candidates = []
+
             nix_candidates = []
             for pattern in (
                 '/nix/store/*/bin/chromium',
                 '/nix/store/*/bin/chromium-browser',
                 '/nix/store/*/bin/google-chrome',
+                '/nix/store/*/bin/.chromium-wrapped',
                 '/nix/store/*chromium*/bin/chromium',
                 '/nix/store/*chromium*/bin/chromium-browser',
+                '/nix/store/*chromium*/bin/.chromium-wrapped',
+                '/nix/var/nix/profiles/default/bin/chromium',
+                '/etc/profiles/per-user/root/bin/chromium',
+                '/run/current-system/sw/bin/chromium',
             ):
                 nix_candidates.extend(glob.glob(pattern))
+
             candidates = [
                 os.getenv('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'),
                 shutil.which('chromium'),
                 shutil.which('chromium-browser'),
                 shutil.which('google-chrome'),
+                shutil.which('.chromium-wrapped'),
                 '/usr/bin/chromium',
                 '/usr/bin/chromium-browser',
                 *shell_candidates,
                 *nix_candidates,
             ]
+            seen = set()
+            ordered = []
+            for candidate in candidates:
+                if candidate and candidate not in seen:
+                    seen.add(candidate)
+                    ordered.append(candidate)
+            return ordered
+
+        try:
+            browser = _launch()
+        except Exception as launch_error:
+            launch_errors.append(f"default: {launch_error}")
+            candidates = _candidate_paths()
             for candidate in candidates:
                 if candidate and os.path.exists(candidate):
-                    browser = p.chromium.launch(executable_path=candidate, **launch_options)
-                    break
+                    try:
+                        browser = _launch(executable_path=candidate)
+                        break
+                    except Exception as candidate_error:
+                        launch_errors.append(f"{candidate}: {candidate_error}")
             if browser is None and 'playwright install' in str(launch_error).lower():
                 install_env = os.environ.copy()
                 if browsers_path:
@@ -210,9 +241,23 @@ def render_pdf_bytes(html_content: str) -> bytes:
                     timeout=180,
                     check=False,
                 )
-                browser = p.chromium.launch(**launch_options)
+                try:
+                    browser = _launch()
+                except Exception as install_error:
+                    launch_errors.append(f"post-install default: {install_error}")
+                    for candidate in _candidate_paths():
+                        if candidate and os.path.exists(candidate):
+                            try:
+                                browser = _launch(executable_path=candidate)
+                                break
+                            except Exception as candidate_error:
+                                launch_errors.append(f"post-install {candidate}: {candidate_error}")
             if browser is None:
-                raise
+                raise RuntimeError(
+                    "Unable to launch chromium for PDF rendering. "
+                    f"Candidates checked: {_candidate_paths()}. "
+                    f"Errors: {' | '.join(launch_errors[:6])}"
+                )
         page = browser.new_page()
         page.set_content(html_content, wait_until='networkidle')
         pdf_bytes = page.pdf(
