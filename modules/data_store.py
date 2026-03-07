@@ -19,8 +19,9 @@ import os
 import sqlite3
 import uuid
 from datetime import datetime
+from difflib import SequenceMatcher
 
-from .brand_names import canonicalize_brand_name, normalize_name_key
+from .brand_names import canonicalize_brand_name, normalize_brand_compare_key, normalize_name_key
 
 # Allow overriding via env var so a Railway Volume can be used for persistence.
 # On Railway: set DATABASE_PATH=/data/dala_data.db and mount a Volume at /data
@@ -70,6 +71,59 @@ class DataStore:
     def _slugify(value):
         value = normalize_name_key(value)
         return value.replace(' ', '-')
+
+    @staticmethod
+    def _ordered_pair(left_key, right_key):
+        return tuple(sorted((left_key, right_key)))
+
+    @staticmethod
+    def _brand_similarity_score(left_name, right_name):
+        left_norm = normalize_name_key(left_name)
+        right_norm = normalize_name_key(right_name)
+        if not left_norm or not right_norm:
+            return 0.0
+        if left_norm == right_norm:
+            return 1.0
+
+        left_cmp = normalize_brand_compare_key(left_name)
+        right_cmp = normalize_brand_compare_key(right_name)
+        if left_cmp and left_cmp == right_cmp:
+            return 0.99
+
+        seq_norm = SequenceMatcher(None, left_norm, right_norm).ratio()
+        seq_cmp = SequenceMatcher(None, left_cmp, right_cmp).ratio() if left_cmp and right_cmp else seq_norm
+
+        left_tokens = set(left_cmp.split() or left_norm.split())
+        right_tokens = set(right_cmp.split() or right_norm.split())
+        overlap = (len(left_tokens & right_tokens) / len(left_tokens | right_tokens)) if (left_tokens or right_tokens) else 0.0
+        contains = (
+            (left_cmp and right_cmp and (left_cmp in right_cmp or right_cmp in left_cmp)) or
+            (left_norm in right_norm or right_norm in left_norm)
+        )
+
+        score = max(seq_cmp, (seq_norm * 0.45) + (seq_cmp * 0.3) + (overlap * 0.25))
+        if contains and overlap >= 0.5:
+            score = max(score, 0.92)
+        if left_tokens and right_tokens and (left_tokens.issubset(right_tokens) or right_tokens.issubset(left_tokens)):
+            score = max(score, 0.9)
+        return round(score, 4)
+
+    @staticmethod
+    def _sku_similarity_score(left_name, right_name):
+        left_norm = normalize_name_key(left_name)
+        right_norm = normalize_name_key(right_name)
+        if not left_norm or not right_norm:
+            return 0.0
+        if left_norm == right_norm:
+            return 1.0
+
+        seq = SequenceMatcher(None, left_norm, right_norm).ratio()
+        left_tokens = set(left_norm.split())
+        right_tokens = set(right_norm.split())
+        overlap = (len(left_tokens & right_tokens) / len(left_tokens | right_tokens)) if (left_tokens or right_tokens) else 0.0
+        if (left_norm in right_norm or right_norm in left_norm) and overlap >= 0.5:
+            return round(max(seq, 0.9), 4)
+        return round(max(seq, (seq * 0.7) + (overlap * 0.3)), 4)
 
     def _connect(self):
         conn = sqlite3.connect(self.db_path)
@@ -232,6 +286,8 @@ class DataStore:
                     normalized_name     TEXT NOT NULL,
                     canonical_candidate TEXT,
                     brand_candidate     TEXT,
+                    suggested_match_name TEXT,
+                    similarity_score    REAL DEFAULT 0,
                     source_report_id    INTEGER,
                     source_filename     TEXT,
                     reason              TEXT DEFAULT 'new_detected',
@@ -240,6 +296,17 @@ class DataStore:
                     created_at          TEXT NOT NULL,
                     reviewed_at         TEXT,
                     FOREIGN KEY (source_report_id) REFERENCES reports(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS catalog_distinct_rules (
+                    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_type      TEXT NOT NULL,
+                    left_key         TEXT NOT NULL,
+                    right_key        TEXT NOT NULL,
+                    brand_scope_key  TEXT DEFAULT '',
+                    note             TEXT,
+                    created_at       TEXT NOT NULL,
+                    UNIQUE(entity_type, left_key, right_key, brand_scope_key)
                 );
 
                 CREATE TABLE IF NOT EXISTS alert_rules (
@@ -284,6 +351,7 @@ class DataStore:
                 CREATE INDEX IF NOT EXISTS idx_brands_master_status ON brands_master(status);
                 CREATE INDEX IF NOT EXISTS idx_skus_master_brand ON skus_master(brand_id);
                 CREATE INDEX IF NOT EXISTS idx_queue_status ON catalog_review_queue(status, entity_type, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_catalog_distinct_rules ON catalog_distinct_rules(entity_type, brand_scope_key);
 
                 CREATE TABLE IF NOT EXISTS ai_narratives (
                     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -358,6 +426,11 @@ class DataStore:
             existing = [r[1] for r in conn.execute("PRAGMA table_info(reports)").fetchall()]
             if 'report_type' not in existing:
                 conn.execute("ALTER TABLE reports ADD COLUMN report_type TEXT DEFAULT 'monthly'")
+            queue_cols = [r[1] for r in conn.execute("PRAGMA table_info(catalog_review_queue)").fetchall()]
+            if 'suggested_match_name' not in queue_cols:
+                conn.execute("ALTER TABLE catalog_review_queue ADD COLUMN suggested_match_name TEXT")
+            if 'similarity_score' not in queue_cols:
+                conn.execute("ALTER TABLE catalog_review_queue ADD COLUMN similarity_score REAL DEFAULT 0")
 
     # ── Report type helpers ───────────────────────────────────────────────────
 
@@ -1134,9 +1207,65 @@ class DataStore:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def mark_catalog_distinct(self, entity_type, left_name, right_name, brand_scope=None, note=None):
+        left_key = normalize_name_key(left_name)
+        right_key = normalize_name_key(right_name)
+        if entity_type not in ('brand', 'sku') or not left_key or not right_key:
+            return
+        left_key, right_key = self._ordered_pair(left_key, right_key)
+        brand_scope_key = normalize_name_key(brand_scope) if entity_type == 'sku' and brand_scope else ''
+        now = datetime.now().isoformat(timespec='seconds')
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT OR IGNORE INTO catalog_distinct_rules
+                   (entity_type, left_key, right_key, brand_scope_key, note, created_at)
+                   VALUES (?,?,?,?,?,?)""",
+                (entity_type, left_key, right_key, brand_scope_key, note, now)
+            )
+
+    def is_catalog_distinct(self, entity_type, left_name, right_name, brand_scope=None):
+        left_key = normalize_name_key(left_name)
+        right_key = normalize_name_key(right_name)
+        if entity_type not in ('brand', 'sku') or not left_key or not right_key:
+            return False
+        left_key, right_key = self._ordered_pair(left_key, right_key)
+        brand_scope_key = normalize_name_key(brand_scope) if entity_type == 'sku' and brand_scope else ''
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT 1 FROM catalog_distinct_rules
+                   WHERE entity_type=? AND left_key=? AND right_key=? AND brand_scope_key=?""",
+                (entity_type, left_key, right_key, brand_scope_key)
+            ).fetchone()
+            return bool(row)
+
+    def find_brand_duplicate_candidate(self, brand_name, threshold=0.82):
+        best = None
+        for brand in self.get_all_brand_master(status='all'):
+            if self.is_catalog_distinct('brand', brand_name, brand['canonical_name']):
+                continue
+            score = self._brand_similarity_score(brand_name, brand['canonical_name'])
+            if score >= threshold and (best is None or score > best['score']):
+                best = {'brand': brand, 'score': score}
+        return best
+
+    def find_sku_duplicate_candidate(self, brand_id, sku_name, threshold=0.84):
+        brand = self.get_brand_master(brand_id)
+        if not brand:
+            return None
+        brand_scope = brand['canonical_name']
+        best = None
+        for sku in self.get_brand_skus(brand_id, status='all'):
+            if self.is_catalog_distinct('sku', sku_name, sku['sku_name'], brand_scope=brand_scope):
+                continue
+            score = self._sku_similarity_score(sku_name, sku['sku_name'])
+            if score >= threshold and (best is None or score > best['score']):
+                best = {'sku': sku, 'score': score, 'brand': brand}
+        return best
+
     def queue_catalog_candidate(self, entity_type, raw_name, canonical_candidate=None,
                                 brand_candidate=None, source_report_id=None,
-                                source_filename=None, reason='new_detected'):
+                                source_filename=None, reason='new_detected',
+                                suggested_match_name=None, similarity_score=0.0):
         raw_name = str(raw_name or '').strip()
         normalized_name = normalize_name_key(raw_name)
         if entity_type not in ('brand', 'sku') or not normalized_name:
@@ -1159,10 +1288,12 @@ class DataStore:
             cur = conn.execute(
                 """INSERT INTO catalog_review_queue
                    (entity_type, raw_name, normalized_name, canonical_candidate, brand_candidate,
-                    source_report_id, source_filename, reason, status, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    suggested_match_name, similarity_score, source_report_id, source_filename,
+                    reason, status, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (entity_type, raw_name, normalized_name, canonical_candidate, brand_candidate,
-                 source_report_id, source_filename, reason, 'pending', now)
+                 suggested_match_name, similarity_score, source_report_id, source_filename,
+                 reason, 'pending', now)
             )
             return cur.lastrowid
 
@@ -1172,7 +1303,12 @@ class DataStore:
         if status and status != 'all':
             query += " WHERE status=?"
             params.append(status)
-        query += " ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, id DESC LIMIT ?"
+        query += """ ORDER BY
+                     CASE status WHEN 'pending' THEN 0 ELSE 1 END,
+                     CASE reason WHEN 'possible_duplicate' THEN 0 ELSE 1 END,
+                     similarity_score DESC,
+                     id DESC
+                     LIMIT ?"""
         params.append(limit)
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
@@ -1205,6 +1341,7 @@ class DataStore:
                 'pending_reviews': conn.execute("SELECT COUNT(*) FROM catalog_review_queue WHERE status='pending'").fetchone()[0],
                 'pending_brand_reviews': conn.execute("SELECT COUNT(*) FROM catalog_review_queue WHERE status='pending' AND entity_type='brand'").fetchone()[0],
                 'pending_sku_reviews': conn.execute("SELECT COUNT(*) FROM catalog_review_queue WHERE status='pending' AND entity_type='sku'").fetchone()[0],
+                'pending_duplicate_reviews': conn.execute("SELECT COUNT(*) FROM catalog_review_queue WHERE status='pending' AND reason='possible_duplicate'").fetchone()[0],
             }
         return summary
 
@@ -1295,12 +1432,18 @@ class DataStore:
 
             brand = self.resolve_brand_master(brand_name)
             if not brand:
+                suggested_brand = self.find_brand_duplicate_candidate(canonical_brand)
+                reason = 'possible_duplicate' if suggested_brand else 'new_detected'
                 queue_id = self.queue_catalog_candidate(
                     entity_type='brand',
                     raw_name=brand_name,
                     canonical_candidate=canonical_brand,
+                    brand_candidate=suggested_brand['brand']['canonical_name'] if suggested_brand else None,
                     source_report_id=source_report_id,
                     source_filename=source_filename,
+                    reason=reason,
+                    suggested_match_name=suggested_brand['brand']['canonical_name'] if suggested_brand else None,
+                    similarity_score=suggested_brand['score'] if suggested_brand else 0.0,
                 )
                 if queue_id:
                     queued_brands += 1
@@ -1315,6 +1458,8 @@ class DataStore:
                 seen_sku_keys.add(sku_key)
                 if brand and self.resolve_sku_master(brand['id'], sku_name):
                     continue
+                suggested_sku = self.find_sku_duplicate_candidate(brand['id'], sku_name) if brand else None
+                reason = 'possible_duplicate' if suggested_sku else 'new_detected'
                 queue_id = self.queue_catalog_candidate(
                     entity_type='sku',
                     raw_name=sku_name,
@@ -1322,6 +1467,9 @@ class DataStore:
                     brand_candidate=brand['canonical_name'] if brand else canonical_brand,
                     source_report_id=source_report_id,
                     source_filename=source_filename,
+                    reason=reason,
+                    suggested_match_name=suggested_sku['sku']['sku_name'] if suggested_sku else None,
+                    similarity_score=suggested_sku['score'] if suggested_sku else 0.0,
                 )
                 if queue_id:
                     queued_skus += 1

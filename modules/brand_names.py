@@ -43,6 +43,13 @@ _CANONICAL_MAP = {
     'zayith': 'Zayith',
 }
 
+_GENERIC_BRAND_SUFFIXES = {
+    'enterprise', 'enterprises', 'ent', 'services', 'service',
+    'foods', 'food', 'ventures', 'venture', 'limited', 'ltd',
+    'company', 'co', 'global', 'group', 'industries', 'industry',
+    'nigeria', 'ng', 'solutions', 'solution', 'partners', 'trading',
+}
+
 
 def _slug(value: str) -> str:
     return re.sub(r'[^a-z0-9]+', '', value.lower())
@@ -57,6 +64,14 @@ def normalize_name_key(value: str) -> str:
     value = re.sub(r'[^a-z0-9]+', ' ', value)
     value = re.sub(r'\s+', ' ', value).strip()
     return value
+
+
+def normalize_brand_compare_key(value: str) -> str:
+    """Reduce a brand name to its distinguishing stem for duplicate checks."""
+    tokens = normalize_name_key(value).split()
+    while len(tokens) > 1 and tokens[-1] in _GENERIC_BRAND_SUFFIXES:
+        tokens.pop()
+    return ' '.join(tokens)
 
 
 def canonicalize_brand_name(name: str) -> str:

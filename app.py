@@ -175,6 +175,7 @@ def _review_catalog_item(item_id, action, note=None, target_brand_id=None, targe
         return item
 
     if item['entity_type'] == 'brand':
+        suggested_brand_name = item.get('suggested_match_name') or item.get('brand_candidate')
         if action == 'approve':
             brand = ds.ensure_brand_master(item['canonical_candidate'] or item['raw_name'])
             if not brand:
@@ -182,12 +183,27 @@ def _review_catalog_item(item_id, action, note=None, target_brand_id=None, targe
             ds.add_brand_alias(brand['id'], item['raw_name'])
             ds.update_catalog_review_status(item_id, 'approved', note)
             return brand
-        if action == 'map':
+        if action in ('map', 'accept_alias'):
+            if not target_brand_id and suggested_brand_name:
+                suggested = ds.resolve_brand_master(suggested_brand_name)
+                target_brand_id = suggested['id'] if suggested else None
             brand = ds.get_brand_master(int(target_brand_id or 0))
             if not brand:
                 raise ValueError('Select a valid existing brand.')
             ds.add_brand_alias(brand['id'], item['raw_name'])
             ds.update_catalog_review_status(item_id, 'merged', note or f"Mapped to {brand['canonical_name']}")
+            return brand
+        if action == 'keep_separate':
+            brand = ds.ensure_brand_master(item['canonical_candidate'] or item['raw_name'])
+            if not brand:
+                raise ValueError('Could not create brand master record.')
+            if suggested_brand_name:
+                ds.mark_catalog_distinct('brand', item['raw_name'], suggested_brand_name, note=note)
+            ds.update_catalog_review_status(
+                item_id,
+                'distinct',
+                note or (f"Kept separate from {suggested_brand_name}" if suggested_brand_name else 'Kept separate')
+            )
             return brand
         raise ValueError('Unsupported brand review action.')
 
@@ -200,6 +216,7 @@ def _review_catalog_item(item_id, action, note=None, target_brand_id=None, targe
         if not brand:
             raise ValueError('Select or approve the parent brand first.')
 
+        suggested_sku_name = item.get('suggested_match_name')
         if action == 'approve':
             sku = ds.ensure_sku_master(brand['id'], item['canonical_candidate'] or item['raw_name'])
             if not sku:
@@ -207,12 +224,27 @@ def _review_catalog_item(item_id, action, note=None, target_brand_id=None, targe
             ds.add_sku_alias(sku['id'], brand['id'], item['raw_name'])
             ds.update_catalog_review_status(item_id, 'approved', note)
             return sku
-        if action == 'map':
+        if action in ('map', 'accept_alias'):
+            if not target_sku_id and suggested_sku_name:
+                suggested = ds.resolve_sku_master(brand['id'], suggested_sku_name)
+                target_sku_id = suggested['id'] if suggested else None
             sku = ds.get_sku_master(int(target_sku_id or 0))
             if not sku or sku['brand_id'] != brand['id']:
                 raise ValueError('Select a valid existing SKU for that brand.')
             ds.add_sku_alias(sku['id'], brand['id'], item['raw_name'])
             ds.update_catalog_review_status(item_id, 'merged', note or f"Mapped to {sku['sku_name']}")
+            return sku
+        if action == 'keep_separate':
+            sku = ds.ensure_sku_master(brand['id'], item['canonical_candidate'] or item['raw_name'])
+            if not sku:
+                raise ValueError('Could not create SKU master record.')
+            if suggested_sku_name:
+                ds.mark_catalog_distinct('sku', item['raw_name'], suggested_sku_name, brand_scope=brand['canonical_name'], note=note)
+            ds.update_catalog_review_status(
+                item_id,
+                'distinct',
+                note or (f"Kept separate from {suggested_sku_name}" if suggested_sku_name else 'Kept separate')
+            )
             return sku
         raise ValueError('Unsupported SKU review action.')
 

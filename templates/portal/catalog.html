@@ -13,6 +13,7 @@
   <option value="all" {% if review_status == 'all' %}selected{% endif %}>All review items</option>
   <option value="approved" {% if review_status == 'approved' %}selected{% endif %}>Approved only</option>
   <option value="merged" {% if review_status == 'merged' %}selected{% endif %}>Merged only</option>
+  <option value="distinct" {% if review_status == 'distinct' %}selected{% endif %}>Kept separate</option>
   <option value="rejected" {% if review_status == 'rejected' %}selected{% endif %}>Rejected only</option>
 </select>
 <button type="button" class="btn btn-outline btn-sm" onclick="syncCatalog()">Resync from DB</button>
@@ -23,7 +24,7 @@
   <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{{ catalog_summary.brands_total }}</div><div class="text-muted fs-sm">Brands in catalog</div></div>
   <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{{ catalog_summary.skus_total }}</div><div class="text-muted fs-sm">Approved SKUs</div></div>
   <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{{ catalog_summary.pending_brand_reviews }}</div><div class="text-muted fs-sm">Pending brands</div></div>
-  <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{{ catalog_summary.pending_sku_reviews }}</div><div class="text-muted fs-sm">Pending SKUs</div></div>
+  <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{{ catalog_summary.pending_duplicate_reviews }}</div><div class="text-muted fs-sm">Likely duplicates</div></div>
 </div>
 
 <div class="grid-2" style="margin-bottom:24px;">
@@ -62,6 +63,10 @@
         <div class="text-muted fs-sm">Attach the imported name as an alias to an existing catalog record.</div>
       </div>
       <div style="padding:12px;border:1px solid var(--gray);border-radius:8px;background:var(--bg);">
+        <strong>Keep Separate</strong>
+        <div class="text-muted fs-sm">Approve it as its own record and remember that it should not be merged with the suggested match later.</div>
+      </div>
+      <div style="padding:12px;border:1px solid var(--gray);border-radius:8px;background:var(--bg);">
         <strong>Reject</strong>
         <div class="text-muted fs-sm">Marks a bad or irrelevant entry so it stops reappearing as pending.</div>
       </div>
@@ -84,7 +89,7 @@
           <th>ID</th>
           <th>Type</th>
           <th>Detected Name</th>
-          <th>Brand Context</th>
+          <th>Suggestion</th>
           <th>Source</th>
           <th>Created</th>
           <th>Action</th>
@@ -99,7 +104,14 @@
             <div style="font-weight:700;">{{ item.raw_name }}</div>
             <div class="text-muted fs-sm">{{ item.canonical_candidate or '—' }}</div>
           </td>
-          <td>{{ item.brand_candidate or '—' }}</td>
+          <td>
+          {% if item.reason == 'possible_duplicate' %}
+              <div style="font-weight:700;color:var(--navy);">{{ item.suggested_match_name or item.brand_candidate or 'Review needed' }}</div>
+              <div class="text-muted fs-sm">Likely match · {{ "%.0f"|format((item.similarity_score or 0) * 100) }}% confidence</div>
+            {% else %}
+              {{ item.brand_candidate or 'New record' }}
+            {% endif %}
+          </td>
           <td>{{ item.source_filename or 'Import' }}</td>
           <td>{{ item.created_at[:10] if item.created_at else '—' }}</td>
           <td style="min-width:250px;">
@@ -108,15 +120,24 @@
               {% if item.review_note %}<div class="text-muted fs-sm" style="margin-top:4px;">{{ item.review_note }}</div>{% endif %}
             {% elif item.entity_type == 'brand' %}
               <div style="display:grid;gap:8px;">
+                {% if item.reason == 'possible_duplicate' %}
+                <div class="flash flash-error" style="padding:10px;font-size:12px;">
+                  Likely duplicate of <strong>{{ item.suggested_match_name or item.brand_candidate }}</strong>. Accept the alias or keep it separate.
+                </div>
+                {% endif %}
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                   <button type="button" class="btn btn-green btn-sm" onclick="reviewItem({{ item.id }}, 'approve')">Approve</button>
+                  {% if item.reason == 'possible_duplicate' %}
+                  <button type="button" class="btn btn-navy btn-sm" onclick="reviewItem({{ item.id }}, 'accept_alias')">Accept Alias</button>
+                  <button type="button" class="btn btn-outline btn-sm" onclick="reviewItem({{ item.id }}, 'keep_separate')">Keep Separate</button>
+                  {% endif %}
                   <button type="button" class="btn btn-outline btn-sm" onclick="reviewItem({{ item.id }}, 'reject')">Reject</button>
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                   <select id="brandTarget-{{ item.id }}" class="form-control" style="min-width:170px;">
                     <option value="">Map to existing brand</option>
                     {% for brand in brand_options %}
-                    <option value="{{ brand.id }}">{{ brand.canonical_name }}</option>
+                    <option value="{{ brand.id }}" {% if brand.canonical_name == (item.suggested_match_name or item.brand_candidate) %}selected{% endif %}>{{ brand.canonical_name }}</option>
                     {% endfor %}
                   </select>
                   <button type="button" class="btn btn-navy btn-sm" onclick="reviewItem({{ item.id }}, 'map')">Map</button>
@@ -124,6 +145,11 @@
               </div>
             {% else %}
               <div style="display:grid;gap:8px;">
+                {% if item.reason == 'possible_duplicate' %}
+                <div class="flash flash-error" style="padding:10px;font-size:12px;">
+                  Likely duplicate of <strong>{{ item.suggested_match_name }}</strong> under <strong>{{ item.brand_candidate }}</strong>.
+                </div>
+                {% endif %}
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                   <select id="skuBrandTarget-{{ item.id }}" class="form-control" style="min-width:170px;" onchange="populateSkuTargets({{ item.id }})">
                     <option value="">Choose brand</option>
@@ -132,9 +158,13 @@
                     {% endfor %}
                   </select>
                   <button type="button" class="btn btn-green btn-sm" onclick="reviewItem({{ item.id }}, 'approve')">Approve</button>
+                  {% if item.reason == 'possible_duplicate' %}
+                  <button type="button" class="btn btn-navy btn-sm" onclick="reviewItem({{ item.id }}, 'accept_alias')">Accept Alias</button>
+                  <button type="button" class="btn btn-outline btn-sm" onclick="reviewItem({{ item.id }}, 'keep_separate')">Keep Separate</button>
+                  {% endif %}
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                  <select id="skuTarget-{{ item.id }}" class="form-control" style="min-width:170px;">
+                  <select id="skuTarget-{{ item.id }}" class="form-control" style="min-width:170px;" data-suggested="{{ item.suggested_match_name or '' }}">
                     <option value="">Map to existing SKU</option>
                   </select>
                   <button type="button" class="btn btn-navy btn-sm" onclick="reviewItem({{ item.id }}, 'map')">Map</button>
@@ -208,11 +238,13 @@ function populateSkuTargets(itemId) {
   const skuSelect = document.getElementById(`skuTarget-${itemId}`);
   if (!brandSelect || !skuSelect) return;
   const options = brandSkusMap[brandSelect.value] || [];
+  const currentSuggested = skuSelect.dataset.suggested || '';
   skuSelect.innerHTML = '<option value="">Map to existing SKU</option>';
   options.forEach((sku) => {
     const option = document.createElement('option');
     option.value = sku.id;
     option.textContent = sku.name;
+    if (currentSuggested && sku.name === currentSuggested) option.selected = true;
     skuSelect.appendChild(option);
   });
 }

@@ -82,6 +82,7 @@
     <thead>
       <tr>
         <th>Detected SKU</th>
+        <th>Suggestion</th>
         <th>Source</th>
         <th>Action</th>
       </tr>
@@ -93,13 +94,25 @@
           <div style="font-weight:700;">{{ item.raw_name }}</div>
           <div class="text-muted fs-sm">{{ item.created_at[:10] if item.created_at else '—' }}</div>
         </td>
+        <td>
+          {% if item.reason == 'possible_duplicate' and item.suggested_match_name %}
+          <div style="font-weight:700;color:var(--navy);">{{ item.suggested_match_name }}</div>
+          <div class="text-muted fs-sm">{{ "%.0f"|format((item.similarity_score or 0) * 100) }}% confidence</div>
+          {% else %}
+          <span class="text-muted">New SKU</span>
+          {% endif %}
+        </td>
         <td>{{ item.source_filename or 'Import' }}</td>
         <td style="display:flex;gap:8px;flex-wrap:wrap;">
           <button type="button" class="btn btn-green btn-sm" onclick="reviewItem({{ item.id }}, 'approve')">Approve</button>
+          {% if item.reason == 'possible_duplicate' %}
+          <button type="button" class="btn btn-navy btn-sm" onclick="reviewItem({{ item.id }}, 'accept_alias')">Accept Alias</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="reviewItem({{ item.id }}, 'keep_separate')">Keep Separate</button>
+          {% endif %}
           <select id="skuTarget-{{ item.id }}" class="form-control" style="min-width:180px;">
             <option value="">Map to existing SKU</option>
             {% for sku in skus %}
-            <option value="{{ sku.id }}">{{ sku.sku_name }}</option>
+            <option value="{{ sku.id }}" {% if sku.sku_name == item.suggested_match_name %}selected{% endif %}>{{ sku.sku_name }}</option>
             {% endfor %}
           </select>
           <button type="button" class="btn btn-navy btn-sm" onclick="reviewItem({{ item.id }}, 'map')">Map</button>
@@ -107,7 +120,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="3" style="text-align:center;padding:28px;color:var(--muted);">No pending SKU items for this brand.</td></tr>
+      <tr><td colspan="4" style="text-align:center;padding:28px;color:var(--muted);">No pending SKU items for this brand.</td></tr>
       {% endfor %}
     </tbody>
   </table>
