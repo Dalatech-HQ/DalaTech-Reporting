@@ -1809,6 +1809,24 @@ def _reconstruct_kpis_from_db(report_id: int, brand_name: str) -> dict:
     color_map = {'Healthy Stock': 'green', 'Low Stock': 'amber', 'Overstocked': 'blue'}
     inv_color = color_map.get(status, 'gray')
 
+    # ── Weekly sparkline percentages (derived from daily_df) ──────────────────
+    if not daily_df.empty:
+        min_date = daily_df['Date'].min()
+        weekly_rev, weekly_qty = [], []
+        for w in range(4):
+            w_start = min_date + pd.Timedelta(days=w * 7)
+            w_end   = w_start  + pd.Timedelta(days=6)
+            mask    = (daily_df['Date'] >= w_start) & (daily_df['Date'] <= w_end)
+            weekly_rev.append(float(daily_df.loc[mask, 'Revenue'].sum()))
+            weekly_qty.append(float(daily_df.loc[mask, 'Quantity'].sum()))
+        tot_r = sum(weekly_rev) or 1
+        tot_q = sum(weekly_qty) or 1
+        weekly_rev_pct = [round(v / tot_r * 100, 1) for v in weekly_rev]
+        weekly_qty_pct = [round(v / tot_q * 100, 1) for v in weekly_qty]
+    else:
+        weekly_rev_pct = [0, 0, 0, 0]
+        weekly_qty_pct = [0, 0, 0, 0]
+
     return {
         # Scalars
         'total_revenue':         bk.get('total_revenue', 0),
@@ -1833,6 +1851,8 @@ def _reconstruct_kpis_from_db(report_id: int, brand_name: str) -> dict:
         'top_store_pct':         top_store_pct,
         'wow_rev_change':        bk.get('wow_rev_change', 0),
         'wow_qty_change':        bk.get('wow_qty_change', 0),
+        'weekly_rev_pct':        weekly_rev_pct,
+        'weekly_qty_pct':        weekly_qty_pct,
         'top_sku':               top_sku,
         'top_sku_qty':           top_sku_qty,
         'total_pickup_qty':      pickup_df['Qty Picked Up'].sum()  if not pickup_df.empty else 0,

@@ -364,6 +364,11 @@ def render_pdf_bytes(html_content: str) -> bytes:
                 try:
                     # 'load' fires once DOM + sync scripts finish — no network-idle delay
                     page.set_content(html_content, wait_until='load')
+                    # Wait for web fonts (e.g. Inter) to finish loading so ₦ renders correctly
+                    try:
+                        page.evaluate("document.fonts.ready")
+                    except Exception:
+                        pass
                     pdf_bytes = page.pdf(
                         format='A4',
                         print_background=True,
