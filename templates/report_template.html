@@ -4,1183 +4,737 @@
   <meta charset="UTF-8">
   <title>{{ brand_name }} — DALA Sales Report</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     @page { size: A4; margin: 0; }
 
     body {
-      font-family: 'Inter', 'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif;
-      font-size: 8.5pt;
-      color: #1A1A2E;
-      background: #FFFFFF;
+      font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+      font-size: 9pt;
+      color: #1A1A1A;
+      background: #fff;
       width: 210mm;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
 
-    .page-break { break-before: page; }
-
-    /* ══ PAGE 1 HEADER ══════════════════════════════════════════════════════ */
-    .header {
-      background: linear-gradient(135deg, #0F1A3D 0%, #1B2B5E 55%, #c01122 100%);
-      color: white;
-      padding: 0 20px;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      height: 66px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    /* Decorative accent lines */
-    .header::before {
-      content: '';
-      position: absolute;
-      top: 0; right: 150px; bottom: 0;
-      width: 3px;
-      background: rgba(255,255,255,0.12);
-      transform: skewX(-14deg);
-    }
-    .header::after {
-      content: '';
-      position: absolute;
-      top: 0; right: 140px; bottom: 0;
-      width: 8px;
-      background: rgba(232,25,44,0.55);
-      transform: skewX(-14deg);
-    }
-
-    .header-logo {
-      width: 46px; height: 46px;
-      object-fit: contain;
-      background: white;
-      border-radius: 9px;
-      padding: 3px;
-      flex-shrink: 0;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-    }
-    .header-logo-ph {
-      width: 46px; height: 46px;
-      background: rgba(255,255,255,0.12);
-      border: 1.5px solid rgba(255,255,255,0.25);
-      border-radius: 9px;
-      display: flex; align-items: center; justify-content: center;
-      font-weight: 900; font-size: 19pt;
-      flex-shrink: 0;
-    }
-
-    .header-center { flex: 1; }
-    .header-center h1 {
-      font-size: 15pt;
-      font-weight: 800;
-      letter-spacing: -0.4px;
-      line-height: 1.1;
-    }
-    .header-sub {
-      font-size: 8pt;
-      opacity: 0.75;
-      margin-top: 3px;
-    }
-
-    .header-meta { text-align: right; flex-shrink: 0; }
-    .header-meta-brand {
-      font-size: 9pt;
-      font-weight: 700;
-      letter-spacing: 0.3px;
-    }
-    .header-meta-co {
-      font-size: 6pt;
-      opacity: 0.55;
-      text-transform: uppercase;
-      letter-spacing: 1.4px;
-      margin-top: 3px;
-    }
-
-    /* ── BRAND BAR ──────────────────────────────────────────────────────── */
-    .brand-bar {
-      background: #F8FAFE;
-      border-bottom: 1px solid #DDE6F5;
-      padding: 6px 20px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .brand-bar-label {
-      font-size: 6.5pt;
-      color: #8898B5;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      font-weight: 600;
-    }
-    .brand-chip {
-      background: #1B2B5E;
-      color: white;
-      font-size: 7.5pt;
-      font-weight: 700;
-      padding: 3px 12px;
-      border-radius: 12px;
-    }
-    .portfolio-chip {
-      background: rgba(46,134,193,0.1);
-      color: #1C6EA0;
-      border: 1px solid rgba(46,134,193,0.22);
-      font-size: 7pt;
-      font-weight: 600;
-      padding: 3px 10px;
-      border-radius: 12px;
-    }
-    .period-label {
-      margin-left: auto;
-      font-size: 6.5pt;
-      color: #7A8BA8;
-      font-weight: 500;
-    }
-
-    /* ── PAGE 1 BODY ────────────────────────────────────────────────────── */
-    .p1-body {
-      padding: 10px 14px 6px;
-      background: #EEF2FA;
-    }
-
-    /* ── SECTION LABEL ──────────────────────────────────────────────────── */
-    .section-label {
-      font-size: 5.8pt;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 1.4px;
-      color: #8898B5;
-      margin-bottom: 6px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .section-label::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: #D4DCEE;
-    }
-
-    /* ── KPI GRID ───────────────────────────────────────────────────────── */
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: 1.15fr 1fr 1fr;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-
-    /* Hero Revenue Card */
-    .kpi-hero {
-      background: linear-gradient(135deg, #1B2B5E 0%, #0F1A3D 100%);
-      border-radius: 10px;
-      padding: 13px 14px 11px;
-      color: white;
-      position: relative;
-      overflow: hidden;
-      box-shadow: 0 4px 16px rgba(27,43,94,0.28);
-    }
-    .kpi-hero::after {
-      content: '';
-      position: absolute;
-      bottom: -22px; right: -18px;
-      width: 84px; height: 84px;
-      border-radius: 50%;
-      background: rgba(232,25,44,0.15);
-    }
-    .kpi-hero-label {
-      font-size: 6.5pt;
-      text-transform: uppercase;
-      letter-spacing: 0.9px;
-      opacity: 0.65;
-      margin-bottom: 4px;
-      font-weight: 600;
-    }
-    .kpi-hero-value {
-      font-size: 18pt;
-      font-weight: 800;
-      line-height: 1;
-      letter-spacing: -0.5px;
-      margin-bottom: 6px;
-    }
-    .kpi-hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 3px;
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 7pt;
-      font-weight: 700;
-    }
-    .kpi-hero-badge.up   { background: rgba(21,128,61,0.28); color: #4ADE80; }
-    .kpi-hero-badge.down { background: rgba(232,25,44,0.28); color: #FCA5A5; }
-    .kpi-hero-badge.flat { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.65); }
-
-    .kpi-hero-sparkline {
-      display: flex;
-      align-items: flex-end;
-      gap: 4px;
-      height: 28px;
-      margin-top: 9px;
-    }
-    .kpi-hero-spark-bar {
-      flex: 1;
-      border-radius: 2px 2px 0 0;
-      min-height: 3px;
-    }
-
-    .kpi-hero-sub {
-      font-size: 5.8pt;
-      opacity: 0.45;
-      margin-top: 3px;
-      text-align: right;
-    }
-
-    /* Standard KPI card */
-    .kpi-card {
-      background: white;
-      border-radius: 10px;
-      padding: 12px 13px;
-      box-shadow: 0 2px 9px rgba(27,43,94,0.08);
-      border-left: 4px solid #DDE3ED;
+    /* ─── PAGE SHELL ──────────────────────────────────────────────────────── */
+    .page {
+      width: 210mm;
+      height: 297mm;
       display: flex;
       flex-direction: column;
+      background: #fff;
+      overflow: hidden;
+      position: relative;
     }
-    .kpi-card.qty   { border-left-color: #2E86C1; }
-    .kpi-card.reach { border-left-color: #15803D; }
 
-    .kpi-card-top {
+    .page-break { break-before: page; }
+
+    /* ─── HEADER ──────────────────────────────────────────────────────────── */
+    .page-header {
       display: flex;
+      align-items: center;
       justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 7px;
-    }
-    .kpi-card-label {
-      font-size: 6.5pt;
-      color: #6B7FA3;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      font-weight: 600;
-      margin-bottom: 3px;
-    }
-    .kpi-card-value {
-      font-size: 16pt;
-      font-weight: 800;
-      color: #1B2B5E;
-      line-height: 1;
-      letter-spacing: -0.4px;
-    }
-    .kpi-card-value small {
-      font-size: 7pt;
-      font-weight: 500;
-      color: #9AAAC2;
-      letter-spacing: 0;
-    }
-    .kpi-icon-box {
-      width: 30px; height: 30px;
-      border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 14pt;
+      padding: 14px 16px 12px 0;
       flex-shrink: 0;
+      background: #fff;
     }
-    .kpi-icon-box.qty   { background: rgba(46,134,193,0.1); }
-    .kpi-icon-box.reach { background: rgba(21,128,61,0.1); }
 
-    .wow-badge {
-      font-size: 7pt;
-      font-weight: 700;
-      padding: 2px 8px;
-      border-radius: 9px;
-      display: inline-block;
-      margin-bottom: 5px;
-    }
-    .wow-badge.up   { background: #DCFCE7; color: #15803D; }
-    .wow-badge.down { background: #FEE2E2; color: #DC2626; }
-    .wow-badge.flat { background: #F1F5F9; color: #64748B; }
-
-    .kpi-meta-line {
-      font-size: 6.5pt;
-      color: #6B7FA3;
-      line-height: 1.7;
-    }
-    .kpi-meta-line strong { color: #1B2B5E; font-weight: 700; }
-
-    /* ── CONTENT GRID ───────────────────────────────────────────────────── */
-    .content-grid {
-      display: grid;
-      grid-template-columns: 1fr 136px;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-    .content-left { display: flex; flex-direction: column; gap: 8px; }
-
-    /* ── WHITE CARD ─────────────────────────────────────────────────────── */
-    .card {
-      background: white;
-      border-radius: 10px;
-      padding: 10px 12px;
-      box-shadow: 0 2px 9px rgba(27,43,94,0.08);
-    }
-    .card-head {
+    .header-left {
       display: flex;
-      align-items: baseline;
-      gap: 7px;
-      padding-bottom: 6px;
-      border-bottom: 1.5px solid #EDF0F9;
-      margin-bottom: 7px;
+      align-items: center;
+      gap: 0;
     }
-    .card-title {
-      font-size: 7.5pt;
-      font-weight: 700;
+
+    .red-accent-bar {
+      width: 5px;
+      align-self: stretch;
+      background: #E8192C;
+      flex-shrink: 0;
+      margin-right: 12px;
+    }
+
+    .dala-logo {
+      height: 54px;
+      width: auto;
+      object-fit: contain;
+    }
+
+    .dala-logo-ph {
+      height: 54px;
+      width: 54px;
+      background: #1B2B5E;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 900;
+      font-size: 20pt;
+    }
+
+    .company-name {
+      margin-left: 8px;
+      line-height: 1;
+    }
+
+    .company-name .brand {
+      font-size: 17pt;
+      font-weight: 900;
       color: #1B2B5E;
+      letter-spacing: -0.5px;
     }
-    .card-title-sub {
+
+    .company-name .reg {
+      font-size: 7pt;
+      color: #1B2B5E;
+      vertical-align: super;
+      font-weight: 700;
+    }
+
+    .company-name .sub {
       font-size: 6pt;
-      color: #9AAAC2;
+      color: #555;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      margin-top: 3px;
       font-weight: 400;
     }
 
-    /* ── RANK LIST ──────────────────────────────────────────────────────── */
-    .rank-row {
-      display: flex;
-      align-items: center;
-      padding: 4px 0;
-      gap: 6px;
-      border-bottom: 1px solid #F4F7FD;
+    /* Diamond cluster — top right */
+    .diamond-cluster {
+      position: relative;
+      width: 90px;
+      height: 72px;
+      flex-shrink: 0;
     }
-    .rank-row:last-child { border-bottom: none; }
-    .rank-num {
-      width: 18px; height: 18px;
-      border-radius: 4px;
-      background: #EEF2FF;
-      color: #1B2B5E;
+
+    .diamond-cluster .d {
+      position: absolute;
+      transform: rotate(45deg);
+    }
+
+    /* ─── TAGLINE BAR ─────────────────────────────────────────────────────── */
+    .tagline-bar {
+      background: #E8192C;
+      color: #fff;
       font-size: 6.5pt;
       font-weight: 700;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0;
-    }
-    .rank-num.top1 { background: #E8192C; color: white; }
-
-    .rank-name {
-      flex: 1;
-      font-size: 7pt;
-      color: #334155;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .rank-value {
-      font-size: 7pt;
-      font-weight: 700;
-      color: #1B2B5E;
-      flex-shrink: 0;
-    }
-    .rank-value.red { color: #E8192C; }
-
-    .rank-bar-bg {
-      width: 44px; height: 5px;
-      background: #EEF2FF;
-      border-radius: 3px;
-      overflow: hidden;
-      flex-shrink: 0;
-    }
-    .rank-bar-fill { height: 100%; border-radius: 3px; }
-
-    /* ── RIGHT PANEL ────────────────────────────────────────────────────── */
-    .right-panel { display: flex; flex-direction: column; gap: 8px; }
-
-    .inv-panel {
-      background: white;
-      border-radius: 10px;
-      padding: 10px 8px;
-      box-shadow: 0 2px 9px rgba(27,43,94,0.08);
-      text-align: center;
-    }
-    .inv-panel-title {
-      font-size: 7.5pt;
-      font-weight: 700;
-      color: #1B2B5E;
-      margin-bottom: 1px;
-    }
-    .inv-panel-sub {
-      font-size: 5.8pt;
-      color: #9AAAC2;
-      margin-bottom: 9px;
-    }
-    .inv-ring {
-      width: 78px; height: 78px;
-      border-radius: 50%;
-      border: 11px solid #1B2B5E;
-      margin: 0 auto 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0 0 4px rgba(27,43,94,0.09), inset 0 2px 6px rgba(0,0,0,0.06);
-    }
-    .inv-ring-val {
-      font-size: 10pt;
-      font-weight: 800;
-      color: #1B2B5E;
-      line-height: 1;
-    }
-    .inv-ring-unit {
-      font-size: 5pt;
-      color: #9AAAC2;
+      letter-spacing: 1.8px;
       text-transform: uppercase;
-      letter-spacing: 0.4px;
+      padding: 5px 18px;
+      flex-shrink: 0;
     }
-    .health-badge {
-      display: inline-block;
-      padding: 2px 10px;
-      border-radius: 10px;
-      font-size: 6.5pt;
-      font-weight: 700;
-      margin-top: 5px;
-    }
-    .health-green { background: #DCFCE7; color: #15803D; }
-    .health-amber { background: #FEF9C3; color: #A16207; }
-    .health-red   { background: #FEE2E2; color: #DC2626; }
-    .health-gray  { background: #F1F5F9; color: #64748B; }
 
-    .inv-days { font-size: 5.8pt; color: #9AAAC2; margin-top: 4px; }
-
-    .stock-panel {
-      background: white;
-      border-radius: 10px;
-      padding: 10px 8px;
-      box-shadow: 0 2px 9px rgba(27,43,94,0.08);
-      flex: 1;
+    /* ─── REPORT TITLE ────────────────────────────────────────────────────── */
+    .title-area {
+      padding: 14px 24px 8px;
+      flex-shrink: 0;
     }
-    .stock-panel-title {
-      font-size: 7pt;
-      font-weight: 700;
-      color: #1B2B5E;
-      padding-bottom: 5px;
-      border-bottom: 1.5px solid #EDF0F9;
-      margin-bottom: 6px;
-    }
-    .stock-panel img { width: 100%; object-fit: contain; }
 
-    /* ── TREND CARD ─────────────────────────────────────────────────────── */
-    .trend-card {
-      background: white;
-      border-radius: 10px;
-      padding: 10px 12px;
-      box-shadow: 0 2px 9px rgba(27,43,94,0.08);
+    .report-title {
+      font-family: Georgia, 'Times New Roman', 'DejaVu Serif', serif;
+      font-size: 19pt;
+      font-style: italic;
+      font-weight: bold;
+      color: #C8191E;
+      line-height: 1.2;
     }
-    .trend-card img { width: 100%; }
 
-    .peak-callout {
+    /* ─── FILTER BAR ──────────────────────────────────────────────────────── */
+    .filter-bar {
+      padding: 0 24px 10px;
+      flex-shrink: 0;
+    }
+
+    .brand-pill {
       display: inline-flex;
       align-items: center;
-      gap: 7px;
-      background: #FFF1F2;
-      border: 1px solid #FECDD3;
-      border-radius: 7px;
-      padding: 4px 10px;
-      font-size: 7pt;
-      margin-bottom: 6px;
-    }
-    .peak-callout .peak-date { color: #1B2B5E; font-weight: 600; }
-    .peak-callout .peak-rev  { color: #E8192C; font-weight: 700; }
-
-    /* ── BOTTOM ROW ─────────────────────────────────────────────────────── */
-    .bottom-row {
-      display: grid;
-      grid-template-columns: 1fr 1.08fr;
       gap: 8px;
+      background: #fff;
+      border: 1.5px solid #aaa;
+      border-radius: 4px;
+      padding: 4px 12px;
+      font-size: 7.5pt;
+      font-weight: 600;
+      color: #333;
     }
 
-    .reorder-pills {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
+    .brand-pill-arrow { font-size: 6pt; color: #888; }
+
+    /* ─── DASHBOARD SNAPSHOT ──────────────────────────────────────────────── */
+    .snapshot {
+      margin: 0 18px;
+      background: #D5D5D5;
+      border: 1px solid #b8b8b8;
+      border-radius: 4px;
+      padding: 7px;
+      flex-shrink: 0;
+    }
+
+    .snap-row {
+      display: flex;
       gap: 5px;
-      margin-top: 4px;
-    }
-    .reorder-pill {
-      border-radius: 9px;
-      padding: 9px 6px;
-      text-align: center;
-    }
-    .reorder-pill.repeat { background: #DCFCE7; }
-    .reorder-pill.single { background: #FEF9C3; }
-    .reorder-pill.total  { background: #EEF2FF; }
-
-    .reorder-num {
-      font-size: 17pt;
-      font-weight: 800;
-      display: block;
-      line-height: 1.1;
-    }
-    .reorder-num.repeat { color: #15803D; }
-    .reorder-num.single { color: #A16207; }
-    .reorder-num.total  { color: #1B2B5E; }
-    .reorder-lbl {
-      font-size: 5.8pt;
-      color: #6B7FA3;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-      margin-top: 2px;
-    }
-
-    .narrative-card {
-      background: linear-gradient(135deg, #EEF4FF 0%, #F8FAFE 100%);
-      border-left: 4px solid #1B2B5E;
-      border-radius: 0 10px 10px 0;
-      padding: 10px 13px;
-    }
-    .narrative-head {
-      font-size: 6.8pt;
-      font-weight: 700;
-      color: #1B2B5E;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
       margin-bottom: 5px;
     }
-    .narrative-text {
-      font-size: 7.5pt;
-      line-height: 1.75;
-      color: #334155;
-    }
 
-    /* ── PAGE 1 FOOTER ──────────────────────────────────────────────────── */
-    .p1-footer {
-      background: white;
-      border-top: 1px solid #DDE6F5;
-      padding: 5px 20px;
+    .snap-row:last-child { margin-bottom: 0; }
+
+    /* KPI cards */
+    .snap-kpi {
+      flex: 1;
+      background: #fff;
+      border-radius: 4px;
+      padding: 7px 9px 6px;
+      border: 1px solid #e5e5e5;
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-size: 6pt;
-      color: #9AAAC2;
+      flex-direction: column;
     }
-    .p1-footer-brand { font-weight: 700; color: #6B7FA3; }
 
-    /* ════════════════════ PAGE 2 ════════════════════════════════════════ */
+    .snap-kpi-label {
+      font-size: 5.5pt;
+      color: #555;
+      font-weight: 500;
+      margin-bottom: 2px;
+    }
 
-    /* ── PAGE 2 HEADER ──────────────────────────────────────────────────── */
-    .p2-header {
-      background: #1B2B5E;
-      color: white;
-      padding: 11px 20px;
+    .snap-kpi-value {
+      font-size: 13pt;
+      font-weight: 800;
+      color: #1A1A1A;
+      line-height: 1;
+      margin-bottom: 2px;
+    }
+
+    .snap-kpi-unit {
+      font-size: 5.5pt;
+      font-weight: 700;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .snap-kpi-wow {
+      font-size: 5pt;
+      color: #888;
+      margin-bottom: 3px;
+    }
+
+    /* Sparkline bars */
+    .sparkline-row {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .p2-header h2 { font-size: 11.5pt; font-weight: 700; }
-    .p2-header-sub { font-size: 7pt; opacity: 0.6; margin-top: 3px; }
-    .p2-header-right { text-align: right; }
-    .p2-header-co { font-size: 7pt; opacity: 0.6; }
-    .p2-header-page { font-size: 8.5pt; font-weight: 700; opacity: 0.4; margin-top: 3px; }
-
-    /* ── PAGE 2 BODY ────────────────────────────────────────────────────── */
-    .p2-body {
-      padding: 10px 14px 6px;
-      background: #EEF2FA;
+      align-items: flex-end;
+      gap: 3px;
     }
 
-    /* ── SCORECARD ──────────────────────────────────────────────────────── */
-    .scorecard {
-      background: white;
-      border-radius: 10px;
-      padding: 13px 14px;
-      box-shadow: 0 2px 9px rgba(27,43,94,0.08);
-      margin-bottom: 8px;
-    }
-    .scorecard-head {
+    .sparkline-col {
       display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 16px;
-      margin-bottom: 12px;
-      padding-bottom: 11px;
-      border-bottom: 1.5px solid #EDF0F9;
+      gap: 1px;
     }
-    .grade-circle {
-      width: 66px; height: 66px;
+
+    .sparkline-bar {
+      width: 10px;
+      background: #E8192C;
+      border-radius: 1px 1px 0 0;
+      opacity: 0.85;
+    }
+
+    .sparkline-num {
+      font-size: 4pt;
+      color: #999;
+    }
+
+    /* Reach card */
+    .snap-reach {
+      flex: 1;
+      background: #fff;
+      border-radius: 4px;
+      padding: 7px 9px;
+      border: 1px solid #e5e5e5;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .snap-reach-value {
+      font-size: 20pt;
+      font-weight: 900;
+      color: #1A1A1A;
+      line-height: 1;
+      margin-bottom: 2px;
+    }
+
+    .snap-reach-label {
+      font-size: 5.5pt;
+      color: #555;
+      font-weight: 500;
+    }
+
+    .snap-reach-sub {
+      font-size: 4.5pt;
+      color: #999;
+      margin-top: 3px;
+    }
+
+    /* Inventory sidebar */
+    .snap-inventory {
+      width: 118px;
+      flex-shrink: 0;
+      background: #fff;
+      border-radius: 4px;
+      padding: 7px 8px;
+      border: 1px solid #e5e5e5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .snap-inv-title {
+      font-size: 5.5pt;
+      font-weight: 800;
+      color: #1B2B5E;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      text-align: center;
+      margin-bottom: 2px;
+    }
+
+    .snap-inv-sub {
+      font-size: 5pt;
+      color: #888;
+      text-align: center;
+      margin-bottom: 6px;
+    }
+
+    .snap-inv-ring {
+      width: 52px;
+      height: 52px;
       border-radius: 50%;
-      border: 5px solid;
+      border: 5px solid #E8192C;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      flex-shrink: 0;
-      box-shadow: 0 4px 14px rgba(0,0,0,0.13);
     }
-    .grade-letter { font-size: 22pt; font-weight: 800; line-height: 1; }
-    .grade-score  { font-size: 6.5pt; font-weight: 600; opacity: 0.7; }
-    .grade-desc { flex: 1; }
-    .grade-desc h3 { font-size: 10.5pt; font-weight: 700; margin-bottom: 3px; }
-    .grade-desc p  { font-size: 7pt; color: #6B7FA3; line-height: 1.55; }
 
-    .scorecard-dimensions {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 8px;
+    .snap-inv-num {
+      font-size: 12pt;
+      font-weight: 800;
+      color: #1A1A1A;
+      line-height: 1;
     }
-    .dim-block {
-      background: #F8FAFE;
-      border-radius: 8px;
-      padding: 9px 10px;
-      text-align: center;
+
+    .snap-inv-packs {
+      font-size: 4.5pt;
+      color: #888;
     }
-    .dim-label {
-      font-size: 6pt;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      color: #9AAAC2;
-      font-weight: 600;
-      margin-bottom: 5px;
-    }
-    .dim-bar-bg {
-      height: 7px;
-      background: #E2E8F5;
+
+    /* Chart cards in snapshot */
+    .snap-chart {
+      flex: 1;
+      background: #fff;
       border-radius: 4px;
+      padding: 6px 7px;
+      border: 1px solid #e5e5e5;
       overflow: hidden;
+    }
+
+    .snap-chart-title {
+      font-size: 5pt;
+      font-weight: 700;
+      color: #333;
+      margin-bottom: 3px;
+      line-height: 1.2;
+    }
+
+    .snap-chart img {
+      width: 100%;
+      height: 72px;
+      object-fit: contain;
+      display: block;
+    }
+
+    /* Stock chart card (narrower) */
+    .snap-stock {
+      width: 118px;
+      flex-shrink: 0;
+      background: #fff;
+      border-radius: 4px;
+      padding: 6px 7px;
+      border: 1px solid #e5e5e5;
+      overflow: hidden;
+    }
+
+    .snap-stock img {
+      width: 100%;
+      height: 72px;
+      object-fit: contain;
+      display: block;
+    }
+
+    /* Trend card */
+    .snap-trend {
+      flex: 1;
+      background: #fff;
+      border-radius: 4px;
+      padding: 6px 8px;
+      border: 1px solid #e5e5e5;
+    }
+
+    .snap-trend-title {
+      font-size: 5.5pt;
+      font-weight: 700;
+      color: #333;
+      margin-bottom: 1px;
+    }
+
+    .snap-trend-sub {
+      font-size: 4.5pt;
+      color: #aaa;
+      margin-bottom: 3px;
+    }
+
+    .snap-trend img {
+      width: 100%;
+      height: 58px;
+      object-fit: contain;
+      display: block;
+    }
+
+    /* ─── CONTENT / NARRATIVE ─────────────────────────────────────────────── */
+    .content-area {
+      flex: 1;
+      padding: 12px 24px 8px;
+      overflow: hidden;
+    }
+
+    .sheets-link {
+      font-size: 8.5pt;
+      color: #333;
+      margin-bottom: 12px;
+    }
+
+    .sheets-link a {
+      color: #0563C1;
+      text-decoration: underline;
+    }
+
+    .narrative-section {
+      margin-bottom: 11px;
+    }
+
+    .narrative-section h3 {
+      font-size: 9pt;
+      font-weight: 700;
+      color: #1A1A1A;
       margin-bottom: 5px;
     }
-    .dim-bar-fill { height: 100%; border-radius: 4px; }
-    .dim-val { font-size: 8pt; font-weight: 700; }
-    .dim-val-denom { font-size: 6pt; color: #9AAAC2; font-weight: 400; }
 
-    /* ── INVENTORY TABLES GRID ──────────────────────────────────────────── */
-    .inv-tables-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-bottom: 8px;
+    .narrative-section ul {
+      list-style: disc;
+      padding-left: 22px;
     }
 
-    .detail-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 2px;
-    }
-    .detail-table thead th {
-      background: #1B2B5E;
-      color: white;
-      font-size: 6.5pt;
-      font-weight: 600;
-      padding: 5px 7px;
-      text-align: left;
-    }
-    .detail-table thead th.right { text-align: right; }
-    .detail-table tbody tr:nth-child(even) td { background: #F5F8FE; }
-    .detail-table tbody td {
-      font-size: 6.8pt;
-      padding: 4px 7px;
-      border-bottom: 1px solid #EEF2FF;
-      color: #334155;
-    }
-    .detail-table tbody td.num {
-      text-align: right;
-      font-weight: 600;
-      color: #1B2B5E;
-    }
-    .detail-table tfoot td {
-      font-size: 7pt;
-      font-weight: 700;
-      padding: 5px 7px;
-      background: #EEF2FF;
-      color: #1B2B5E;
-      border-top: 2px solid #1B2B5E;
-    }
-    .detail-table tfoot td.num { text-align: right; }
-
-    .inv-dot {
-      display: inline-block;
-      width: 7px; height: 7px;
-      border-radius: 50%;
-      margin-right: 4px;
-      vertical-align: middle;
+    .narrative-section ul li {
+      font-size: 8.5pt;
+      color: #333;
+      margin-bottom: 4px;
+      line-height: 1.45;
     }
 
-    /* ── HEATMAP CARD ───────────────────────────────────────────────────── */
-    .heatmap-card {
-      background: white;
-      border-radius: 10px;
-      padding: 10px 12px;
-      box-shadow: 0 2px 9px rgba(27,43,94,0.08);
-      margin-bottom: 8px;
-    }
-    .heatmap-card img { width: 100%; max-height: 155px; object-fit: contain; }
-
-    /* ── SHEETS CARD ────────────────────────────────────────────────────── */
-    .sheets-card {
-      background: white;
-      border-radius: 10px;
-      padding: 10px 14px;
-      box-shadow: 0 2px 9px rgba(27,43,94,0.08);
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .sheets-icon-box {
-      width: 38px; height: 38px;
-      background: #1B2B5E;
-      border-radius: 9px;
-      display: flex; align-items: center; justify-content: center;
+    /* ─── PAGE FOOTER ─────────────────────────────────────────────────────── */
+    .page-footer {
       flex-shrink: 0;
     }
-    .sheets-info { flex: 1; min-width: 0; }
-    .sheets-title { font-size: 7.5pt; font-weight: 700; color: #1B2B5E; margin-bottom: 2px; }
-    .sheets-desc  { font-size: 6pt; color: #6B7FA3; margin-bottom: 3px; }
-    .sheets-url   { font-size: 6pt; color: #2E86C1; font-family: monospace; word-break: break-all; }
-    .sheets-btn {
-      flex-shrink: 0;
+
+    .footer-red-strip {
+      height: 10px;
       background: #E8192C;
-      color: white;
-      font-size: 6.5pt;
-      font-weight: 700;
-      padding: 6px 11px;
-      border-radius: 7px;
-      text-align: center;
-      letter-spacing: 0.3px;
     }
 
-    /* ── PAGE 2 FOOTER ──────────────────────────────────────────────────── */
-    .p2-footer {
+    .footer-contact {
       background: #1B2B5E;
-      color: rgba(255,255,255,0.5);
-      padding: 8px 20px;
-      text-align: center;
-      font-size: 6pt;
-      letter-spacing: 0.2px;
+      display: flex;
+      align-items: stretch;
+      padding: 7px 18px;
+      position: relative;
     }
-    .p2-footer strong { color: rgba(255,255,255,0.8); }
+
+    .footer-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0 10px;
+      border-right: 1px solid rgba(255,255,255,0.12);
+    }
+
+    .footer-col:last-child { border-right: none; }
+
+    .footer-icon {
+      font-size: 10pt;
+      margin-bottom: 2px;
+    }
+
+    .footer-text {
+      font-size: 5.5pt;
+      color: #fff;
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    .footer-page-num {
+      position: absolute;
+      right: 18px;
+      bottom: 7px;
+      font-size: 7pt;
+      color: rgba(255,255,255,0.45);
+    }
   </style>
 </head>
 <body>
 
-<!-- ════════════════════════════ PAGE 1 ══════════════════════════════════ -->
+<!-- ════════════════════════════════ PAGE 1 ══════════════════════════════════ -->
+<div class="page">
 
-<!-- Header -->
-<header class="header">
-  {% if logo_path %}
-    <img src="{{ logo_path }}" alt="DALA" class="header-logo">
-  {% else %}
-    <div class="header-logo-ph">D</div>
-  {% endif %}
-  <div class="header-center">
-    <h1>Sales Performance Report</h1>
-    <div class="header-sub">{{ start_date }} &ndash; {{ end_date }}</div>
-  </div>
-  <div class="header-meta">
-    <div class="header-meta-brand">{{ brand_name }}</div>
-    <div class="header-meta-co">DALA Technologies</div>
-  </div>
-</header>
-
-<!-- Brand Bar -->
-<div class="brand-bar">
-  <span class="brand-bar-label">Brand Partner</span>
-  <span class="brand-chip">{{ brand_name }}</span>
-  {% if portfolio_share %}
-    <span class="portfolio-chip">{{ portfolio_share }}% of Portfolio Revenue</span>
-  {% endif %}
-  <span class="period-label">{{ start_date }} &mdash; {{ end_date }}</span>
-</div>
-
-<!-- Page 1 Body -->
-<div class="p1-body">
-
-  <div class="section-label">Key Performance Indicators</div>
-
-  <!-- KPI Grid -->
-  <div class="kpi-grid">
-
-    <!-- Hero: Revenue -->
-    <div class="kpi-hero">
-      <div class="kpi-hero-label">Total Sales Revenue</div>
-      <div class="kpi-hero-value">&#8358;{{ "{:,.0f}".format(kpis.total_revenue) }}</div>
-      {% set wc = kpis.wow_rev_change %}
-      {% if wc > 0 %}
-        <span class="kpi-hero-badge up">&#9650; {{ wc }}% vs prior week</span>
-      {% elif wc < 0 %}
-        <span class="kpi-hero-badge down">&#9660; {{ wc|abs }}% vs prior week</span>
+  <!-- Header -->
+  <div class="page-header">
+    <div class="header-left">
+      <div class="red-accent-bar"></div>
+      {% if logo_path %}
+        <img class="dala-logo" src="{{ logo_path }}" alt="DALA Technologies">
       {% else %}
-        <span class="kpi-hero-badge flat">&mdash; 0% change</span>
+        <div class="dala-logo-ph">D</div>
       {% endif %}
-      <div class="kpi-hero-sparkline">
-        {% for pct in kpis.weekly_rev_pct %}
-        <div class="kpi-hero-spark-bar"
-             style="height:{{ [pct * 0.52, 3]|max }}px;
-                    background:{% if pct == kpis.weekly_rev_pct|max %}rgba(232,25,44,0.9){% else %}rgba(255,255,255,0.28){% endif %};"></div>
-        {% endfor %}
-      </div>
-      <div class="kpi-hero-sub">Weekly % Distribution</div>
-    </div>
-
-    <!-- Qty Sold -->
-    <div class="kpi-card qty">
-      <div class="kpi-card-top">
-        <div>
-          <div class="kpi-card-label">Quantity Sold</div>
-          <div class="kpi-card-value">{{ "{:,.1f}".format(kpis.total_qty) }} <small>PACKS</small></div>
-        </div>
-        <div class="kpi-icon-box qty">&#128230;</div>
-      </div>
-      {% set wc = kpis.wow_qty_change %}
-      {% if wc > 0 %}
-        <span class="wow-badge up">&#9650; {{ wc }}% WoW</span>
-      {% elif wc < 0 %}
-        <span class="wow-badge down">&#9660; {{ wc|abs }}% WoW</span>
-      {% else %}
-        <span class="wow-badge flat">&mdash; Flat WoW</span>
-      {% endif %}
-      <div class="kpi-meta-line">
-        Avg daily: <strong>{{ "{:,.0f}".format(kpis.total_qty / [kpis.trading_days, 1]|max) }} packs</strong>
+      <div class="company-name">
+        <div><span class="brand">DALA</span><span class="reg">®</span></div>
+        <div class="sub">Technologies</div>
       </div>
     </div>
 
-    <!-- Sales Reach -->
-    <div class="kpi-card reach">
-      <div class="kpi-card-top">
-        <div>
-          <div class="kpi-card-label">Sales Reach</div>
-          <div class="kpi-card-value">{{ kpis.num_stores }} <small>stores</small></div>
-        </div>
-        <div class="kpi-icon-box reach">&#127978;</div>
-      </div>
-      <div class="kpi-meta-line">Avg/Store: <strong>&#8358;{{ "{:,.0f}".format(kpis.avg_revenue_per_store) }}</strong></div>
-      <div class="kpi-meta-line">Trading Days: <strong>{{ kpis.trading_days }}</strong>
-        &nbsp;&middot;&nbsp; Repeat Rate: <strong style="color:#15803D;">{{ kpis.repeat_pct }}%</strong></div>
+    <!-- Geometric diamond cluster (top-right) -->
+    <div class="diamond-cluster">
+      <div class="d" style="width:32px;height:32px;background:#E8192C;top:3px;right:4px;"></div>
+      <div class="d" style="width:32px;height:32px;background:#1B2B5E;top:3px;right:30px;opacity:0.88;"></div>
+      <div class="d" style="width:32px;height:32px;background:#1B2B5E;top:26px;right:0px;opacity:0.92;"></div>
+      <div class="d" style="width:24px;height:24px;background:#E8192C;top:28px;right:28px;opacity:0.72;"></div>
+      <div class="d" style="width:18px;height:18px;background:#1B2B5E;top:46px;right:6px;opacity:0.6;"></div>
+      <div class="d" style="width:14px;height:14px;background:#E8192C;top:50px;right:28px;opacity:0.5;"></div>
     </div>
+  </div>
 
-  </div><!-- /kpi-grid -->
+  <!-- Tagline -->
+  <div class="tagline-bar">BOOSTING REVENUE AND ENHANCING BRAND VALUE</div>
 
-  <!-- Content Grid -->
-  <div class="content-grid">
+  <!-- Report title -->
+  <div class="title-area">
+    <h1 class="report-title">{{ narrative_sections.report_title }}</h1>
+  </div>
 
-    <!-- Left column -->
-    <div class="content-left">
+  <!-- Brand filter pill -->
+  <div class="filter-bar">
+    <span class="brand-pill">{{ brand_name }} <span class="brand-pill-arrow">&#9660;</span></span>
+  </div>
 
-      <!-- Tables: Top Stores + Top Products -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+  <!-- ── Dashboard Snapshot ──────────────────────────────────────────────── -->
+  <div class="snapshot">
 
-        <!-- Top Stores -->
-        <div class="card">
-          <div class="card-head">
-            <span class="card-title">Top Selling Supermarkets</span>
-            <span class="card-title-sub">by Revenue</span>
-          </div>
-          {% for row in top_stores_table %}
-          <div class="rank-row">
-            <div class="rank-num {% if loop.index == 1 %}top1{% endif %}">{{ loop.index }}</div>
-            <div class="rank-name" title="{{ row.store }}">{{ row.store }}</div>
-            <div class="rank-value">{{ row.value }}</div>
-            <div class="rank-bar-bg">
-              <div class="rank-bar-fill"
-                   style="width:{{ row.pct }}%;background:{% if loop.index == 1 %}#E8192C{% else %}#1B2B5E{% endif %};"></div>
-            </div>
+    <!-- Row 1: KPI cards + inventory ring -->
+    <div class="snap-row">
+
+      <!-- Revenue card -->
+      <div class="snap-kpi">
+        <div class="snap-kpi-label">Total Sales Revenue</div>
+        <div class="snap-kpi-value" style="font-size:11pt;">{{ revenue_display }}</div>
+        <div class="snap-kpi-wow">WoW% Trend</div>
+        <div class="sparkline-row">
+          {% for bar in rev_sparkline %}
+          <div class="sparkline-col">
+            <div class="sparkline-bar" style="height:{{ bar.h }}px;"></div>
+            <div class="sparkline-num">{{ bar.label }}</div>
           </div>
           {% endfor %}
-          {% if top_stores_chart %}
-          <div style="margin-top:6px;"><img src="{{ top_stores_chart }}" style="width:100%;"></div>
-          {% endif %}
         </div>
+      </div>
 
-        <!-- Top Products -->
-        <div class="card">
-          <div class="card-head">
-            <span class="card-title">Top Selling Products</span>
-            <span class="card-title-sub">by Revenue</span>
-          </div>
-          {% for row in top_products_table %}
-          <div class="rank-row">
-            <div class="rank-num {% if loop.index == 1 %}top1{% endif %}">{{ loop.index }}</div>
-            <div class="rank-name" title="{{ row.sku }}">{{ row.sku }}</div>
-            <div class="rank-value red">{{ row.value }}</div>
-            <div class="rank-bar-bg">
-              <div class="rank-bar-fill" style="width:{{ row.pct }}%;background:#E8192C;"></div>
-            </div>
+      <!-- Quantity card -->
+      <div class="snap-kpi">
+        <div class="snap-kpi-label">Total Quantity Sold</div>
+        <div class="snap-kpi-value">{{ qty_display }}</div>
+        <div class="snap-kpi-unit">PACKS</div>
+        <div class="snap-kpi-wow">WoW% Trend</div>
+        <div class="sparkline-row">
+          {% for bar in qty_sparkline %}
+          <div class="sparkline-col">
+            <div class="sparkline-bar" style="height:{{ bar.h }}px;"></div>
+            <div class="sparkline-num">{{ bar.label }}</div>
           </div>
           {% endfor %}
-          {% if top_products_chart %}
-          <div style="margin-top:6px;"><img src="{{ top_products_chart }}" style="width:100%;"></div>
-          {% endif %}
-        </div>
-
-      </div><!-- /tables pair -->
-
-      <!-- Sales Trend -->
-      <div class="trend-card">
-        <div class="card-head">
-          <span class="card-title">Sales Trend &mdash; Revenue &amp; Quantity</span>
-        </div>
-        {% if kpis.peak_date %}
-        <div class="peak-callout">
-          <span>&#9650; Peak:</span>
-          <span class="peak-date">{{ kpis.peak_date.strftime('%d %b %Y') }}</span>
-          <span class="peak-rev">&#8358;{{ "{:,.0f}".format(kpis.peak_revenue) }}</span>
-          <span style="color:#6B7FA3;font-size:6.5pt;">&middot; {{ "{:.1f}".format(kpis.peak_qty) }} packs</span>
-        </div>
-        {% endif %}
-        {% if dual_trend_chart %}
-          <img src="{{ dual_trend_chart }}">
-        {% endif %}
-      </div>
-
-      <!-- Bottom: Reorder + Narrative -->
-      <div class="bottom-row">
-
-        <div class="card">
-          <div class="card-head">
-            <span class="card-title">Reorder Analysis</span>
-          </div>
-          <div class="reorder-pills">
-            <div class="reorder-pill repeat">
-              <span class="reorder-num repeat">{{ kpis.repeat_stores }}</span>
-              <div class="reorder-lbl">Repeat Buyers</div>
-            </div>
-            <div class="reorder-pill single">
-              <span class="reorder-num single">{{ kpis.single_stores }}</span>
-              <div class="reorder-lbl">Single Order</div>
-            </div>
-            <div class="reorder-pill total">
-              <span class="reorder-num total">{{ kpis.repeat_stores + kpis.single_stores }}</span>
-              <div class="reorder-lbl">Total Stores</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="narrative-card">
-          <div class="narrative-head">Analysis Summary</div>
-          <div class="narrative-text">{{ narrative }}</div>
-        </div>
-
-      </div><!-- /bottom-row -->
-
-    </div><!-- /content-left -->
-
-    <!-- Right panel -->
-    <div class="right-panel">
-
-      <div class="inv-panel">
-        <div class="inv-panel-title">Inventory Status</div>
-        <div class="inv-panel-sub">DALA Warehouse</div>
-        <div class="inv-ring">
-          <div>
-            <div class="inv-ring-val">{{ "{:,.0f}".format(kpis.total_closing_stock) }}</div>
-            <div class="inv-ring-unit">Packs</div>
-          </div>
-        </div>
-        <span class="health-badge health-{{ kpis.inv_health_color }}">{{ kpis.inv_health_status }}</span>
-        {% if kpis.stock_days_cover > 0 %}
-        <div class="inv-days">~{{ kpis.stock_days_cover }} days cover</div>
-        {% endif %}
-      </div>
-
-      <div class="stock-panel">
-        <div class="stock-panel-title">Current Stock by SKU</div>
-        {% if stock_chart %}
-          <img src="{{ stock_chart }}">
-        {% else %}
-          <p style="font-size:6.5pt;color:#9AAAC2;text-align:center;padding:10px 0;">No data</p>
-        {% endif %}
-      </div>
-
-    </div><!-- /right-panel -->
-
-  </div><!-- /content-grid -->
-
-</div><!-- /p1-body -->
-
-<div class="p1-footer">
-  <span class="p1-footer-brand">DALA Technologies &middot; {{ brand_name }}</span>
-  <span>Confidential &mdash; for authorized use only &middot; Page 1 of 2</span>
-</div>
-
-
-<!-- ════════════════════════════ PAGE 2 ══════════════════════════════════ -->
-<div class="page-break">
-
-  <header class="p2-header">
-    <div>
-      <h2>Inventory &amp; Performance Deep-Dive</h2>
-      <div class="p2-header-sub">{{ brand_name }} &nbsp;&middot;&nbsp; {{ start_date }} &ndash; {{ end_date }}</div>
-    </div>
-    <div class="p2-header-right">
-      <div class="p2-header-co">DALA Technologies</div>
-      <div class="p2-header-page">Page 2 / 2</div>
-    </div>
-  </header>
-
-  <div class="p2-body">
-
-    <div class="section-label">Performance Scorecard</div>
-
-    <div class="scorecard">
-      <div class="scorecard-head">
-        <div class="grade-circle" style="border-color:{{ perf.grade_color }};color:{{ perf.grade_color }};">
-          <div class="grade-letter">{{ perf.grade }}</div>
-          <div class="grade-score">{{ perf.total }}/100</div>
-        </div>
-        <div class="grade-desc">
-          <h3 style="color:{{ perf.grade_color }};">{{ perf.grade_label }}</h3>
-          <p>Scored across four dimensions: Revenue Performance, Customer Loyalty, Market Reach, and Sales Activity.</p>
         </div>
       </div>
-      <div class="scorecard-dimensions">
-        {% set dims = [
-          ('Revenue',  perf.revenue_score,  '#E8192C'),
-          ('Loyalty',  perf.loyalty_score,  '#15803D'),
-          ('Reach',    perf.reach_score,    '#2E86C1'),
-          ('Activity', perf.activity_score, '#1B2B5E'),
-        ] %}
-        {% for label, score, color in dims %}
-        <div class="dim-block">
-          <div class="dim-label">{{ label }}</div>
-          <div class="dim-bar-bg">
-            <div class="dim-bar-fill" style="width:{{ score * 4 }}%;background:{{ color }};"></div>
-          </div>
-          <div class="dim-val" style="color:{{ color }};">{{ score }}<span class="dim-val-denom">/25</span></div>
+
+      <!-- Sales Reach card -->
+      <div class="snap-reach">
+        <div class="snap-kpi-label">Sales Reach</div>
+        <div class="snap-reach-value">{{ kpis.store_count }}</div>
+        <div class="snap-reach-label">Supermarkets</div>
+        <div class="snap-reach-sub">Active Customers in the Last 30 Days</div>
+      </div>
+
+      <!-- Inventory status sidebar -->
+      <div class="snap-inventory">
+        <div class="snap-inv-title">Current Inventory Status</div>
+        <div class="snap-inv-sub">DALA Warehouse Inventory Count:</div>
+        <div class="snap-inv-ring">
+          <div class="snap-inv-num">{{ inventory_total }}</div>
+          <div class="snap-inv-packs">Packs</div>
         </div>
-        {% endfor %}
       </div>
     </div>
 
-    <div class="section-label">Inventory Detail</div>
-
-    <div class="inv-tables-grid">
-
-      <!-- Closing Stock -->
-      <div class="card">
-        <div class="card-head">
-          <span class="card-title">Closing Stock Balance</span>
-          <span class="health-badge health-{{ kpis.inv_health_color }}" style="font-size:6pt;margin-top:0;">{{ kpis.inv_health_status }}</span>
-        </div>
-        {% if closing_stock_table %}
-        <table class="detail-table">
-          <thead><tr><th>SKU</th><th class="right">Cartons</th></tr></thead>
-          <tbody>
-            {% for row in closing_stock_table %}
-            <tr>
-              <td>
-                <span class="inv-dot"
-                      style="background:{% if row.color == 'green' %}#15803D{% elif row.color == 'amber' %}#A16207{% elif row.color == 'red' %}#DC2626{% else %}#9AAAC2{% endif %};"></span>
-                {{ row.sku }}
-              </td>
-              <td class="num">{{ row.qty }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-          <tfoot><tr><td>TOTAL</td><td class="num">{{ "{:,.0f}".format(kpis.total_closing_stock) }}</td></tr></tfoot>
-        </table>
-        {% else %}
-        <p style="font-size:7pt;color:#9AAAC2;padding:6px 0;">No inventory data recorded.</p>
-        {% endif %}
+    <!-- Row 2: Top stores + Top products + Stock level -->
+    <div class="snap-row">
+      <div class="snap-chart" style="flex:2;">
+        <div class="snap-chart-title">Top Selling Supermarkets by Value of Sales (Last 30 Days)</div>
+        <img src="{{ top_stores_chart }}" alt="Top Stores">
       </div>
-
-      <!-- DALA Pickup -->
-      <div class="card">
-        <div class="card-head">
-          <span class="card-title">Inventory Picked Up by DALA</span>
-        </div>
-        {% if pickup_table %}
-        <table class="detail-table">
-          <thead><tr><th>SKU</th><th class="right">Qty</th><th class="right">Value</th></tr></thead>
-          <tbody>
-            {% for row in pickup_table %}
-            <tr>
-              <td>{{ row.sku }}</td>
-              <td class="num">{{ row.qty }}</td>
-              <td class="num">{{ row.value }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-          <tfoot><tr>
-            <td>TOTAL</td>
-            <td class="num">{{ "{:,.0f}".format(kpis.total_pickup_qty) }}</td>
-            <td class="num">{% if kpis.total_pickup_value >= 1000 %}&#8358;{{ "{:,.0f}".format(kpis.total_pickup_value/1000) }}K{% else %}&#8358;{{ "{:,.0f}".format(kpis.total_pickup_value) }}{% endif %}</td>
-          </tr></tfoot>
-        </table>
-        {% else %}
-        <p style="font-size:7pt;color:#9AAAC2;padding:6px 0;">No DALA pickup recorded in this period.</p>
-        {% endif %}
+      <div class="snap-chart" style="flex:2;">
+        <div class="snap-chart-title">Top Selling Products by Value (Last 30 Days)</div>
+        <img src="{{ top_products_chart }}" alt="Top Products">
       </div>
-
-      <!-- Brand Supply -->
-      <div class="card">
-        <div class="card-head">
-          <span class="card-title">Inventory Supplied by Brand</span>
-        </div>
-        {% if supply_table %}
-        <table class="detail-table">
-          <thead><tr><th>SKU</th><th class="right">Qty</th><th class="right">Value</th></tr></thead>
-          <tbody>
-            {% for row in supply_table %}
-            <tr>
-              <td>{{ row.sku }}</td>
-              <td class="num">{{ row.qty }}</td>
-              <td class="num">{{ row.value }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-          <tfoot><tr>
-            <td>TOTAL</td>
-            <td class="num">{{ "{:,.0f}".format(kpis.total_supplied_qty) }}</td>
-            <td class="num">{% if kpis.total_supplied_value >= 1000 %}&#8358;{{ "{:,.0f}".format(kpis.total_supplied_value/1000) }}K{% else %}&#8358;{{ "{:,.0f}".format(kpis.total_supplied_value) }}{% endif %}</td>
-          </tr></tfoot>
-        </table>
-        {% else %}
-        <p style="font-size:7pt;color:#9AAAC2;padding:6px 0;">No brand supply recorded in this period.</p>
-        {% endif %}
+      <div class="snap-stock">
+        <div class="snap-chart-title">Current Stock Level</div>
+        <img src="{{ stock_chart }}" alt="Stock Level">
       </div>
-
-      <!-- Store Order Frequency -->
-      <div class="card">
-        <div class="card-head">
-          <span class="card-title">Store Order Frequency</span>
-        </div>
-        {% if reorder_chart %}
-          <img src="{{ reorder_chart }}" style="width:100%;">
-        {% endif %}
-      </div>
-
-    </div><!-- /inv-tables-grid -->
-
-    <!-- Heatmap -->
-    {% if heatmap_chart %}
-    <div class="section-label">Order Frequency Heatmap</div>
-    <div class="heatmap-card">
-      <div class="card-head">
-        <span class="card-title">Store &times; Date Order Heatmap</span>
-        <span class="card-title-sub">Top stores by order frequency</span>
-      </div>
-      <img src="{{ heatmap_chart }}">
     </div>
-    {% endif %}
 
-    <!-- Google Sheets Link -->
+    <!-- Row 3: Sales Trend -->
+    <div class="snap-trend">
+      <div class="snap-trend-title">Sales Trend</div>
+      <div class="snap-trend-sub">Total Revenue and Quantity Sold by Date</div>
+      <img src="{{ dual_trend_chart }}" alt="Sales Trend">
+    </div>
+
+  </div><!-- /snapshot -->
+
+  <!-- ── Narrative Content ───────────────────────────────────────────────── -->
+  <div class="content-area">
     {% if sheets_url %}
-    <div class="sheets-card">
-      <div class="sheets-icon-box">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="3" y="3" width="18" height="18" rx="2" fill="white" opacity=".15"/>
-          <path d="M8 7h8M8 12h8M8 17h5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
-      </div>
-      <div class="sheets-info">
-        <div class="sheets-title">Full Raw Data &mdash; Google Sheets</div>
-        <div class="sheets-desc">All transactions for {{ start_date }} &ndash; {{ end_date }}. Open on any device &mdash; no login required.</div>
-        <div class="sheets-url">{{ sheets_url }}</div>
-      </div>
-      <div class="sheets-btn">OPEN<br>SHEETS</div>
-    </div>
+    <p class="sheets-link">Kindly Click <a href="{{ sheets_url }}">Here</a> for a detailed {{ month_label }} Sales performance.</p>
     {% endif %}
 
-  </div><!-- /p2-body -->
+    <div class="narrative-section">
+      <h3>{{ narrative_sections.period_label }}</h3>
+      <ul>
+        {% for bullet in narrative_sections.kpi_bullets %}<li>{{ bullet }}</li>{% endfor %}
+      </ul>
+    </div>
 
-  <div class="p2-footer">
-    <strong>Confidential</strong> &mdash; Prepared by DALA Technologies for <strong>{{ brand_name }}</strong> only.
-    Data covers {{ start_date }} &ndash; {{ end_date }}.
-    {% if sheets_url %} &middot; Raw data: {{ sheets_url }}{% endif %}
+    <div class="narrative-section">
+      <h3>Identified Strengths</h3>
+      <ul>
+        {% for bullet in narrative_sections.strengths %}<li>{{ bullet }}</li>{% endfor %}
+      </ul>
+    </div>
+
+    <div class="narrative-section">
+      <h3>Identified Gaps</h3>
+      <ul>
+        {% for bullet in narrative_sections.gaps %}<li>{{ bullet }}</li>{% endfor %}
+      </ul>
+    </div>
   </div>
 
-</div><!-- /page-break -->
+  <!-- Footer -->
+  <div class="page-footer">
+    <div class="footer-red-strip"></div>
+    <div class="footer-contact">
+      <div class="footer-col">
+        <div class="footer-icon">&#128205;</div>
+        <div class="footer-text">Ija Ota, Ogun State,<br>Nigeria.</div>
+      </div>
+      <div class="footer-col">
+        <div class="footer-icon">&#128222;</div>
+        <div class="footer-text">+234 814 882 4115<br>+234 806 240 2350</div>
+      </div>
+      <div class="footer-col">
+        <div class="footer-icon">&#127760;</div>
+        <div class="footer-text">info@dalatechnologies.com<br>www.dalatechnologies.com</div>
+      </div>
+      <div class="footer-page-num">1</div>
+    </div>
+  </div>
+
+</div><!-- /page 1 -->
+
+
+<!-- ════════════════════════════════ PAGE 2 ══════════════════════════════════ -->
+<div class="page page-break">
+
+  <!-- Header (identical) -->
+  <div class="page-header">
+    <div class="header-left">
+      <div class="red-accent-bar"></div>
+      {% if logo_path %}
+        <img class="dala-logo" src="{{ logo_path }}" alt="DALA Technologies">
+      {% else %}
+        <div class="dala-logo-ph">D</div>
+      {% endif %}
+      <div class="company-name">
+        <div><span class="brand">DALA</span><span class="reg">®</span></div>
+        <div class="sub">Technologies</div>
+      </div>
+    </div>
+    <div class="diamond-cluster">
+      <div class="d" style="width:32px;height:32px;background:#E8192C;top:3px;right:4px;"></div>
+      <div class="d" style="width:32px;height:32px;background:#1B2B5E;top:3px;right:30px;opacity:0.88;"></div>
+      <div class="d" style="width:32px;height:32px;background:#1B2B5E;top:26px;right:0px;opacity:0.92;"></div>
+      <div class="d" style="width:24px;height:24px;background:#E8192C;top:28px;right:28px;opacity:0.72;"></div>
+      <div class="d" style="width:18px;height:18px;background:#1B2B5E;top:46px;right:6px;opacity:0.6;"></div>
+      <div class="d" style="width:14px;height:14px;background:#E8192C;top:50px;right:28px;opacity:0.5;"></div>
+    </div>
+  </div>
+
+  <!-- Tagline -->
+  <div class="tagline-bar">BOOSTING REVENUE AND ENHANCING BRAND VALUE</div>
+
+  <!-- Recommendations -->
+  <div class="content-area" style="padding-top:18px;">
+    <div class="narrative-section">
+      <h3>{{ narrative_sections.next_month_label }}</h3>
+      <ul>
+        {% for bullet in narrative_sections.recommendations %}<li>{{ bullet }}</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="page-footer">
+    <div class="footer-red-strip"></div>
+    <div class="footer-contact">
+      <div class="footer-col">
+        <div class="footer-icon">&#128205;</div>
+        <div class="footer-text">Ija Ota, Ogun State,<br>Nigeria.</div>
+      </div>
+      <div class="footer-col">
+        <div class="footer-icon">&#128222;</div>
+        <div class="footer-text">+234 814 882 4115<br>+234 806 240 2350</div>
+      </div>
+      <div class="footer-col">
+        <div class="footer-icon">&#127760;</div>
+        <div class="footer-text">info@dalatechnologies.com<br>www.dalatechnologies.com</div>
+      </div>
+      <div class="footer-page-num">2</div>
+    </div>
+  </div>
+
+</div><!-- /page 2 -->
 
 </body>
 </html>

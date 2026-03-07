@@ -8,6 +8,7 @@ Page 2: Inventory detail, performance scorecard, store heatmap
 
 import os
 import base64
+import calendar as _calendar
 import glob
 import shutil
 import subprocess
@@ -36,6 +37,193 @@ jinja_env = Environment(
     loader=FileSystemLoader(TEMPLATE_DIR),
     autoescape=select_autoescape(['html', 'xml'])
 )
+
+
+def _sparkline_data(weekly_pct: list) -> list:
+    """Convert weekly percentages into bar-height + label dicts for the template."""
+    if not weekly_pct:
+        return [{'h': 3, 'label': '0%'}] * 4
+    maxv = max(weekly_pct) or 1
+    return [{'h': max(3, int(v / maxv * 22)), 'label': f'{v:.0f}%'} for v in weekly_pct]
+
+
+def _build_narrative_sections(brand_name: str, kpis: dict,
+                               start_date: str, end_date: str) -> dict:
+    """Build structured narrative bullet sections matching the ORISIRISI PDF format."""
+    start_dt   = datetime.strptime(start_date, '%Y-%m-%d')
+    end_dt     = datetime.strptime(end_date,   '%Y-%m-%d')
+    month_name = start_dt.strftime('%B')
+
+    next_month_num  = end_dt.month % 12 + 1
+    next_month_name = _calendar.month_name[next_month_num]
+
+    def _full(v):
+        return f'\u20a6{v:,.2f}'
+
+    def _short(v):
+        if v >= 1_000_000: return f'\u20a6{v/1_000_000:,.2f}M'
+        if v >= 1_000:     return f'\u20a6{v/1_000:,.1f}K'
+        return f'\u20a6{v:,.0f}'
+
+    total_rev   = float(kpis.get('total_revenue') or 0)
+    total_qty   = float(kpis.get('total_qty') or 0)
+    store_count = int(kpis.get('store_count') or 0)
+    repeat_pct  = float(kpis.get('repeat_pct') or 0)
+    wow_rev     = float(kpis.get('wow_rev_change') or 0)
+    stock_days  = float(kpis.get('stock_days_cover') or 0)
+
+    weekly_rev_pct = kpis.get('weekly_rev_pct') or [0, 0, 0, 0]
+
+    top_stores_df = kpis.get('top_stores')
+    top_store_name, top_store_rev = '', 0.0
+    if top_stores_df is not None and not top_stores_df.empty:
+        top_store_name = top_stores_df.iloc[0]['Store']
+        top_store_rev  = float(top_stores_df.iloc[0]['Revenue'])
+
+    product_df = kpis.get('product_value')
+    top_product_name, top_product_rev = '', 0.0
+    bottom_product_name, bottom_product_rev = '', 0.0
+    if product_df is not None and not product_df.empty:
+        top_product_name = product_df.iloc[0]['SKU']
+        top_product_rev  = float(product_df.iloc[0]['Revenue'])
+        if len(product_df) > 1:
+            bottom_product_name = product_df.iloc[-1]['SKU']
+            bottom_product_rev  = float(product_df.iloc[-1]['Revenue'])
+
+    closing_stock_df = kpis.get('closing_stock')
+
+    # ── KPI bullets ───────────────────────────────────────────────────────────
+    kpi_bullets = [
+        f'Total Sales Revenue: {_full(total_rev)}.',
+        f'Total Quantity Sold: {total_qty:,.2f} packs.',
+        f'Sales Reach: {store_count} active supermarket{"s" if store_count != 1 else ""}.',
+    ]
+    if top_product_name:
+        vol_desc = 'high' if total_qty > 100 else 'moderate'
+        kpi_bullets.append(
+            f'Customer Response: The quantity of {total_qty:,.2f} packs sold indicates {brand_name} is a '
+            f'{vol_desc}-volume brand with {top_product_name} being the primary driver.'
+        )
+
+    # ── Strengths ─────────────────────────────────────────────────────────────
+    strengths = []
+    nonzero = [v for v in weekly_rev_pct if v > 0]
+    if len(nonzero) >= 2 and nonzero[-1] > nonzero[0]:
+        strengths.append(
+            f'Consistent Growth Trend: {brand_name} maintained a steady upward trajectory throughout '
+            f'the month, with the WoW trend growing from {nonzero[0]:.0f}% to {nonzero[-1]:.0f}%.'
+        )
+    elif wow_rev > 0:
+        strengths.append(
+            f'Positive Momentum: Revenue grew {wow_rev:+.1f}% week-over-week, '
+            f'demonstrating strong demand for {brand_name} products.'
+        )
+
+    if top_product_name and top_product_rev > 0 and total_rev > 0:
+        pct = top_product_rev / total_rev * 100
+        strengths.append(
+            f'Product Market Leader: {top_product_name} accounts for {pct:.0f}% of total revenue '
+            f'at {_short(top_product_rev)}.'
+        )
+
+    if top_store_name and top_store_rev > 0:
+        strengths.append(
+            f'Retail Anchor: {top_store_name} is a primary driver of volume, '
+            f'contributing {_short(top_store_rev)}.'
+        )
+
+    if repeat_pct >= 50:
+        strengths.append(
+            f'Strong Loyalty: {repeat_pct:.0f}% repeat order rate demonstrates solid customer retention.'
+        )
+
+    if not strengths:
+        strengths.append(
+            f'{brand_name} demonstrated consistent sales activity across the reporting period.'
+        )
+
+    # ── Gaps ──────────────────────────────────────────────────────────────────
+    gaps = []
+    if (bottom_product_name and bottom_product_rev > 0
+            and top_product_rev > 0 and bottom_product_rev < top_product_rev * 0.3):
+        gaps.append(
+            f'Underperforming SKUs: {bottom_product_name} ({_short(bottom_product_rev)}) contributes '
+            f'significantly less to the revenue mix than the top performer, '
+            f'{top_product_name} ({_short(top_product_rev)}).'
+        )
+
+    if closing_stock_df is not None and not closing_stock_df.empty:
+        low = closing_stock_df[closing_stock_df['Closing Stock (Cartons)'] < 10]
+        if not low.empty:
+            sku_names = ' and '.join(low['SKU'].tolist()[:2])
+            gaps.append(
+                f'Inventory Imbalance: Stock for {sku_names} is critically low, '
+                f'creating a risk of lost sales.'
+            )
+
+    if 0 < stock_days < 14:
+        gaps.append(
+            f'Stock Cover Risk: Current inventory covers only {stock_days:.0f} days at the present '
+            f'sales rate. Urgent replenishment is recommended.'
+        )
+
+    if repeat_pct < 40 and store_count > 0:
+        gaps.append(
+            f'Low Repeat Rate: At {repeat_pct:.0f}%, the repeat ordering rate is below the 40% '
+            f'benchmark, suggesting distribution gaps or inconsistent stock availability.'
+        )
+
+    if not gaps:
+        gaps.append(
+            'No critical performance gaps identified. Monitor inventory levels and maintain '
+            'current distribution reach.'
+        )
+
+    # ── Recommendations ───────────────────────────────────────────────────────
+    recs = []
+    if closing_stock_df is not None and not closing_stock_df.empty:
+        low = closing_stock_df[closing_stock_df['Closing Stock (Cartons)'] < 10]
+        for _, row in low.head(2).iterrows():
+            needed = max(10, int(row['Closing Stock (Cartons)'] or 0) * 4)
+            recs.append(
+                f'Stock Optimization: Deliver a minimum of {needed} packs of {row["SKU"]} to the '
+                f'warehouse to align stock levels with current demand.'
+            )
+
+    if (bottom_product_name and top_product_rev > 0
+            and bottom_product_rev < top_product_rev * 0.3):
+        recs.append(
+            f'Variant Promotion: Implement a "bundle" or discount strategy for '
+            f'{bottom_product_name} to increase its market share and inventory turnover.'
+        )
+
+    if store_count < 30:
+        recs.append(
+            f'Distribution Expansion: Target at least {store_count + 8} active stores in '
+            f'{next_month_name} to broaden reach and reduce revenue concentration risk.'
+        )
+
+    if repeat_pct < 40:
+        recs.append(
+            f'Retention Drive: Engage the {store_count} active stores with targeted promotional '
+            f'incentives to improve the repeat order rate above 50%.'
+        )
+
+    if not recs:
+        recs.append(
+            f'Maintain current performance levels and focus on expanding distribution reach '
+            f'in {next_month_name}.'
+        )
+
+    return {
+        'report_title':     f'{month_name} Monthly Sales Report For {brand_name}',
+        'period_label':     f'{month_name} KPIs',
+        'next_month_label': f'{next_month_name} Recommendations',
+        'kpi_bullets':      kpi_bullets,
+        'strengths':        strengths,
+        'gaps':             gaps,
+        'recommendations':  recs,
+    }
 
 
 def render_pdf_report_html(brand_name: str, kpis: dict,
@@ -106,14 +294,15 @@ def render_pdf_report_html(brand_name: str, kpis: dict,
         for _, r in kpis['supply_summary'].iterrows()
     ]
 
-    # Reports always use the deterministic analysis summary.
-    narrative = generate_narrative(brand_name, kpis, start_date, end_date)
+    # ── Structured narrative sections ──────────────────────────────────────────
+    narrative_sections = _build_narrative_sections(brand_name, kpis, start_date, end_date)
 
     # ── Dates ──────────────────────────────────────────────────────────────────
     start_dt      = datetime.strptime(start_date, '%Y-%m-%d')
     end_dt        = datetime.strptime(end_date,   '%Y-%m-%d')
     display_start = start_dt.strftime('%d %b %Y')
     display_end   = end_dt.strftime('%d %b %Y')
+    month_label   = start_dt.strftime('%B')
 
     # ── Logo ───────────────────────────────────────────────────────────────────
     logo_data = ''
@@ -121,18 +310,34 @@ def render_pdf_report_html(brand_name: str, kpis: dict,
         with open(LOGO_PATH, 'rb') as f:
             logo_data = f"data:image/jpeg;base64,{base64.b64encode(f.read()).decode()}"
 
+    # ── Pre-computed display values ─────────────────────────────────────────────
+    revenue_display   = f'\u20a6{kpis["total_revenue"]:,.2f}'
+    qty_display       = f'{kpis["total_qty"]:,.2f}'
+
+    cs = kpis.get('closing_stock')
+    inventory_total   = f'{cs["Closing Stock (Cartons)"].sum():.1f}' if cs is not None and not cs.empty else '0.0'
+
+    rev_sparkline = _sparkline_data(kpis.get('weekly_rev_pct') or [0, 0, 0, 0])
+    qty_sparkline = _sparkline_data(kpis.get('weekly_qty_pct') or [0, 0, 0, 0])
+
     # ── Render template ────────────────────────────────────────────────────────
     template = jinja_env.get_template('report_template.html')
     return template.render(
         brand_name=brand_name,
         start_date=display_start,
         end_date=display_end,
+        month_label=month_label,
         kpis=kpis,
-        narrative=narrative,
         sheets_url=sheets_url,
         logo_path=logo_data,
         perf=perf,
         portfolio_share=portfolio_share,
+        narrative_sections=narrative_sections,
+        revenue_display=revenue_display,
+        qty_display=qty_display,
+        inventory_total=inventory_total,
+        rev_sparkline=rev_sparkline,
+        qty_sparkline=qty_sparkline,
         dual_trend_chart=dual_trend_chart,
         stock_chart=stock_chart,
         reorder_chart=reorder_chart,
