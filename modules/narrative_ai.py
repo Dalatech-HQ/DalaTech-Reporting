@@ -216,3 +216,46 @@ def generate_bulk_narratives(all_kpis, ds, report_id):
         pass
 
     return results
+
+
+def generate_recommendations(brand_name: str, kpis: dict, churn_data: list = None, portfolio_avg: float = None) -> str:
+    """
+    Generate 3 concrete action-oriented recommendations for a brand using Gemini.
+
+    Returns:
+        str: Numbered action bullets, or None if Gemini not available.
+    """
+    if not gemini_available():
+        return None
+    try:
+        rev = kpis.get('total_revenue', 0)
+        stores = kpis.get('num_stores', 0)
+        repeat = kpis.get('repeat_pct', 0)
+        stock_d = kpis.get('stock_days_cover', 0)
+        grade = kpis.get('perf_grade', '-')
+        top_sku = kpis.get('top_sku_name', '')
+        top_store = kpis.get('top_store_name', '')
+        churned_count = len([c for c in (churn_data or []) if c.get('churn_type') == 'churned'])
+
+        prompt = f"""You are a sales strategy advisor for DALA Technologies, a consumer goods distributor in Nigeria.
+
+Brand: {brand_name}
+Revenue: ₦{rev:,.0f} | Grade: {grade} | Stores: {stores} | Repeat Rate: {repeat}%
+Stock Days Cover: {stock_d} | Top SKU: {top_sku or 'N/A'} | Top Store: {top_store or 'N/A'}
+Churned Stores: {churned_count}
+{"Portfolio Average Revenue: ₦"+f"{portfolio_avg:,.0f}" if portfolio_avg else ""}
+
+Provide exactly 3 specific, actionable recommendations for the DALA sales team to improve this brand's performance next month.
+Each must be concrete (mention actual numbers, store names if possible, or specific actions).
+Format as:
+1. [action]
+2. [action]
+3. [action]
+
+Keep each to 1-2 sentences. Be direct and practical."""
+
+        client = _get_client()
+        response = client.generate_content(prompt)
+        return response.text.strip()
+    except Exception as exc:
+        raise RuntimeError(f"Gemini recommendations failed for {brand_name}: {exc}") from exc

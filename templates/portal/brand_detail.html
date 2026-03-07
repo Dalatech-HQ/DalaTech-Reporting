@@ -21,23 +21,38 @@
   <div class="kpi-card red">
     <div class="kpi-label">Total Revenue</div>
     <div class="kpi-value-sm">₦{{ "{:,.0f}".format(kpis.total_revenue) }}</div>
-    <div class="kpi-sub">{{ report.month_label if report }}</div>
+    <div class="kpi-sub">
+      {{ report.month_label if report }}
+      {% if yoy_rev_pct is not none %}
+        &nbsp;{% if yoy_rev_pct > 0 %}<span style="color:var(--green);font-weight:700;">▲ {{ yoy_rev_pct }}% YoY</span>
+        {% elif yoy_rev_pct < 0 %}<span style="color:var(--red);font-weight:700;">▼ {{ yoy_rev_pct|abs }}% YoY</span>
+        {% else %}<span class="text-muted">— YoY</span>{% endif %}
+      {% endif %}
+    </div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Qty Sold</div>
     <div class="kpi-value-sm">{{ "{:,.1f}".format(kpis.total_qty) }}</div>
-    <div class="kpi-sub">Carton packs</div>
+    <div class="kpi-sub">
+      Carton packs
+      {% if yoy_kpi and yoy_kpi.total_qty %}&nbsp;<span class="text-muted fs-sm">vs {{ "{:,.0f}".format(yoy_kpi.total_qty) }} prev yr</span>{% endif %}
+    </div>
   </div>
   <div class="kpi-card blue">
     <div class="kpi-label">Stores</div>
     <div class="kpi-value-sm">{{ kpis.num_stores }}</div>
-    <div class="kpi-sub">{{ kpis.repeat_pct }}% repeat rate</div>
+    <div class="kpi-sub">
+      {{ kpis.repeat_pct }}% repeat rate
+      {% if yoy_kpi and yoy_kpi.num_stores %}&nbsp;<span class="text-muted fs-sm">vs {{ yoy_kpi.num_stores }} prev yr</span>{% endif %}
+    </div>
   </div>
   <div class="kpi-card" style="{% if kpis.perf_grade == 'A' %}border-top:3px solid #1E8449{% elif kpis.perf_grade == 'B' %}border-top:3px solid #2E86C1{% elif kpis.perf_grade == 'C' %}border-top:3px solid #C0922A{% else %}border-top:3px solid #E8192C{% endif %};">
     <div class="kpi-label">Performance Grade</div>
     {% set gc = {'A':'#1E8449','B':'#2E86C1','C':'#C0922A','D':'#E8192C'} %}
     <div class="kpi-value-sm" style="color:{{ gc.get(kpis.perf_grade,'#888') }};">{{ kpis.perf_grade }}</div>
-    <div class="kpi-sub">Score: {{ kpis.perf_score }}/100</div>
+    <div class="kpi-sub">Score: {{ kpis.perf_score }}/100
+      {% if yoy_kpi and yoy_kpi.perf_grade %}&nbsp;<span class="text-muted fs-sm">prev: {{ yoy_kpi.perf_grade }}</span>{% endif %}
+    </div>
   </div>
 </div>
 
@@ -180,6 +195,55 @@
   </div>
 </div>
 
+<!-- Store Churn -->
+{% if churned_stores or new_stores %}
+<div class="grid-2" style="margin-bottom:20px;">
+  {% if churned_stores %}
+  <div class="card">
+    <h4 style="color:var(--red);margin-bottom:12px;">Stores at Risk ({{ churned_stores|length }})</h4>
+    <p class="text-muted fs-sm" style="margin-bottom:12px;">Active last period — placed no orders this period.</p>
+    <div style="max-height:200px;overflow-y:auto;">
+      {% for s in churned_stores[:15] %}
+      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--gray);font-size:12px;">
+        <span>{{ s.store_name }}</span>
+        <span class="text-muted">₦{{ "{:,.0f}".format(s.prev_revenue) }} prev.</span>
+      </div>
+      {% endfor %}
+      {% if churned_stores|length > 15 %}<div class="text-muted fs-sm" style="margin-top:6px;">... and {{ churned_stores|length - 15 }} more</div>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+  {% if new_stores %}
+  <div class="card">
+    <h4 style="color:var(--green);margin-bottom:12px;">New Stores This Period ({{ new_stores|length }})</h4>
+    <p class="text-muted fs-sm" style="margin-bottom:12px;">First-time stores ordering this period.</p>
+    <div style="max-height:200px;overflow-y:auto;">
+      {% for s in new_stores[:15] %}
+      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--gray);font-size:12px;">
+        <span>{{ s.store_name }}</span>
+        <span style="color:var(--green);font-weight:600;">₦{{ "{:,.0f}".format(s.prev_revenue) }}</span>
+      </div>
+      {% endfor %}
+      {% if new_stores|length > 15 %}<div class="text-muted fs-sm" style="margin-top:6px;">... and {{ new_stores|length - 15 }} more</div>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- AI Action Recommendations -->
+{% if report %}
+<div class="card" style="margin-bottom:20px;" id="recCard">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <h4 style="color:var(--navy);">AI Recommended Actions</h4>
+    <button class="btn btn-outline btn-sm" onclick="loadRecommendations(true)">Generate</button>
+  </div>
+  <div id="recContent" style="font-size:13px;line-height:1.8;color:var(--text);">
+    <span class="text-muted fs-sm">Click Generate to get AI action recommendations for this brand.</span>
+  </div>
+</div>
+{% endif %}
+
 <!-- Brand Partner Portal Token -->
 <div class="card" style="margin-bottom:20px;">
   <h4 style="color:var(--navy);margin-bottom:8px;">Brand Partner Portal Access</h4>
@@ -249,5 +313,25 @@ async function regenToken(brand) {
     alert('Token regenerated!');
   }
 }
+
+async function loadRecommendations(regen = false) {
+  const el = document.getElementById('recContent');
+  if (!el) return;
+  el.innerHTML = '<span class="text-muted fs-sm">Generating recommendations...</span>';
+  try {
+    const url = '/api/recommendations/{{ brand_name }}' + (regen ? '?regenerate=1' : '');
+    const res = await fetch(url, regen ? {method:'POST'} : {});
+    const data = await res.json();
+    if (data.success && data.recommendations) {
+      el.innerHTML = data.recommendations.replace(/\n/g, '<br>');
+    } else {
+      el.innerHTML = '<span style="color:var(--red);">' + (data.error || 'Failed to generate recommendations.') + '</span>';
+    }
+  } catch(e) {
+    el.innerHTML = '<span style="color:var(--red);">Failed to load recommendations.</span>';
+  }
+}
+// Auto-load cached recommendations on page load
+loadRecommendations(false);
 </script>
 {% endblock %}

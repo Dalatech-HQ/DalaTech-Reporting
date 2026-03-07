@@ -1,0 +1,230 @@
+{% extends "portal/base.html" %}
+{% block title %}{{ brand.canonical_name }} Catalog — DALA Analytics{% endblock %}
+{% block page_title %}{{ brand.canonical_name }} Catalog{% endblock %}
+
+{% block topbar_actions %}
+<a href="/catalog" class="btn btn-outline btn-sm">Back to Catalog</a>
+{% if token %}
+<a href="/portal/{{ token.token }}" target="_blank" class="btn btn-navy btn-sm">Open Portal</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="grid-4" style="margin-bottom:24px;">
+  <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{{ skus|length }}</div><div class="text-muted fs-sm">Approved SKUs</div></div>
+  <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{{ aliases|length }}</div><div class="text-muted fs-sm">Brand aliases</div></div>
+  <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{{ review_queue|length }}</div><div class="text-muted fs-sm">Pending SKU reviews</div></div>
+  <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{% if latest_kpis %}₦{{ "{:,.0f}".format(latest_kpis.total_revenue) }}{% else %}—{% endif %}</div><div class="text-muted fs-sm">Latest revenue</div></div>
+</div>
+
+<div class="grid-2" style="margin-bottom:24px;">
+  <div class="card">
+    <h4 style="color:var(--navy);margin-bottom:8px;">Brand Metadata</h4>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <input id="brandName" class="form-control" value="{{ brand.canonical_name }}" placeholder="Brand name">
+      <select id="brandStatus" class="form-control">
+        <option value="active" {% if brand.status == 'active' %}selected{% endif %}>Active</option>
+        <option value="prospect" {% if brand.status == 'prospect' %}selected{% endif %}>Prospect</option>
+        <option value="inactive" {% if brand.status == 'inactive' %}selected{% endif %}>Inactive</option>
+      </select>
+      <input id="brandCategory" class="form-control" value="{{ brand.category or '' }}" placeholder="Category">
+      <input id="brandStartDate" class="form-control" type="date" value="{{ brand.start_date or '' }}">
+      <input id="brandEmail" class="form-control" value="{{ brand.default_email or '' }}" placeholder="Primary email">
+      <input id="brandWhatsapp" class="form-control" value="{{ brand.default_whatsapp or '' }}" placeholder="WhatsApp">
+    </div>
+    <textarea id="brandNotes" class="form-control" rows="4" style="margin-top:12px;" placeholder="Notes">{{ brand.notes or '' }}</textarea>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:12px;">
+      <button type="button" class="btn btn-navy btn-sm" onclick="saveBrand()">Save Brand</button>
+      <span id="brandStatusMsg" class="text-muted fs-sm"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h4 style="color:var(--navy);margin-bottom:8px;">Add SKU</h4>
+    <p class="text-muted fs-sm" style="margin-bottom:12px;">Manually register a new SKU so the next import recognizes it immediately.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <input id="skuName" class="form-control" placeholder="SKU name">
+      <input id="skuCode" class="form-control" placeholder="SKU code">
+      <input id="skuPackSize" class="form-control" placeholder="Pack size">
+      <input id="skuUnitType" class="form-control" placeholder="Unit type">
+      <select id="skuStatus" class="form-control">
+        <option value="active">Active</option>
+        <option value="inactive">Inactive</option>
+        <option value="discontinued">Discontinued</option>
+      </select>
+      <input id="skuLaunchDate" class="form-control" type="date">
+    </div>
+    <textarea id="skuNotes" class="form-control" rows="3" style="margin-top:12px;" placeholder="Notes"></textarea>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:12px;">
+      <button type="button" class="btn btn-green btn-sm" onclick="saveSku()">Add SKU</button>
+      <span id="skuStatusMsg" class="text-muted fs-sm"></span>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:24px;">
+  <h4 style="color:var(--navy);margin-bottom:8px;">Known Brand Aliases</h4>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    {% for alias in aliases %}
+      <span class="badge badge-blue">{{ alias.alias_name }}</span>
+    {% else %}
+      <span class="text-muted">No aliases stored yet.</span>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:24px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+    <h4 style="color:var(--navy);margin:0;">Pending SKU Review</h4>
+    <span class="badge badge-amber">{{ review_queue|length }} pending</span>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Detected SKU</th>
+        <th>Source</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in review_queue %}
+      <tr>
+        <td>
+          <div style="font-weight:700;">{{ item.raw_name }}</div>
+          <div class="text-muted fs-sm">{{ item.created_at[:10] if item.created_at else '—' }}</div>
+        </td>
+        <td>{{ item.source_filename or 'Import' }}</td>
+        <td style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" class="btn btn-green btn-sm" onclick="reviewItem({{ item.id }}, 'approve')">Approve</button>
+          <select id="skuTarget-{{ item.id }}" class="form-control" style="min-width:180px;">
+            <option value="">Map to existing SKU</option>
+            {% for sku in skus %}
+            <option value="{{ sku.id }}">{{ sku.sku_name }}</option>
+            {% endfor %}
+          </select>
+          <button type="button" class="btn btn-navy btn-sm" onclick="reviewItem({{ item.id }}, 'map')">Map</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="reviewItem({{ item.id }}, 'reject')">Reject</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" style="text-align:center;padding:28px;color:var(--muted);">No pending SKU items for this brand.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+    <h4 style="color:var(--navy);margin:0;">Approved SKUs</h4>
+    <span class="badge badge-green">{{ skus|length }} total</span>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>SKU</th>
+        <th>Status</th>
+        <th>Code</th>
+        <th>Pack Size</th>
+        <th>Unit</th>
+        <th>Launch</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for sku in skus %}
+      <tr>
+        <td style="font-weight:700;">{{ sku.sku_name }}</td>
+        <td>
+          {% if sku.status == 'active' %}<span class="badge badge-green">Active</span>
+          {% elif sku.status == 'discontinued' %}<span class="badge badge-red">Discontinued</span>
+          {% else %}<span class="badge badge-amber">{{ sku.status|title }}</span>{% endif %}
+        </td>
+        <td>{{ sku.sku_code or '—' }}</td>
+        <td>{{ sku.pack_size or '—' }}</td>
+        <td>{{ sku.unit_type or '—' }}</td>
+        <td>{{ sku.launch_date or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="text-align:center;padding:28px;color:var(--muted);">No approved SKUs yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function saveBrand() {
+  const status = document.getElementById('brandStatusMsg');
+  status.textContent = 'Saving...';
+  const response = await fetch('/api/catalog/brand', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      brand_id: {{ brand.id }},
+      brand_name: document.getElementById('brandName').value,
+      status: document.getElementById('brandStatus').value,
+      category: document.getElementById('brandCategory').value,
+      start_date: document.getElementById('brandStartDate').value,
+      default_email: document.getElementById('brandEmail').value,
+      default_whatsapp: document.getElementById('brandWhatsapp').value,
+      notes: document.getElementById('brandNotes').value
+    })
+  });
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    status.textContent = '';
+    alert(data.error || 'Brand save failed.');
+    return;
+  }
+  status.textContent = 'Saved.';
+  location.reload();
+}
+
+async function saveSku() {
+  const status = document.getElementById('skuStatusMsg');
+  status.textContent = 'Saving...';
+  const response = await fetch('/api/catalog/sku', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      brand_id: {{ brand.id }},
+      sku_name: document.getElementById('skuName').value,
+      sku_code: document.getElementById('skuCode').value,
+      pack_size: document.getElementById('skuPackSize').value,
+      unit_type: document.getElementById('skuUnitType').value,
+      status: document.getElementById('skuStatus').value,
+      launch_date: document.getElementById('skuLaunchDate').value,
+      notes: document.getElementById('skuNotes').value
+    })
+  });
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    status.textContent = '';
+    alert(data.error || 'SKU save failed.');
+    return;
+  }
+  status.textContent = 'Saved.';
+  location.reload();
+}
+
+async function reviewItem(itemId, action) {
+  const payload = {
+    action,
+    target_brand_id: {{ brand.id }}
+  };
+  const skuTarget = document.getElementById(`skuTarget-${itemId}`);
+  if (skuTarget && skuTarget.value) payload.target_sku_id = skuTarget.value;
+  const response = await fetch(`/api/catalog/review/${itemId}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    alert(data.error || 'Review action failed.');
+    return;
+  }
+  location.reload();
+}
+</script>
+{% endblock %}

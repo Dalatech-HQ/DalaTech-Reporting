@@ -9,10 +9,22 @@
   {% endfor %}
 </select>
 {% if report %}
+<select id="filterGrade" class="form-control" style="width:110px;" onchange="applyFilters()">
+  <option value="">All Grades</option>
+  <option>A</option><option>B</option><option>C</option><option>D</option>
+</select>
+<select id="filterStock" class="form-control" style="width:110px;" onchange="applyFilters()">
+  <option value="">All Stock</option>
+  <option value="Healthy">Healthy</option>
+  <option value="Watch">Watch</option>
+  <option value="Low">Low</option>
+</select>
+<a href="/api/export/brands?report_id={{ report.id }}" class="btn btn-outline btn-sm" title="Export CSV">⬇ CSV</a>
 <a href="/brands?report_id={{ report.id }}" class="btn btn-outline btn-sm">Bulk PDFs</a>
 {% endif %}
 {% if portfolio_file %}
-<a href="/download/html/{{ portfolio_file }}" target="_blank" class="btn btn-primary btn-sm">Open Portfolio Dashboard</a>
+<a href="/download/html/{{ portfolio_file }}" target="_blank" class="btn btn-primary btn-sm">Portfolio HTML</a>
+<a href="/api/portfolio_pdf/{{ report.id }}" class="btn btn-outline btn-sm" title="Download Portfolio PDF">Portfolio PDF</a>
 {% endif %}
 {% endblock %}
 
@@ -28,24 +40,55 @@
   <div class="kpi-card red">
     <div class="kpi-label">Total Revenue</div>
     <div class="kpi-value-sm">₦{{ "{:,.0f}".format(report.total_revenue) }}</div>
-    <div class="kpi-sub">All {{ report.brand_count }} brands</div>
+    <div class="kpi-sub">
+      All {{ report.brand_count }} brands
+      {% if yoy_rev_pct is not none %}
+        &nbsp;
+        {% if yoy_rev_pct > 0 %}<span style="color:var(--green);font-weight:700;font-size:11px;">▲ {{ yoy_rev_pct }}% YoY</span>
+        {% elif yoy_rev_pct < 0 %}<span style="color:var(--red);font-weight:700;font-size:11px;">▼ {{ yoy_rev_pct|abs }}% YoY</span>
+        {% else %}<span class="text-muted fs-sm">— YoY</span>{% endif %}
+      {% endif %}
+    </div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Total Qty Sold</div>
     <div class="kpi-value-sm">{{ "{:,.1f}".format(report.total_qty) }}</div>
-    <div class="kpi-sub">Packs across portfolio</div>
+    <div class="kpi-sub">
+      Packs across portfolio
+      {% if yoy_prev_qty %}
+        &nbsp;<span class="text-muted fs-sm">vs {{ "{:,.0f}".format(yoy_prev_qty) }} prev yr</span>
+      {% endif %}
+    </div>
   </div>
   <div class="kpi-card blue">
     <div class="kpi-label">Stores Reached</div>
     <div class="kpi-value-sm">{{ report.total_stores }}</div>
-    <div class="kpi-sub">Unique supermarkets</div>
+    <div class="kpi-sub">
+      Unique supermarkets
+      {% if yoy_prev_stores %}
+        &nbsp;<span class="text-muted fs-sm">vs {{ yoy_prev_stores }} prev yr</span>
+      {% endif %}
+    </div>
   </div>
   <div class="kpi-card green">
     <div class="kpi-label">Brand Partners</div>
     <div class="kpi-value-sm">{{ report.brand_count }}</div>
     <div class="kpi-sub">With sales this period</div>
   </div>
+  {% if total_churned %}
+  <div class="kpi-card" style="border-top:3px solid var(--red);">
+    <div class="kpi-label">Churned Stores</div>
+    <div class="kpi-value-sm" style="color:var(--red);">{{ total_churned }}</div>
+    <div class="kpi-sub">Stores silent vs. prev. period &nbsp;<a href="#" onclick="document.getElementById('churnSection').scrollIntoView({behavior:'smooth'});return false;" style="font-size:10px;">View</a></div>
+  </div>
+  {% endif %}
 </div>
+
+{% if conc_warning %}
+<div style="background:#FFF3CD;border:1px solid #FBBF24;border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:12px;color:#92400E;">
+  <strong>Concentration Risk:</strong> {{ conc_warning }}
+</div>
+{% endif %}
 
 <!-- ALERTS STRIP -->
 {% if alerts %}
@@ -74,22 +117,23 @@
 
 <!-- BRAND RANKINGS TABLE -->
 <div class="card">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
     <h4 style="color:var(--navy);">Brand Partner Rankings — {{ report.month_label }}</h4>
     <a href="/brands?report_id={{ report.id }}" class="btn btn-outline btn-sm">All Brands</a>
   </div>
-  <table class="data-table">
+  <table class="data-table sortable-table" id="rankTable">
     <thead>
       <tr>
-        <th>#</th>
+        <th data-col="0" onclick="sortTable('rankTable',0,true)"  style="cursor:pointer;"># ⇅</th>
         <th>Brand</th>
-        <th>Revenue</th>
-        <th>Portfolio %</th>
-        <th>Qty</th>
-        <th>Stores</th>
+        <th data-col="2" onclick="sortTable('rankTable',2,false)" style="cursor:pointer;">Revenue ⇅</th>
+        <th data-col="3" onclick="sortTable('rankTable',3,false)" style="cursor:pointer;">Portfolio % ⇅</th>
+        <th data-col="4" onclick="sortTable('rankTable',4,false)" style="cursor:pointer;">Qty ⇅</th>
+        <th data-col="5" onclick="sortTable('rankTable',5,false)" style="cursor:pointer;">Stores ⇅</th>
         <th>Grade</th>
         <th>Stock</th>
-        <th>WoW</th>
+        <th data-col="8" onclick="sortTable('rankTable',8,false)" style="cursor:pointer;">WoW ⇅</th>
+        <th>YoY</th>
         <th>Actions</th>
       </tr>
     </thead>
@@ -97,11 +141,13 @@
       {% set total_rev = report.total_revenue %}
       {% for b in brand_kpis %}
       {% set pct = (b.total_revenue / total_rev * 100)|round(1) if total_rev else 0 %}
-      <tr>
-        <td style="color:var(--muted);font-weight:700;">{{ loop.index }}</td>
+      <tr class="dash-row"
+          data-grade="{{ b.perf_grade or '' }}"
+          data-stock="{{ 'Low' if b.inv_health_status == 'Low Stock' else (b.inv_health_status or '') }}">
+        <td style="color:var(--muted);font-weight:700;" data-val="{{ loop.index }}">{{ loop.index }}</td>
         <td style="font-weight:600;"><a href="/brand/{{ b.brand_name }}" style="color:var(--navy);text-decoration:none;">{{ b.brand_name }}</a></td>
-        <td style="font-weight:700;color:var(--navy);">₦{{ "{:,.0f}".format(b.total_revenue) }}</td>
-        <td>
+        <td style="font-weight:700;color:var(--navy);" data-val="{{ b.total_revenue }}">₦{{ "{:,.0f}".format(b.total_revenue) }}</td>
+        <td data-val="{{ pct }}">
           <div style="display:flex;align-items:center;gap:6px;">
             <div style="width:60px;height:5px;background:#EEF0F5;border-radius:3px;">
               <div style="width:{{ [pct,100]|min }}%;height:100%;background:var(--red);border-radius:3px;"></div>
@@ -109,8 +155,8 @@
             <span class="fs-sm text-muted">{{ pct }}%</span>
           </div>
         </td>
-        <td>{{ "{:,.1f}".format(b.total_qty) }}</td>
-        <td>{{ b.num_stores }}</td>
+        <td data-val="{{ b.total_qty }}">{{ "{:,.1f}".format(b.total_qty) }}</td>
+        <td data-val="{{ b.num_stores }}">{{ b.num_stores }}</td>
         <td>
           {% if b.perf_grade %}
           {% set gc = {'A':'#1E8449','B':'#2E86C1','C':'#C0922A','D':'#E8192C'} %}
@@ -123,9 +169,18 @@
           {% elif b.inv_health_status == 'Low Stock' %}<span class="badge badge-red">Low</span>
           {% else %}<span class="text-muted fs-sm">—</span>{% endif %}
         </td>
-        <td>
+        <td data-val="{{ b.wow_rev_change }}">
           {% if b.wow_rev_change > 0 %}<span style="color:var(--green);font-weight:700;font-size:11px;">▲ {{ b.wow_rev_change }}%</span>
           {% elif b.wow_rev_change < 0 %}<span style="color:var(--red);font-weight:700;font-size:11px;">▼ {{ b.wow_rev_change|abs }}%</span>
+          {% else %}<span class="text-muted fs-sm">—</span>{% endif %}
+        </td>
+        <td>
+          {% set yb = yoy_brand_kpis.get(b.brand_name) if yoy_brand_kpis else none %}
+          {% if yb and yb.total_revenue %}
+            {% set yoy_b = ((b.total_revenue - yb.total_revenue) / yb.total_revenue * 100)|round(1) %}
+            {% if yoy_b > 0 %}<span style="color:var(--green);font-size:11px;font-weight:600;">▲ {{ yoy_b }}%</span>
+            {% elif yoy_b < 0 %}<span style="color:var(--red);font-size:11px;font-weight:600;">▼ {{ yoy_b|abs }}%</span>
+            {% else %}<span class="text-muted fs-sm">— YoY</span>{% endif %}
           {% else %}<span class="text-muted fs-sm">—</span>{% endif %}
         </td>
         <td style="white-space:nowrap;">
@@ -141,6 +196,37 @@
   </table>
 </div>
 
+<!-- Store Churn Summary -->
+{% if churn_summary %}
+<div class="card" id="churnSection" style="margin-top:24px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <h4 style="color:var(--navy);">Store Churn vs Previous Period</h4>
+    <button class="btn btn-outline btn-sm" onclick="recomputeChurn({{ report.id }})">Recompute</button>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr><th>Brand</th><th>Churned</th><th>New</th><th>Net</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for brand, counts in churn_summary.items() %}
+      {% set churned = counts.get('churned', 0) %}
+      {% set new = counts.get('new', 0) %}
+      {% set net = new - churned %}
+      <tr>
+        <td><a href="/brand/{{ brand }}" style="color:var(--navy);font-weight:600;">{{ brand }}</a></td>
+        <td style="color:var(--red);font-weight:700;">{{ churned }}</td>
+        <td style="color:var(--green);font-weight:700;">{{ new }}</td>
+        <td style="font-weight:700;color:{% if net > 0 %}var(--green){% elif net < 0 %}var(--red){% else %}var(--muted){% endif %};">
+          {% if net > 0 %}+{% endif %}{{ net }}
+        </td>
+        <td><a href="/brand/{{ brand }}" class="btn btn-outline btn-sm">Detail</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 {% endif %}
 {% endblock %}
 
@@ -152,5 +238,50 @@ async function ackAlert(id, btn) {
   btn.textContent='✓ Done';
   btn.disabled=true;
 }
+
+async function recomputeChurn(reportId) {
+  const res = await fetch(`/api/compute_churn/${reportId}`, {method:'POST'});
+  const data = await res.json();
+  if (data.success) location.reload();
+  else alert(data.error || 'Churn computation failed.');
+}
+
+// Table filtering by grade / stock status
+function applyFilters() {
+  const grade = document.getElementById('filterGrade')?.value || '';
+  const stock = document.getElementById('filterStock')?.value || '';
+  document.querySelectorAll('.dash-row').forEach(row => {
+    const matchG = !grade || row.dataset.grade === grade;
+    const matchS = !stock || row.dataset.stock === stock;
+    row.style.display = (matchG && matchS) ? '' : 'none';
+  });
+}
+
+// Generic column sort
+let _sortDir = {};
+function sortTable(tableId, col, numeric) {
+  const tbody = document.querySelector('#'+tableId+' tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  _sortDir[col] = !_sortDir[col];
+  rows.sort((a, b) => {
+    const av = a.cells[col]?.dataset?.val ?? a.cells[col]?.textContent.trim() ?? '';
+    const bv = b.cells[col]?.dataset?.val ?? b.cells[col]?.textContent.trim() ?? '';
+    const diff = numeric ? (parseFloat(av)||0) - (parseFloat(bv)||0) : av.localeCompare(bv);
+    return _sortDir[col] ? diff : -diff;
+  });
+  rows.forEach(r => tbody.appendChild(r));
+}
+
+// Auto-refresh KPI badges every 60s (lightweight — just reloads the page in background if a new report appears)
+{% if report %}
+let _lastReportId = {{ report.id }};
+setInterval(async () => {
+  try {
+    const r = await fetch('/api/reports');
+    const data = await r.json();
+    if (data.length && data[0].id > _lastReportId) location.reload();
+  } catch(e) {}
+}, 60000);
+{% endif %}
 </script>
 {% endblock %}

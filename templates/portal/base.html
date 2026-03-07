@@ -129,8 +129,17 @@
     .flash-success { background:rgba(30,132,73,.1); color:var(--green); border:1px solid rgba(30,132,73,.2); }
     .flash-error { background:rgba(232,25,44,.07); color:var(--red); border:1px solid rgba(232,25,44,.15); }
 
+    /* HAMBURGER */
+    #hamburger { display:none; background:transparent; border:none; cursor:pointer; padding:6px 8px; border-radius:6px; color:var(--navy); }
+    #hamburger:hover { background:var(--gray); }
+    #hamburger span { display:block; width:20px; height:2px; background:currentColor; margin:4px 0; border-radius:2px; transition:all .2s; }
+    #sidebar-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:99; }
+
     @media(max-width:900px) {
-      .sidebar { display:none; }
+      .sidebar { display:none; position:fixed; z-index:100; }
+      .sidebar.open { display:flex; }
+      #hamburger { display:block; }
+      #sidebar-overlay.open { display:block; }
       .main-wrap { margin-left:0; }
       .grid-3,.grid-4 { grid-template-columns:1fr 1fr; }
     }
@@ -202,6 +211,9 @@
     <a href="/database" class="nav-link {% if request.endpoint in ['database_page','drive_sync_dashboard'] %}active{% endif %}">
       <span class="nav-icon">🗄️</span> Database
     </a>
+    <a href="/catalog" class="nav-link {% if request.endpoint in ['catalog','catalog_brand_detail'] %}active{% endif %}">
+      <span class="nav-icon">🧾</span> Catalog
+    </a>
     <a href="/settings" class="nav-link {% if request.endpoint=='settings' %}active{% endif %}">
       <span class="nav-icon">⚙️</span> Settings
     </a>
@@ -209,12 +221,23 @@
       <span class="nav-icon">📖</span> How It Works
     </a>
   </nav>
+  {% if session.get('admin_authenticated') %}
+  <a href="/logout" class="nav-link" style="padding:10px 18px;font-size:12px;opacity:.6;">
+    <span class="nav-icon">🔓</span> Sign Out
+  </a>
+  {% endif %}
   <div class="sidebar-bottom">DALA Technologies &copy; 2026</div>
 </aside>
+
+<!-- SIDEBAR OVERLAY (mobile) -->
+<div id="sidebar-overlay" onclick="closeSidebar()"></div>
 
 <!-- MAIN -->
 <div class="main-wrap">
   <div class="topbar">
+    <button id="hamburger" onclick="toggleSidebar()" aria-label="Toggle menu">
+      <span></span><span></span><span></span>
+    </button>
     <h2>{% block page_title %}Dashboard{% endblock %}</h2>
     <div class="topbar-actions">
       {% block topbar_actions %}{% endblock %}
@@ -230,6 +253,21 @@
 </div>
 
 {% block scripts %}{% endblock %}
+
+<script>
+function toggleSidebar() {
+  const s = document.querySelector('.sidebar');
+  const o = document.getElementById('sidebar-overlay');
+  s.classList.toggle('open');
+  o.classList.toggle('open');
+}
+function closeSidebar() {
+  document.querySelector('.sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
+// Close sidebar on nav link click (mobile)
+document.querySelectorAll('.nav-link').forEach(l => l.addEventListener('click', closeSidebar));
+</script>
 
 <!-- Page loading bar — fires instantly on any nav or link click -->
 <style>

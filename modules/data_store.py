@@ -14,10 +14,13 @@ Usage:
   report_id = ds.save_report(...)
 """
 
+import json
 import os
 import sqlite3
 import uuid
 from datetime import datetime
+
+from .brand_names import canonicalize_brand_name, normalize_name_key
 
 # Allow overriding via env var so a Railway Volume can be used for persistence.
 # On Railway: set DATABASE_PATH=/data/dala_data.db and mount a Volume at /data
@@ -58,6 +61,15 @@ class DataStore:
     def __init__(self, db_path=None):
         self.db_path = db_path or DB_PATH
         self._init_db()
+        try:
+            self.sync_catalog_from_history()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _slugify(value):
+        value = normalize_name_key(value)
+        return value.replace(' ', '-')
 
     def _connect(self):
         conn = sqlite3.connect(self.db_path)
@@ -158,6 +170,78 @@ class DataStore:
                     UNIQUE(brand_name, month_label)
                 );
 
+                CREATE TABLE IF NOT EXISTS brands_master (
+                    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    brand_name        TEXT NOT NULL,
+                    canonical_name    TEXT NOT NULL,
+                    canonical_key     TEXT NOT NULL UNIQUE,
+                    slug              TEXT NOT NULL UNIQUE,
+                    status            TEXT DEFAULT 'active',
+                    category          TEXT,
+                    start_date        TEXT,
+                    default_email     TEXT,
+                    default_whatsapp  TEXT,
+                    notes             TEXT,
+                    created_at        TEXT NOT NULL,
+                    updated_at        TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS brand_aliases (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    brand_id     INTEGER NOT NULL,
+                    alias_name   TEXT NOT NULL,
+                    alias_key    TEXT NOT NULL UNIQUE,
+                    created_at   TEXT NOT NULL,
+                    FOREIGN KEY (brand_id) REFERENCES brands_master(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS skus_master (
+                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    brand_id            INTEGER NOT NULL,
+                    sku_name            TEXT NOT NULL,
+                    canonical_sku_name  TEXT NOT NULL,
+                    canonical_key       TEXT NOT NULL,
+                    sku_code            TEXT,
+                    pack_size           TEXT,
+                    unit_type           TEXT,
+                    status              TEXT DEFAULT 'active',
+                    launch_date         TEXT,
+                    notes               TEXT,
+                    created_at          TEXT NOT NULL,
+                    updated_at          TEXT NOT NULL,
+                    UNIQUE(brand_id, canonical_key),
+                    FOREIGN KEY (brand_id) REFERENCES brands_master(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS sku_aliases (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sku_id       INTEGER NOT NULL,
+                    brand_id     INTEGER NOT NULL,
+                    alias_name   TEXT NOT NULL,
+                    alias_key    TEXT NOT NULL,
+                    created_at   TEXT NOT NULL,
+                    UNIQUE(brand_id, alias_key),
+                    FOREIGN KEY (sku_id) REFERENCES skus_master(id),
+                    FOREIGN KEY (brand_id) REFERENCES brands_master(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS catalog_review_queue (
+                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_type         TEXT NOT NULL,
+                    raw_name            TEXT NOT NULL,
+                    normalized_name     TEXT NOT NULL,
+                    canonical_candidate TEXT,
+                    brand_candidate     TEXT,
+                    source_report_id    INTEGER,
+                    source_filename     TEXT,
+                    reason              TEXT DEFAULT 'new_detected',
+                    status              TEXT DEFAULT 'pending',
+                    review_note         TEXT,
+                    created_at          TEXT NOT NULL,
+                    reviewed_at         TEXT,
+                    FOREIGN KEY (source_report_id) REFERENCES reports(id)
+                );
+
                 CREATE TABLE IF NOT EXISTS alert_rules (
                     id           INTEGER PRIMARY KEY AUTOINCREMENT,
                     rule_name    TEXT NOT NULL,
@@ -197,6 +281,9 @@ class DataStore:
                 CREATE INDEX IF NOT EXISTS idx_alerts_report ON alerts(report_id);
                 CREATE INDEX IF NOT EXISTS idx_activity_log ON activity_log(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_targets_brand ON brand_targets(brand_name);
+                CREATE INDEX IF NOT EXISTS idx_brands_master_status ON brands_master(status);
+                CREATE INDEX IF NOT EXISTS idx_skus_master_brand ON skus_master(brand_id);
+                CREATE INDEX IF NOT EXISTS idx_queue_status ON catalog_review_queue(status, entity_type, created_at DESC);
 
                 CREATE TABLE IF NOT EXISTS ai_narratives (
                     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -238,6 +325,34 @@ class DataStore:
                     created_at  TEXT NOT NULL,
                     updated_at  TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS brand_forecast_history (
+                    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    report_id         INTEGER NOT NULL,
+                    brand_name        TEXT NOT NULL,
+                    predicted_revenue REAL DEFAULT 0,
+                    actual_revenue    REAL,
+                    growth_label      TEXT,
+                    confidence        REAL DEFAULT 0,
+                    accuracy_pct      REAL,
+                    created_at        TEXT NOT NULL,
+                    UNIQUE(report_id, brand_name),
+                    FOREIGN KEY (report_id) REFERENCES reports(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS store_churn (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    report_id     INTEGER NOT NULL,
+                    brand_name    TEXT NOT NULL,
+                    store_name    TEXT NOT NULL,
+                    churn_type    TEXT NOT NULL,
+                    prev_revenue  REAL DEFAULT 0,
+                    created_at    TEXT NOT NULL,
+                    FOREIGN KEY (report_id) REFERENCES reports(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_forecast_brand ON brand_forecast_history(brand_name);
+                CREATE INDEX IF NOT EXISTS idx_churn_report ON store_churn(report_id, brand_name);
             """)
             # ── Schema migration: add report_type to existing databases ──────
             existing = [r[1] for r in conn.execute("PRAGMA table_info(reports)").fetchall()]
@@ -505,6 +620,181 @@ class DataStore:
             ).fetchall()
             return [r['brand_name'] for r in rows]
 
+    def get_report_by_month(self, year: int, month: int):
+        """Return report row whose start_date falls in the given year+month, or None."""
+        prefix = f"{year:04d}-{month:02d}"
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM reports WHERE start_date LIKE ? ORDER BY start_date DESC LIMIT 1",
+                (prefix + '%',)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_yoy_kpis(self, report_id: int):
+        """
+        Return a dict {brand_name: brand_kpis_row} for the same calendar month
+        one year prior to the given report_id.  Returns {} if no matching report.
+        """
+        report = self.get_report(report_id)
+        if not report:
+            return {}
+        try:
+            from datetime import date as _date
+            d = _date.fromisoformat(report['start_date'])
+            prev_year = d.year - 1
+            prev_report = self.get_report_by_month(prev_year, d.month)
+        except Exception:
+            return {}
+        if not prev_report:
+            return {}
+        rows = self.get_all_brand_kpis(prev_report['id'])
+        return {r['brand_name']: r for r in rows}
+
+    def get_portfolio_yoy(self, report_id: int):
+        """
+        Return (prev_report, prev_total_revenue, prev_total_qty, prev_total_stores)
+        for the same calendar month last year.  Returns (None, 0, 0, 0) if unavailable.
+        """
+        report = self.get_report(report_id)
+        if not report:
+            return None, 0, 0, 0
+        try:
+            from datetime import date as _date
+            d = _date.fromisoformat(report['start_date'])
+            prev_report = self.get_report_by_month(d.year - 1, d.month)
+        except Exception:
+            return None, 0, 0, 0
+        if not prev_report:
+            return None, 0, 0, 0
+        return (
+            prev_report,
+            prev_report.get('total_revenue', 0),
+            prev_report.get('total_qty', 0),
+            prev_report.get('total_stores', 0),
+        )
+
+    def get_data_quality_score(self, report_id: int):
+        """Return stored data quality score for a report, or None."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT detail FROM activity_log WHERE action='quality_score' AND report_id=? ORDER BY created_at DESC LIMIT 1",
+                (report_id,)
+            ).fetchone()
+            if row:
+                try:
+                    return float(row['detail'])
+                except Exception:
+                    return None
+            return None
+
+    def save_data_quality_score(self, report_id: int, score: float):
+        """Persist data quality score in activity_log."""
+        self.log_activity('quality_score', detail=str(round(score, 1)), report_id=report_id)
+
+    def save_forecast_result(self, report_id: int, brand_name: str, predicted_revenue: float,
+                              growth_label: str, confidence: float):
+        """Store a forecast prediction for later accuracy comparison."""
+        now = datetime.now().isoformat(timespec='seconds')
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO brand_forecast_history
+                   (report_id, brand_name, predicted_revenue, growth_label, confidence, created_at)
+                   VALUES (?,?,?,?,?,?)""",
+                (report_id, brand_name, predicted_revenue, growth_label, confidence, now)
+            )
+
+    def get_forecast_accuracy(self, brand_name: str):
+        """
+        Compare stored predictions against actuals.
+        Returns list of {month_label, predicted, actual, error_pct}.
+        """
+        with self._connect() as conn:
+            # For each forecast, look up the actual from the NEXT month's brand_kpis
+            rows = conn.execute(
+                """SELECT bfh.*, r.month_label, r.start_date
+                   FROM brand_forecast_history bfh
+                   JOIN reports r ON bfh.report_id = r.id
+                   WHERE bfh.brand_name=? ORDER BY r.start_date DESC LIMIT 12""",
+                (brand_name,)
+            ).fetchall()
+        results = []
+        for row in rows:
+            row = dict(row)
+            try:
+                from datetime import date as _date, timedelta
+                d = _date.fromisoformat(row['start_date'])
+                # The "next" month's actual is the report one month later
+                next_month = d.month % 12 + 1
+                next_year = d.year + (1 if d.month == 12 else 0)
+                next_report = self.get_report_by_month(next_year, next_month)
+                if next_report:
+                    actual_row = self.get_brand_kpis_single(next_report['id'], brand_name)
+                    if actual_row:
+                        actual = actual_row['total_revenue']
+                        pred = row['predicted_revenue']
+                        if pred and pred > 0:
+                            error = round(abs(actual - pred) / pred * 100, 1)
+                            accuracy = round(100 - error, 1)
+                        else:
+                            accuracy = None
+                        results.append({
+                            'month_label': row['month_label'],
+                            'predicted': pred,
+                            'actual': actual,
+                            'accuracy_pct': accuracy,
+                        })
+            except Exception:
+                pass
+        return results
+
+    # ── Store churn operations ────────────────────────────────────────────────
+
+    def save_store_churn(self, report_id: int, brand_name: str, churn_data: dict):
+        """Persist churn data for a brand into the store_churn table."""
+        now = datetime.now().isoformat(timespec='seconds')
+        with self._connect() as conn:
+            conn.execute("DELETE FROM store_churn WHERE report_id=? AND brand_name=?", (report_id, brand_name))
+            for entry in churn_data.get('churned_stores', []):
+                conn.execute(
+                    "INSERT INTO store_churn (report_id, brand_name, store_name, churn_type, prev_revenue, created_at) VALUES (?,?,?,?,?,?)",
+                    (report_id, brand_name, entry['store'], 'churned', entry.get('prev_revenue', 0), now)
+                )
+            for entry in churn_data.get('new_stores', []):
+                conn.execute(
+                    "INSERT INTO store_churn (report_id, brand_name, store_name, churn_type, prev_revenue, created_at) VALUES (?,?,?,?,?,?)",
+                    (report_id, brand_name, entry['store'], 'new', entry.get('curr_revenue', 0), now)
+                )
+
+    def get_store_churn(self, report_id: int, brand_name: str = None):
+        """Return churn rows for a report, optionally filtered by brand."""
+        with self._connect() as conn:
+            if brand_name:
+                rows = conn.execute(
+                    "SELECT * FROM store_churn WHERE report_id=? AND brand_name=? ORDER BY churn_type, store_name",
+                    (report_id, brand_name)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM store_churn WHERE report_id=? ORDER BY brand_name, churn_type, store_name",
+                    (report_id,)
+                ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_churn_summary(self, report_id: int):
+        """Return aggregated churn count per brand: {brand_name: {churned, new}}."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT brand_name, churn_type, COUNT(*) as cnt FROM store_churn WHERE report_id=? GROUP BY brand_name, churn_type",
+                (report_id,)
+            ).fetchall()
+        result = {}
+        for r in rows:
+            bn = r['brand_name']
+            if bn not in result:
+                result[bn] = {'churned': 0, 'new': 0}
+            result[bn][r['churn_type']] = r['cnt']
+        return result
+
     # ── Alert operations ──────────────────────────────────────────────────────
 
     def save_alert(self, report_id, brand_name, alert_type, severity, message):
@@ -546,6 +836,7 @@ class DataStore:
 
     def get_or_create_token(self, brand_name):
         """Return existing token or generate a new one for the brand."""
+        self.ensure_brand_master(brand_name)
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT token FROM brand_tokens WHERE brand_name=?", (brand_name,)
@@ -579,6 +870,17 @@ class DataStore:
                 "UPDATE brand_tokens SET email=?, whatsapp=? WHERE brand_name=?",
                 (email, whatsapp, brand_name)
             )
+            brand = conn.execute(
+                "SELECT id FROM brands_master WHERE canonical_key=?",
+                (normalize_name_key(canonicalize_brand_name(brand_name)),)
+            ).fetchone()
+            if brand:
+                conn.execute(
+                    """UPDATE brands_master
+                       SET default_email=?, default_whatsapp=?, updated_at=?
+                       WHERE id=?""",
+                    (email, whatsapp, datetime.now().isoformat(timespec='seconds'), brand['id'])
+                )
 
     def revoke_token(self, brand_name):
         with self._connect() as conn:
@@ -594,6 +896,437 @@ class DataStore:
                 (token, brand_name)
             )
         return token
+
+    # ── Catalog master data ──────────────────────────────────────────────────
+
+    def ensure_brand_master(self, brand_name, status='active', category=None,
+                            start_date=None, email=None, whatsapp=None, notes=None):
+        canonical_name = canonicalize_brand_name(brand_name)
+        canonical_key = normalize_name_key(canonical_name)
+        if not canonical_key:
+            return None
+
+        now = datetime.now().isoformat(timespec='seconds')
+        slug_base = self._slugify(canonical_name)
+
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM brands_master WHERE canonical_key=?",
+                (canonical_key,)
+            ).fetchone()
+            if row:
+                updates = []
+                params = []
+                if email is not None:
+                    updates.append("default_email=?")
+                    params.append(email)
+                if whatsapp is not None:
+                    updates.append("default_whatsapp=?")
+                    params.append(whatsapp)
+                if category:
+                    updates.append("category=COALESCE(category, ?)")
+                    params.append(category)
+                if start_date:
+                    updates.append("start_date=COALESCE(start_date, ?)")
+                    params.append(start_date)
+                if notes:
+                    updates.append("notes=COALESCE(notes, ?)")
+                    params.append(notes)
+                if updates:
+                    params.extend([now, row['id']])
+                    conn.execute(
+                        f"UPDATE brands_master SET {', '.join(updates)}, updated_at=? WHERE id=?",
+                        params
+                    )
+                    row = conn.execute("SELECT * FROM brands_master WHERE id=?", (row['id'],)).fetchone()
+                return dict(row)
+
+            slug = slug_base or f"brand-{uuid.uuid4().hex[:8]}"
+            suffix = 2
+            while conn.execute("SELECT 1 FROM brands_master WHERE slug=?", (slug,)).fetchone():
+                slug = f"{slug_base}-{suffix}"
+                suffix += 1
+
+            cur = conn.execute(
+                """INSERT INTO brands_master
+                   (brand_name, canonical_name, canonical_key, slug, status, category,
+                    start_date, default_email, default_whatsapp, notes, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (canonical_name, canonical_name, canonical_key, slug, status, category,
+                 start_date, email, whatsapp, notes, now, now)
+            )
+            brand_id = cur.lastrowid
+            conn.execute(
+                """INSERT OR IGNORE INTO brand_aliases
+                   (brand_id, alias_name, alias_key, created_at)
+                   VALUES (?,?,?,?)""",
+                (brand_id, canonical_name, canonical_key, now)
+            )
+            return dict(conn.execute("SELECT * FROM brands_master WHERE id=?", (brand_id,)).fetchone())
+
+    def add_brand_alias(self, brand_id, alias_name):
+        alias_name = str(alias_name or '').strip()
+        alias_key = normalize_name_key(alias_name)
+        if not alias_key:
+            return
+        now = datetime.now().isoformat(timespec='seconds')
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT OR IGNORE INTO brand_aliases
+                   (brand_id, alias_name, alias_key, created_at)
+                   VALUES (?,?,?,?)""",
+                (brand_id, alias_name, alias_key, now)
+            )
+
+    def resolve_brand_master(self, brand_name):
+        alias_key = normalize_name_key(canonicalize_brand_name(brand_name))
+        if not alias_key:
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT bm.*
+                   FROM brands_master bm
+                   LEFT JOIN brand_aliases ba ON ba.brand_id = bm.id
+                   WHERE bm.canonical_key=? OR ba.alias_key=?
+                   ORDER BY bm.id
+                   LIMIT 1""",
+                (alias_key, alias_key)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_brand_master(self, brand_id):
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM brands_master WHERE id=?", (brand_id,)).fetchone()
+            return dict(row) if row else None
+
+    def get_brand_master_by_slug(self, slug):
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM brands_master WHERE slug=?", (slug,)).fetchone()
+            return dict(row) if row else None
+
+    def get_brand_aliases(self, brand_id):
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM brand_aliases WHERE brand_id=? ORDER BY alias_name",
+                (brand_id,)
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def update_brand_master(self, brand_id, **fields):
+        allowed = {
+            'brand_name', 'canonical_name', 'status', 'category',
+            'start_date', 'default_email', 'default_whatsapp', 'notes'
+        }
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return self.get_brand_master(brand_id)
+
+        if 'brand_name' in updates and 'canonical_name' not in updates:
+            updates['canonical_name'] = canonicalize_brand_name(updates['brand_name'])
+        if 'canonical_name' in updates:
+            updates['canonical_name'] = canonicalize_brand_name(updates['canonical_name'])
+            updates['canonical_key'] = normalize_name_key(updates['canonical_name'])
+            updates['slug'] = self._slugify(updates['canonical_name'])
+
+        updates['updated_at'] = datetime.now().isoformat(timespec='seconds')
+        cols = ', '.join(f"{k}=?" for k in updates)
+        params = list(updates.values()) + [brand_id]
+
+        with self._connect() as conn:
+            conn.execute(f"UPDATE brands_master SET {cols} WHERE id=?", params)
+        return self.get_brand_master(brand_id)
+
+    def get_all_brand_master(self, status=None):
+        query = "SELECT * FROM brands_master"
+        params = []
+        if status and status != 'all':
+            query += " WHERE status=?"
+            params.append(status)
+        query += " ORDER BY canonical_name"
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
+
+    def ensure_sku_master(self, brand_id, sku_name, sku_code=None, pack_size=None,
+                          unit_type=None, status='active', launch_date=None, notes=None):
+        display_name = str(sku_name or '').strip()
+        canonical_key = normalize_name_key(display_name)
+        if not brand_id or not canonical_key:
+            return None
+
+        now = datetime.now().isoformat(timespec='seconds')
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM skus_master WHERE brand_id=? AND canonical_key=?",
+                (brand_id, canonical_key)
+            ).fetchone()
+            if row:
+                return dict(row)
+
+            cur = conn.execute(
+                """INSERT INTO skus_master
+                   (brand_id, sku_name, canonical_sku_name, canonical_key, sku_code,
+                    pack_size, unit_type, status, launch_date, notes, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (brand_id, display_name, display_name, canonical_key, sku_code,
+                 pack_size, unit_type, status, launch_date, notes, now, now)
+            )
+            sku_id = cur.lastrowid
+            conn.execute(
+                """INSERT OR IGNORE INTO sku_aliases
+                   (sku_id, brand_id, alias_name, alias_key, created_at)
+                   VALUES (?,?,?,?,?)""",
+                (sku_id, brand_id, display_name, canonical_key, now)
+            )
+            return dict(conn.execute("SELECT * FROM skus_master WHERE id=?", (sku_id,)).fetchone())
+
+    def add_sku_alias(self, sku_id, brand_id, alias_name):
+        alias_name = str(alias_name or '').strip()
+        alias_key = normalize_name_key(alias_name)
+        if not alias_key:
+            return
+        now = datetime.now().isoformat(timespec='seconds')
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT OR IGNORE INTO sku_aliases
+                   (sku_id, brand_id, alias_name, alias_key, created_at)
+                   VALUES (?,?,?,?,?)""",
+                (sku_id, brand_id, alias_name, alias_key, now)
+            )
+
+    def resolve_sku_master(self, brand_id, sku_name):
+        alias_key = normalize_name_key(sku_name)
+        if not brand_id or not alias_key:
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT sm.*
+                   FROM skus_master sm
+                   LEFT JOIN sku_aliases sa ON sa.sku_id = sm.id
+                   WHERE sm.brand_id=?
+                     AND (sm.canonical_key=? OR sa.alias_key=?)
+                   LIMIT 1""",
+                (brand_id, alias_key, alias_key)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_brand_skus(self, brand_id, status=None):
+        query = "SELECT * FROM skus_master WHERE brand_id=?"
+        params = [brand_id]
+        if status and status != 'all':
+            query += " AND status=?"
+            params.append(status)
+        query += " ORDER BY sku_name"
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_sku_master(self, sku_id):
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM skus_master WHERE id=?", (sku_id,)).fetchone()
+            return dict(row) if row else None
+
+    def get_sku_aliases(self, brand_id):
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM sku_aliases WHERE brand_id=? ORDER BY alias_name",
+                (brand_id,)
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def queue_catalog_candidate(self, entity_type, raw_name, canonical_candidate=None,
+                                brand_candidate=None, source_report_id=None,
+                                source_filename=None, reason='new_detected'):
+        raw_name = str(raw_name or '').strip()
+        normalized_name = normalize_name_key(raw_name)
+        if entity_type not in ('brand', 'sku') or not normalized_name:
+            return None
+
+        canonical_candidate = canonical_candidate or raw_name
+        now = datetime.now().isoformat(timespec='seconds')
+        with self._connect() as conn:
+            existing = conn.execute(
+                """SELECT id FROM catalog_review_queue
+                   WHERE entity_type=? AND normalized_name=?
+                     AND COALESCE(brand_candidate, '')=COALESCE(?, '')
+                     AND status='pending'
+                   ORDER BY id DESC LIMIT 1""",
+                (entity_type, normalized_name, brand_candidate)
+            ).fetchone()
+            if existing:
+                return None
+
+            cur = conn.execute(
+                """INSERT INTO catalog_review_queue
+                   (entity_type, raw_name, normalized_name, canonical_candidate, brand_candidate,
+                    source_report_id, source_filename, reason, status, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (entity_type, raw_name, normalized_name, canonical_candidate, brand_candidate,
+                 source_report_id, source_filename, reason, 'pending', now)
+            )
+            return cur.lastrowid
+
+    def get_catalog_review_queue(self, status='pending', limit=200):
+        query = "SELECT * FROM catalog_review_queue"
+        params = []
+        if status and status != 'all':
+            query += " WHERE status=?"
+            params.append(status)
+        query += " ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, id DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_catalog_review_item(self, item_id):
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM catalog_review_queue WHERE id=?",
+                (item_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def update_catalog_review_status(self, item_id, status, review_note=None):
+        reviewed_at = datetime.now().isoformat(timespec='seconds')
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE catalog_review_queue
+                   SET status=?, review_note=?, reviewed_at=?
+                   WHERE id=?""",
+                (status, review_note, reviewed_at, item_id)
+            )
+
+    def get_catalog_summary(self):
+        with self._connect() as conn:
+            summary = {
+                'brands_total': conn.execute("SELECT COUNT(*) FROM brands_master").fetchone()[0],
+                'brands_active': conn.execute("SELECT COUNT(*) FROM brands_master WHERE status='active'").fetchone()[0],
+                'skus_total': conn.execute("SELECT COUNT(*) FROM skus_master").fetchone()[0],
+                'pending_reviews': conn.execute("SELECT COUNT(*) FROM catalog_review_queue WHERE status='pending'").fetchone()[0],
+                'pending_brand_reviews': conn.execute("SELECT COUNT(*) FROM catalog_review_queue WHERE status='pending' AND entity_type='brand'").fetchone()[0],
+                'pending_sku_reviews': conn.execute("SELECT COUNT(*) FROM catalog_review_queue WHERE status='pending' AND entity_type='sku'").fetchone()[0],
+            }
+        return summary
+
+    def sync_catalog_from_history(self):
+        """Backfill catalog tables from existing reports, detail JSON, and portal contacts."""
+        now = datetime.now().isoformat(timespec='seconds')
+        with self._connect() as conn:
+            brand_rows = conn.execute(
+                """SELECT DISTINCT bk.brand_name, bt.email, bt.whatsapp
+                   FROM brand_kpis bk
+                   LEFT JOIN brand_tokens bt ON bt.brand_name = bk.brand_name
+                   ORDER BY bk.brand_name"""
+            ).fetchall()
+            for row in brand_rows:
+                brand = self.ensure_brand_master(
+                    row['brand_name'],
+                    email=row['email'],
+                    whatsapp=row['whatsapp'],
+                )
+                if not brand:
+                    continue
+
+            detail_rows = conn.execute(
+                "SELECT brand_name, product_value_json, product_qty_json FROM brand_detail_json"
+            ).fetchall()
+
+            for row in detail_rows:
+                brand = self.resolve_brand_master(row['brand_name'])
+                if not brand:
+                    continue
+                sku_names = set()
+                for payload in (row['product_value_json'], row['product_qty_json']):
+                    try:
+                        records = json.loads(payload or '[]')
+                    except Exception:
+                        records = []
+                    for record in records:
+                        sku = (
+                            record.get('SKU') or record.get('sku') or
+                            record.get('Product') or record.get('name') or ''
+                        )
+                        sku = str(sku).strip()
+                        if sku:
+                            sku_names.add(sku)
+                for sku_name in sku_names:
+                    self.ensure_sku_master(brand['id'], sku_name)
+
+            # Keep brand master contacts aligned with the token table.
+            token_rows = conn.execute("SELECT brand_name, email, whatsapp FROM brand_tokens").fetchall()
+            for row in token_rows:
+                brand = self.resolve_brand_master(row['brand_name'])
+                if brand:
+                    conn.execute(
+                        """UPDATE brands_master
+                           SET default_email=COALESCE(default_email, ?),
+                               default_whatsapp=COALESCE(default_whatsapp, ?),
+                               updated_at=?
+                           WHERE id=?""",
+                        (row['email'], row['whatsapp'], now, brand['id'])
+                    )
+
+    def register_catalog_candidates(self, df, source_filename=None, source_report_id=None):
+        """Queue unknown brands and SKUs discovered during import or generation."""
+        if df is None or getattr(df, 'empty', True):
+            return {'queued_brands': 0, 'queued_skus': 0}
+
+        if 'Brand Partner' not in df.columns or 'SKUs' not in df.columns:
+            return {'queued_brands': 0, 'queued_skus': 0}
+
+        sales_df = df
+        try:
+            sales_df = df[df['Vch Type'] == 'Sales'].copy()
+        except Exception:
+            pass
+
+        queued_brands = 0
+        queued_skus = 0
+        seen_brand_keys = set()
+        seen_sku_keys = set()
+
+        brand_series = sales_df['Brand Partner'].dropna().astype(str).str.strip()
+        for brand_name in sorted(brand_series.unique().tolist()):
+            canonical_brand = canonicalize_brand_name(brand_name)
+            brand_key = normalize_name_key(canonical_brand)
+            if not brand_key or brand_key in seen_brand_keys:
+                continue
+            seen_brand_keys.add(brand_key)
+
+            brand = self.resolve_brand_master(brand_name)
+            if not brand:
+                queue_id = self.queue_catalog_candidate(
+                    entity_type='brand',
+                    raw_name=brand_name,
+                    canonical_candidate=canonical_brand,
+                    source_report_id=source_report_id,
+                    source_filename=source_filename,
+                )
+                if queue_id:
+                    queued_brands += 1
+
+            sku_series = sales_df.loc[sales_df['Brand Partner'] == brand_name, 'SKUs']
+            for sku_name in sorted(sku_series.dropna().astype(str).str.strip().unique().tolist()):
+                sku_norm = normalize_name_key(sku_name)
+                sku_scope = str(brand['id']) if brand else canonical_brand
+                sku_key = f"{sku_scope}::{sku_norm}"
+                if not sku_norm or sku_key in seen_sku_keys:
+                    continue
+                seen_sku_keys.add(sku_key)
+                if brand and self.resolve_sku_master(brand['id'], sku_name):
+                    continue
+                queue_id = self.queue_catalog_candidate(
+                    entity_type='sku',
+                    raw_name=sku_name,
+                    canonical_candidate=sku_name,
+                    brand_candidate=brand['canonical_name'] if brand else canonical_brand,
+                    source_report_id=source_report_id,
+                    source_filename=source_filename,
+                )
+                if queue_id:
+                    queued_skus += 1
+
+        return {'queued_brands': queued_brands, 'queued_skus': queued_skus}
 
     # ── Analytics / cross-report queries ─────────────────────────────────────
 
@@ -733,8 +1466,13 @@ class DataStore:
                 (action, detail, brand_name, report_id, now)
             )
 
-    def get_activity_log(self, limit=50):
+    def get_activity_log(self, limit=50, brand_name=None):
         with self._connect() as conn:
+            if brand_name:
+                return [dict(r) for r in conn.execute(
+                    "SELECT * FROM activity_log WHERE brand_name=? ORDER BY created_at DESC LIMIT ?",
+                    (brand_name, limit)
+                ).fetchall()]
             return [dict(r) for r in conn.execute(
                 "SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ?", (limit,)
             ).fetchall()]

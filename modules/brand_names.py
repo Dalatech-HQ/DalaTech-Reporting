@@ -48,6 +48,17 @@ def _slug(value: str) -> str:
     return re.sub(r'[^a-z0-9]+', '', value.lower())
 
 
+def normalize_name_key(value: str) -> str:
+    """Return a normalized lookup key for brands, SKUs, and aliases."""
+    if value is None:
+        return ''
+    value = str(value).strip().lower()
+    value = value.replace('&', ' and ')
+    value = re.sub(r'[^a-z0-9]+', ' ', value)
+    value = re.sub(r'\s+', ' ', value).strip()
+    return value
+
+
 def canonicalize_brand_name(name: str) -> str:
     """Return the canonical display name for a brand."""
     if name is None:

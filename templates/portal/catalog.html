@@ -1,0 +1,289 @@
+{% extends "portal/base.html" %}
+{% block title %}Catalog — DALA Analytics{% endblock %}
+{% block page_title %}Catalog{% endblock %}
+
+{% block topbar_actions %}
+<select class="form-control" style="width:170px;" onchange="window.location='/catalog?status='+this.value+'&review_status={{ review_status }}'">
+  <option value="active" {% if status == 'active' %}selected{% endif %}>Active brands</option>
+  <option value="all" {% if status == 'all' %}selected{% endif %}>All brands</option>
+  <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inactive brands</option>
+</select>
+<select class="form-control" style="width:170px;" onchange="window.location='/catalog?status={{ status }}&review_status='+this.value">
+  <option value="pending" {% if review_status == 'pending' %}selected{% endif %}>Pending review</option>
+  <option value="all" {% if review_status == 'all' %}selected{% endif %}>All review items</option>
+  <option value="approved" {% if review_status == 'approved' %}selected{% endif %}>Approved only</option>
+  <option value="merged" {% if review_status == 'merged' %}selected{% endif %}>Merged only</option>
+  <option value="rejected" {% if review_status == 'rejected' %}selected{% endif %}>Rejected only</option>
+</select>
+<button type="button" class="btn btn-outline btn-sm" onclick="syncCatalog()">Resync from DB</button>
+{% endblock %}
+
+{% block content %}
+<div class="grid-4" style="margin-bottom:24px;">
+  <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{{ catalog_summary.brands_total }}</div><div class="text-muted fs-sm">Brands in catalog</div></div>
+  <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{{ catalog_summary.skus_total }}</div><div class="text-muted fs-sm">Approved SKUs</div></div>
+  <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{{ catalog_summary.pending_brand_reviews }}</div><div class="text-muted fs-sm">Pending brands</div></div>
+  <div class="card"><div style="font-size:28px;font-weight:800;color:var(--navy);">{{ catalog_summary.pending_sku_reviews }}</div><div class="text-muted fs-sm">Pending SKUs</div></div>
+</div>
+
+<div class="grid-2" style="margin-bottom:24px;">
+  <div class="card">
+    <h4 style="color:var(--navy);margin-bottom:6px;">Add Brand Manually</h4>
+    <p class="text-muted fs-sm" style="margin-bottom:14px;">Create a master brand before the next import so new files map cleanly.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <input id="newBrandName" class="form-control" placeholder="Brand name">
+      <select id="newBrandStatus" class="form-control">
+        <option value="active">Active</option>
+        <option value="prospect">Prospect</option>
+        <option value="inactive">Inactive</option>
+      </select>
+      <input id="newBrandCategory" class="form-control" placeholder="Category">
+      <input id="newBrandStartDate" class="form-control" type="date">
+      <input id="newBrandEmail" class="form-control" placeholder="Primary email">
+      <input id="newBrandWhatsapp" class="form-control" placeholder="WhatsApp">
+    </div>
+    <textarea id="newBrandNotes" class="form-control" rows="3" placeholder="Notes" style="margin-top:12px;"></textarea>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:12px;">
+      <button type="button" class="btn btn-navy btn-sm" onclick="saveBrand()">Create Brand</button>
+      <span id="brandSaveStatus" class="text-muted fs-sm"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h4 style="color:var(--navy);margin-bottom:6px;">Catalog Review Rules</h4>
+    <p class="text-muted fs-sm" style="margin-bottom:10px;">Imports now queue unknown brands and SKUs instead of silently trusting raw file names.</p>
+    <div style="display:grid;gap:10px;">
+      <div style="padding:12px;border:1px solid var(--gray);border-radius:8px;background:var(--bg);">
+        <strong>Approve</strong>
+        <div class="text-muted fs-sm">Creates a new master brand or SKU.</div>
+      </div>
+      <div style="padding:12px;border:1px solid var(--gray);border-radius:8px;background:var(--bg);">
+        <strong>Map</strong>
+        <div class="text-muted fs-sm">Attach the imported name as an alias to an existing catalog record.</div>
+      </div>
+      <div style="padding:12px;border:1px solid var(--gray);border-radius:8px;background:var(--bg);">
+        <strong>Reject</strong>
+        <div class="text-muted fs-sm">Marks a bad or irrelevant entry so it stops reappearing as pending.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:24px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+    <div>
+      <h4 style="color:var(--navy);margin-bottom:4px;">Review Queue</h4>
+      <p class="text-muted fs-sm">Review newly detected brands and SKUs from uploads, DB imports, and Drive Sync.</p>
+    </div>
+    <span class="badge badge-amber">{{ review_queue|length }} item{{ '' if review_queue|length == 1 else 's' }}</span>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Type</th>
+          <th>Detected Name</th>
+          <th>Brand Context</th>
+          <th>Source</th>
+          <th>Created</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in review_queue %}
+        <tr id="review-row-{{ item.id }}">
+          <td>#{{ item.id }}</td>
+          <td><span class="badge {% if item.entity_type == 'brand' %}badge-blue{% else %}badge-green{% endif %}">{{ item.entity_type|title }}</span></td>
+          <td>
+            <div style="font-weight:700;">{{ item.raw_name }}</div>
+            <div class="text-muted fs-sm">{{ item.canonical_candidate or '—' }}</div>
+          </td>
+          <td>{{ item.brand_candidate or '—' }}</td>
+          <td>{{ item.source_filename or 'Import' }}</td>
+          <td>{{ item.created_at[:10] if item.created_at else '—' }}</td>
+          <td style="min-width:250px;">
+            {% if item.status != 'pending' %}
+              <span class="badge badge-blue">{{ item.status|title }}</span>
+              {% if item.review_note %}<div class="text-muted fs-sm" style="margin-top:4px;">{{ item.review_note }}</div>{% endif %}
+            {% elif item.entity_type == 'brand' %}
+              <div style="display:grid;gap:8px;">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <button type="button" class="btn btn-green btn-sm" onclick="reviewItem({{ item.id }}, 'approve')">Approve</button>
+                  <button type="button" class="btn btn-outline btn-sm" onclick="reviewItem({{ item.id }}, 'reject')">Reject</button>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <select id="brandTarget-{{ item.id }}" class="form-control" style="min-width:170px;">
+                    <option value="">Map to existing brand</option>
+                    {% for brand in brand_options %}
+                    <option value="{{ brand.id }}">{{ brand.canonical_name }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="button" class="btn btn-navy btn-sm" onclick="reviewItem({{ item.id }}, 'map')">Map</button>
+                </div>
+              </div>
+            {% else %}
+              <div style="display:grid;gap:8px;">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <select id="skuBrandTarget-{{ item.id }}" class="form-control" style="min-width:170px;" onchange="populateSkuTargets({{ item.id }})">
+                    <option value="">Choose brand</option>
+                    {% for brand in brand_options %}
+                    <option value="{{ brand.id }}" {% if brand.canonical_name == item.brand_candidate %}selected{% endif %}>{{ brand.canonical_name }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="button" class="btn btn-green btn-sm" onclick="reviewItem({{ item.id }}, 'approve')">Approve</button>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <select id="skuTarget-{{ item.id }}" class="form-control" style="min-width:170px;">
+                    <option value="">Map to existing SKU</option>
+                  </select>
+                  <button type="button" class="btn btn-navy btn-sm" onclick="reviewItem({{ item.id }}, 'map')">Map</button>
+                  <button type="button" class="btn btn-outline btn-sm" onclick="reviewItem({{ item.id }}, 'reject')">Reject</button>
+                </div>
+              </div>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="text-align:center;padding:36px;color:var(--muted);">No review items for this filter.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+    <div>
+      <h4 style="color:var(--navy);margin-bottom:4px;">Brand Catalog</h4>
+      <p class="text-muted fs-sm">Approved brands, contact defaults, and SKU coverage.</p>
+    </div>
+    <span class="badge badge-blue">{{ brands_master|length }} visible</span>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Brand</th>
+          <th>Status</th>
+          <th>Category</th>
+          <th>Start Date</th>
+          <th>Email</th>
+          <th>WhatsApp</th>
+          <th>SKUs</th>
+          <th>Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for brand in brands_master %}
+        <tr>
+          <td style="font-weight:700;">{{ brand.canonical_name }}</td>
+          <td>
+            {% if brand.status == 'active' %}<span class="badge badge-green">Active</span>
+            {% elif brand.status == 'prospect' %}<span class="badge badge-amber">Prospect</span>
+            {% else %}<span class="badge badge-red">{{ brand.status|title }}</span>{% endif %}
+          </td>
+          <td>{{ brand.category or '—' }}</td>
+          <td>{{ brand.start_date or '—' }}</td>
+          <td>{{ brand.default_email or '—' }}</td>
+          <td>{{ brand.default_whatsapp or '—' }}</td>
+          <td>{{ sku_counts.get(brand.id, 0) }}</td>
+          <td><a href="/catalog/brand/{{ brand.slug }}" class="btn btn-outline btn-sm">Open</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" style="text-align:center;padding:36px;color:var(--muted);">No catalog brands yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const brandSkusMap = {{ brand_skus_map | tojson }};
+
+function populateSkuTargets(itemId) {
+  const brandSelect = document.getElementById(`skuBrandTarget-${itemId}`);
+  const skuSelect = document.getElementById(`skuTarget-${itemId}`);
+  if (!brandSelect || !skuSelect) return;
+  const options = brandSkusMap[brandSelect.value] || [];
+  skuSelect.innerHTML = '<option value="">Map to existing SKU</option>';
+  options.forEach((sku) => {
+    const option = document.createElement('option');
+    option.value = sku.id;
+    option.textContent = sku.name;
+    skuSelect.appendChild(option);
+  });
+}
+
+document.querySelectorAll('[id^="skuBrandTarget-"]').forEach((el) => {
+  const itemId = el.id.replace('skuBrandTarget-', '');
+  populateSkuTargets(itemId);
+});
+
+async function syncCatalog() {
+  const response = await fetch('/api/catalog/resync', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'}
+  });
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    alert(data.error || 'Catalog sync failed.');
+    return;
+  }
+  location.reload();
+}
+
+async function saveBrand() {
+  const payload = {
+    brand_name: document.getElementById('newBrandName').value,
+    status: document.getElementById('newBrandStatus').value,
+    category: document.getElementById('newBrandCategory').value,
+    start_date: document.getElementById('newBrandStartDate').value,
+    default_email: document.getElementById('newBrandEmail').value,
+    default_whatsapp: document.getElementById('newBrandWhatsapp').value,
+    notes: document.getElementById('newBrandNotes').value
+  };
+  const status = document.getElementById('brandSaveStatus');
+  status.textContent = 'Saving...';
+  const response = await fetch('/api/catalog/brand', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    status.textContent = '';
+    alert(data.error || 'Brand save failed.');
+    return;
+  }
+  status.textContent = 'Saved.';
+  location.reload();
+}
+
+async function reviewItem(itemId, action) {
+  const payload = {action};
+  const brandTarget = document.getElementById(`brandTarget-${itemId}`);
+  const skuBrandTarget = document.getElementById(`skuBrandTarget-${itemId}`);
+  const skuTarget = document.getElementById(`skuTarget-${itemId}`);
+  if (brandTarget && brandTarget.value) payload.target_brand_id = brandTarget.value;
+  if (skuBrandTarget && skuBrandTarget.value) payload.target_brand_id = skuBrandTarget.value;
+  if (skuTarget && skuTarget.value) payload.target_sku_id = skuTarget.value;
+
+  const response = await fetch(`/api/catalog/review/${itemId}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    alert(data.error || 'Review action failed.');
+    return;
+  }
+  const row = document.getElementById(`review-row-${itemId}`);
+  if (row) row.style.opacity = '0.45';
+  location.reload();
+}
+</script>
+{% endblock %}

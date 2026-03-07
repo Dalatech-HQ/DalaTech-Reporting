@@ -31,6 +31,20 @@
 </div>
 {% else %}
 
+<!-- 4-Quadrant Performance Matrix -->
+<div class="card" style="margin-bottom:24px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+    <h3 style="color:var(--navy);font-weight:700;">SKU Performance Matrix</h3>
+    <div style="display:flex;gap:12px;font-size:11px;">
+      <span style="color:#1E8449;font-weight:600;">● Stars (High Vol + High Price)</span>
+      <span style="color:#2E86C1;font-weight:600;">● Volume Movers (High Vol, Low Price)</span>
+      <span style="color:#C0922A;font-weight:600;">● Premium (Low Vol, High Price)</span>
+      <span style="color:#E8192C;font-weight:600;">● Review (Low Vol + Low Price)</span>
+    </div>
+  </div>
+  <canvas id="skuMatrixChart" height="80"></canvas>
+</div>
+
 <!-- Charts Row -->
 <div class="chart-row">
   <div class="card">
@@ -69,7 +83,7 @@
           <th>Brand</th>
           <th>Revenue (₦)</th>
           <th>Qty Sold</th>
-          <th>Stores</th>
+          <th>Avg Price</th>
           <th>Revenue Bar</th>
         </tr>
       </thead>
@@ -81,8 +95,8 @@
           <td style="font-weight:600;">{{ sku.name }}</td>
           <td><span class="badge badge-blue">{{ sku.brand }}</span></td>
           <td>{{ "{:,.0f}".format(sku.revenue) }}</td>
-          <td>{{ "{:,.0f}".format(sku.qty) }}</td>
-          <td>{{ sku.stores }}</td>
+          <td>{{ "{:,.1f}".format(sku.qty) }}</td>
+          <td>{% if sku.avg_price %}₦{{ "{:,.0f}".format(sku.avg_price) }}{% else %}—{% endif %}</td>
           <td>
             <div class="rank-bar-wrap" style="width:100px;height:6px;background:var(--gray);border-radius:3px;display:inline-block;">
               <div style="width:{{ (sku.revenue / max_rev * 100)|round }}%;height:6px;border-radius:3px;background:var(--navy);"></div>
@@ -102,6 +116,54 @@
 <script>
 const skuData = {{ sku_json | safe }};
 const brandSkuCounts = {{ brand_sku_counts_json | safe }};
+
+// 4-Quadrant SKU Performance Matrix
+if (skuData.length && document.getElementById('skuMatrixChart')) {
+  const qtys = skuData.map(s => s.qty || 0);
+  const prices = skuData.map(s => s.avg_price || 0);
+  const medQty = qtys.slice().sort((a,b)=>a-b)[Math.floor(qtys.length/2)] || 1;
+  const medPrice = prices.filter(p=>p>0).sort((a,b)=>a-b);
+  const medPriceVal = medPrice[Math.floor(medPrice.length/2)] || 1;
+
+  function quadrant(qty, price) {
+    const hq = qty >= medQty, hp = price >= medPriceVal;
+    if (hq && hp) return { label:'Stars', color:'#1E8449' };
+    if (hq && !hp) return { label:'Volume Movers', color:'#2E86C1' };
+    if (!hq && hp) return { label:'Premium', color:'#C0922A' };
+    return { label:'Review', color:'#E8192C' };
+  }
+
+  const datasets = {};
+  skuData.forEach(s => {
+    if (!s.qty || !s.avg_price) return;
+    const q = quadrant(s.qty, s.avg_price);
+    if (!datasets[q.label]) datasets[q.label] = {label:q.label, data:[], backgroundColor:q.color+'CC', pointRadius:6, pointHoverRadius:9};
+    datasets[q.label].data.push({x: s.qty, y: s.avg_price, sku: s.name, brand: s.brand, revenue: s.revenue});
+  });
+
+  new Chart(document.getElementById('skuMatrixChart'), {
+    type: 'scatter',
+    data: { datasets: Object.values(datasets) },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const d = ctx.raw;
+              return [`${d.sku} (${d.brand})`, `Qty: ${d.x.toFixed(0)} | Price: ₦${d.y.toFixed(0)} | Rev: ₦${(d.revenue||0).toLocaleString()}`];
+            }
+          }
+        }
+      },
+      scales: {
+        x: { title: { display:true, text:'Quantity Sold' }, ticks: { callback: v => v.toFixed(0) } },
+        y: { title: { display:true, text:'Avg Unit Price (₦)' }, ticks: { callback: v => '₦'+v.toFixed(0) } }
+      }
+    }
+  });
+}
 
 // Top SKUs chart
 if (skuData.length) {

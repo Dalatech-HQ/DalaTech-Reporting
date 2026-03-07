@@ -35,7 +35,7 @@ C_BG    = '#F4F6FA'
 C_WHITE = '#FFFFFF'
 C_MUTED = '#7A849E'
 
-PLOTLY_CFG = dict(displayModeBar=False, responsive=True)
+PLOTLY_CFG = dict(displayModeBar=True, responsive=True, scrollZoom=True)
 
 LAYOUT_BASE = dict(
     paper_bgcolor=C_WHITE,
@@ -209,41 +209,142 @@ def plotly_top_products(product_value_df: pd.DataFrame) -> str:
 
 
 def plotly_store_heatmap(store_heatmap_df: pd.DataFrame) -> str:
-    """Plotly heatmap — top stores (rows) x dates (columns), color = orders placed."""
+    """Interactive Plotly heatmap with daily / weekly / monthly views."""
     df = store_heatmap_df.copy()
     if df.empty:
         return '<p style="color:#9BA8C0;text-align:center;padding:20px;">No heatmap data available</p>'
 
-    df['Date'] = pd.to_datetime(df['Date'])
-    pivot = df.pivot_table(index='Store', columns='Date', values='Orders',
-                            fill_value=0, aggfunc='sum')
-    pivot = pivot.reindex(sorted(pivot.columns), axis=1)
+    if 'Date' not in df.columns or 'Store' not in df.columns or 'Orders' not in df.columns:
+        return '<p style="color:#9BA8C0;text-align:center;padding:20px;">No heatmap data available</p>'
 
-    stores = list(pivot.index)
-    dates  = [d.strftime('%d %b') for d in pivot.columns]
-    z      = pivot.values.tolist()
+    if pd.api.types.is_numeric_dtype(df['Date']):
+        df['Date'] = pd.to_datetime(df['Date'], unit='ms', errors='coerce')
+    else:
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    df = df.dropna(subset=['Date', 'Store']).copy()
+    if df.empty:
+        return '<p style="color:#9BA8C0;text-align:center;padding:20px;">No heatmap data available</p>'
 
-    # Custom colorscale: white → navy
+    store_order = (
+        df.groupby('Store')['Orders']
+        .sum()
+        .sort_values(ascending=False)
+    )
+    top_stores = store_order.head(8).index.tolist()
+    df = df[df['Store'].isin(top_stores)].copy()
+    stores = top_stores
+
     colorscale = [
         [0.0, '#F4F6FA'],
-        [0.3, '#A8B8D8'],
+        [0.2, '#D8E0EF'],
+        [0.5, '#8EA3CE'],
         [1.0, C_NAVY],
     ]
 
-    fig = go.Figure(go.Heatmap(
-        z=z, x=dates, y=stores,
-        colorscale=colorscale,
-        showscale=False,
-        hovertemplate='<b>%{y}</b><br>%{x}<br>Orders: %{z}<extra></extra>',
-        zmin=0,
-    ))
+    def _build_period_view(freq: str, label: str, xfmt: str):
+        working = df.copy()
+        working['Period'] = working['Date'].dt.to_period(freq).dt.start_time
+        pivot = working.pivot_table(
+            index='Store',
+            columns='Period',
+            values='Orders',
+            fill_value=0,
+            aggfunc='sum',
+        )
+        pivot = pivot.reindex(stores, fill_value=0)
+        pivot = pivot.reindex(sorted(pivot.columns), axis=1)
+        if pivot.empty:
+            x_vals = []
+            z_vals = [[0] for _ in stores]
+        else:
+            x_vals = [d.strftime(xfmt) for d in pivot.columns]
+            z_vals = pivot.values.tolist()
+        return {
+            'label': label,
+            'x': x_vals,
+            'y': stores,
+            'z': z_vals,
+            'customdata': [[label for _ in x_vals] for _ in stores],
+        }
+
+    views = [
+        _build_period_view('D', 'Daily', '%d %b'),
+        _build_period_view('W-MON', 'Weekly', 'Week of %d %b'),
+        _build_period_view('M', 'Monthly', '%b %Y'),
+    ]
+
+    fig = go.Figure()
+    for idx, view in enumerate(views):
+        fig.add_trace(go.Heatmap(
+            z=view['z'],
+            x=view['x'],
+            y=view['y'],
+            colorscale=colorscale,
+            coloraxis='coloraxis',
+            hovertemplate='<b>%{y}</b><br>%{x}<br>%{customdata}<br>Orders: %{z}<extra></extra>',
+            customdata=view['customdata'],
+            visible=(idx == 0),
+            xgap=2,
+            ygap=2,
+        ))
 
     fig.update_layout(
         **LAYOUT_BASE,
-        xaxis=dict(side='bottom', tickangle=-45, tickfont=dict(size=9)),
-        yaxis=dict(tickfont=dict(size=9)),
-        margin=dict(l=10, r=10, t=10, b=60),
-        height=max(180, len(stores) * 36 + 80),
+        coloraxis=dict(
+            colorscale=colorscale,
+            cmin=0,
+            colorbar=dict(title='Orders', thickness=12),
+        ),
+        xaxis=dict(
+            side='bottom',
+            tickangle=-35,
+            tickfont=dict(size=9),
+            showgrid=False,
+            automargin=True,
+        ),
+        yaxis=dict(tickfont=dict(size=9), automargin=True),
+        margin=dict(l=10, r=20, t=54, b=68),
+        height=max(220, len(stores) * 40 + 90),
+        updatemenus=[dict(
+            type='buttons',
+            direction='left',
+            x=0,
+            y=1.18,
+            xanchor='left',
+            yanchor='top',
+            buttons=[
+                dict(
+                    label=view['label'],
+                    method='update',
+                    args=[
+                        {'visible': [i == idx for i in range(len(views))]},
+                        {'annotations': [dict(
+                            text=f"{view['label']} view",
+                            x=1,
+                            y=1.18,
+                            xref='paper',
+                            yref='paper',
+                            xanchor='right',
+                            yanchor='top',
+                            showarrow=False,
+                            font=dict(size=11, color=C_MUTED),
+                        )]},
+                    ],
+                )
+                for idx, view in enumerate(views)
+            ],
+        )],
+        annotations=[dict(
+            text='Daily view',
+            x=1,
+            y=1.18,
+            xref='paper',
+            yref='paper',
+            xanchor='right',
+            yanchor='top',
+            showarrow=False,
+            font=dict(size=11, color=C_MUTED),
+        )],
     )
     return _div(fig, 'heatmap-chart')
 

@@ -436,3 +436,56 @@ def _calculate_reorders(sales_df):
     )
 
     return agg
+
+
+def calculate_churn(current_df, prev_df):
+    """
+    Cross-period store churn analysis for a single brand.
+
+    Returns a dict with:
+      churned_stores:     stores active last period, silent this period
+      reactivated_stores: stores absent last period, back this period
+      new_stores:         stores appearing for the first time this period
+      retained_stores:    stores active in both periods
+    Each list contains dicts: {store, prev_revenue, curr_revenue}
+    """
+    if current_df is None or current_df.empty:
+        return {'churned_stores': [], 'reactivated_stores': [], 'new_stores': [], 'retained_stores': []}
+
+    sales_current = current_df[current_df.get('Vch Type', pd.Series(['Sales'] * len(current_df))) == 'Sales'] \
+        if 'Vch Type' in current_df.columns else current_df
+    curr_stores = set(sales_current['Particulars'].dropna().unique()) \
+        if 'Particulars' in sales_current.columns else set()
+
+    curr_rev_by_store = {}
+    if 'Particulars' in sales_current.columns and 'Sales_Value' in sales_current.columns:
+        curr_rev_by_store = sales_current.groupby('Particulars')['Sales_Value'].sum().to_dict()
+
+    if prev_df is None or (hasattr(prev_df, 'empty') and prev_df.empty):
+        new_stores = [{'store': s, 'prev_revenue': 0, 'curr_revenue': curr_rev_by_store.get(s, 0)}
+                      for s in curr_stores]
+        return {'churned_stores': [], 'reactivated_stores': [], 'new_stores': new_stores, 'retained_stores': []}
+
+    sales_prev = prev_df[prev_df.get('Vch Type', pd.Series(['Sales'] * len(prev_df))) == 'Sales'] \
+        if 'Vch Type' in prev_df.columns else prev_df
+    prev_stores = set(sales_prev['Particulars'].dropna().unique()) \
+        if 'Particulars' in sales_prev.columns else set()
+
+    prev_rev_by_store = {}
+    if 'Particulars' in sales_prev.columns and 'Sales_Value' in sales_prev.columns:
+        prev_rev_by_store = sales_prev.groupby('Particulars')['Sales_Value'].sum().to_dict()
+
+    churned = sorted(prev_stores - curr_stores)
+    new = sorted(curr_stores - prev_stores)
+    retained = sorted(prev_stores & curr_stores)
+
+    return {
+        'churned_stores':     [{'store': s, 'prev_revenue': prev_rev_by_store.get(s, 0), 'curr_revenue': 0}
+                               for s in churned],
+        'reactivated_stores': [],  # Would require 3+ periods to detect
+        'new_stores':         [{'store': s, 'prev_revenue': 0, 'curr_revenue': curr_rev_by_store.get(s, 0)}
+                               for s in new],
+        'retained_stores':    [{'store': s, 'prev_revenue': prev_rev_by_store.get(s, 0),
+                                'curr_revenue': curr_rev_by_store.get(s, 0)}
+                               for s in retained],
+    }

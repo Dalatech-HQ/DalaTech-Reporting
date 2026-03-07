@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — DALA Analytics</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #F4F6FA;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .login-card {
+      background: #fff;
+      border-radius: 14px;
+      box-shadow: 0 8px 32px rgba(27,43,94,.12);
+      padding: 48px 40px;
+      width: 100%;
+      max-width: 400px;
+    }
+    .logo-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 32px;
+    }
+    .logo-box {
+      width: 48px; height: 48px;
+      background: #E8192C;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; font-weight: 900; color: white;
+    }
+    .logo-text { font-size: 22px; font-weight: 800; color: #1B2B5E; }
+    .logo-sub { font-size: 11px; color: #7A849E; letter-spacing: .5px; }
+    h2 { font-size: 18px; font-weight: 700; color: #1B2B5E; margin-bottom: 6px; }
+    p.sub { font-size: 13px; color: #7A849E; margin-bottom: 28px; }
+    label { font-size: 11px; font-weight: 600; color: #7A849E; text-transform: uppercase; letter-spacing: .6px; display: block; margin-bottom: 6px; }
+    input[type=password] {
+      width: 100%; padding: 12px 14px;
+      border: 1.5px solid #DDE3ED; border-radius: 8px;
+      font-size: 14px; color: #1A1A2E;
+      outline: none; transition: border-color .15s;
+      margin-bottom: 20px;
+    }
+    input[type=password]:focus { border-color: #1B2B5E; }
+    .btn {
+      width: 100%; padding: 13px;
+      background: #E8192C; color: white;
+      border: none; border-radius: 8px;
+      font-size: 14px; font-weight: 700;
+      cursor: pointer; transition: background .15s;
+    }
+    .btn:hover { background: #c81425; }
+    .error {
+      background: rgba(232,25,44,.08);
+      border: 1px solid rgba(232,25,44,.3);
+      color: #E8192C;
+      border-radius: 7px;
+      padding: 10px 14px;
+      font-size: 12px;
+      margin-bottom: 16px;
+    }
+    .footer { text-align: center; color: #7A849E; font-size: 11px; margin-top: 24px; }
+  </style>
+</head>
+<body>
+<div class="login-card">
+  <div class="logo-row">
+    <div class="logo-box">D</div>
+    <div>
+      <div class="logo-text">DALA Analytics</div>
+      <div class="logo-sub">DALA TECHNOLOGIES</div>
+    </div>
+  </div>
+
+  <h2>Admin Sign In</h2>
+  <p class="sub">Enter your admin password to access the portal.</p>
+
+  {% if error %}
+  <div class="error">{{ error }}</div>
+  {% endif %}
+
+  <form method="POST">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" placeholder="Enter admin password" autofocus>
+    <button type="submit" class="btn">Sign In</button>
+  </form>
+
+  <div class="footer">DALA Technologies Analytics Platform</div>
+</div>
+</body>
+</html>

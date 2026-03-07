@@ -402,6 +402,8 @@ def _run_pipeline(file_buffer: io.BytesIO, filename: str,
             total_revenue=total_rev, total_qty=total_qty,
             total_stores=len(all_stores), brand_count=len(brands),
         )
+    ds.sync_catalog_from_history()
+    ds.register_catalog_candidates(df_filtered, source_filename=filename, source_report_id=report_id)
 
     # 4. Save brand KPIs + daily sales + alerts
     for b in brands:
@@ -470,6 +472,8 @@ def _run_pipeline_from_df(df: pd.DataFrame, label: str,
             total_revenue=total_rev, total_qty=total_qty,
             total_stores=len(all_stores), brand_count=len(brands),
         )
+    ds.sync_catalog_from_history()
+    ds.register_catalog_candidates(df_filtered, source_filename=label, source_report_id=report_id)
 
     for b in brands:
         k = all_kpis[b]

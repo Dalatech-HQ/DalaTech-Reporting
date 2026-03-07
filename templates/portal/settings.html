@@ -48,6 +48,61 @@
 
 </div>
 
+<div class="card" style="margin-bottom:24px;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
+    <div>
+      <h4 style="color:var(--navy);margin-bottom:4px;">Catalog Control</h4>
+      <p class="text-muted fs-sm">Manage approved brand partners, SKU lists, and newly detected entries from imports.</p>
+    </div>
+    <a href="/catalog" class="btn btn-navy btn-sm">Open Catalog</a>
+  </div>
+  <div class="grid-4" style="margin-top:16px;">
+    <div style="background:var(--bg);border:1px solid var(--gray);border-radius:10px;padding:16px;">
+      <div style="font-size:26px;font-weight:800;color:var(--navy);">{{ catalog_summary.brands_active }}</div>
+      <div class="text-muted fs-sm">Active Brands</div>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--gray);border-radius:10px;padding:16px;">
+      <div style="font-size:26px;font-weight:800;color:var(--navy);">{{ catalog_summary.skus_total }}</div>
+      <div class="text-muted fs-sm">Approved SKUs</div>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--gray);border-radius:10px;padding:16px;">
+      <div style="font-size:26px;font-weight:800;color:var(--navy);">{{ catalog_summary.pending_brand_reviews }}</div>
+      <div class="text-muted fs-sm">Pending Brands</div>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--gray);border-radius:10px;padding:16px;">
+      <div style="font-size:26px;font-weight:800;color:var(--navy);">{{ catalog_summary.pending_sku_reviews }}</div>
+      <div class="text-muted fs-sm">Pending SKUs</div>
+    </div>
+  </div>
+  {% if pending_reviews %}
+  <div style="margin-top:16px;">
+    <div style="font-weight:600;color:var(--navy);margin-bottom:8px;">Latest review queue</div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Name</th>
+          <th>Brand</th>
+          <th>Source</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in pending_reviews %}
+        <tr>
+          <td><span class="badge badge-blue">{{ item.entity_type|title }}</span></td>
+          <td style="font-weight:600;">{{ item.raw_name }}</td>
+          <td>{{ item.brand_candidate or '—' }}</td>
+          <td>{{ item.source_filename or 'Import' }}</td>
+          <td><span class="badge badge-amber">{{ item.status|title }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
 <!-- Brand Partner Tokens -->
 <div class="card">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">

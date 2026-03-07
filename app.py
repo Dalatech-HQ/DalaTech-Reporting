@@ -73,9 +73,150 @@ os.makedirs(HTML_DIR, exist_ok=True)
 
 ds = DataStore()
 
+# ── Admin Auth ────────────────────────────────────────────────────────────────
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '')
+
+# Public paths that never require admin auth (login flow + brand partner portals + webhooks)
+_PUBLIC_PREFIXES = ('/login', '/logout', '/static', '/portal/', '/webhook/', '/api/reports', '/health')
+
+@app.before_request
+def _enforce_admin_auth():
+    """Redirect to /login for protected routes when ADMIN_PASSWORD is set."""
+    if not ADMIN_PASSWORD:
+        return  # Auth disabled
+    if session.get('admin_authenticated'):
+        return  # Already authenticated
+    path = request.path
+    if any(path == p or path.startswith(p) for p in _PUBLIC_PREFIXES):
+        return  # Public path
+    return redirect(url_for('login_page', next=path))
+
 
 def _safe_name(brand_name):
     return brand_name.replace(' ', '_').replace("'", '').replace('/', '-')
+
+
+def _compute_and_save_churn(report_id: int):
+    """
+    Compute store churn for all brands in a report by comparing top_stores_json
+    with the previous report's stored data.  Called after brand_detail_json is saved.
+    """
+    try:
+        from modules.kpi import calculate_churn
+        report = ds.get_report(report_id)
+        if not report:
+            return
+        # Find the immediately preceding report
+        all_reports = ds.get_all_reports()
+        prev_report = None
+        for r in sorted(all_reports, key=lambda x: x['start_date']):
+            if r['start_date'] < report['start_date']:
+                prev_report = r
+        if not prev_report:
+            return
+
+        brands = [b['brand_name'] for b in ds.get_all_brand_kpis(report_id)]
+        for brand_name in brands:
+            try:
+                curr_detail = ds.get_brand_detail_json(report_id, brand_name)
+                prev_detail = ds.get_brand_detail_json(prev_report['id'], brand_name)
+                if not curr_detail:
+                    continue
+                import json
+                import pandas as pd
+
+                def _json_to_df(data, columns):
+                    rows = json.loads(data) if isinstance(data, str) else (data or [])
+                    if not rows:
+                        return pd.DataFrame(columns=columns)
+                    return pd.DataFrame(rows)
+
+                curr_stores_df = _json_to_df(curr_detail.get('top_stores_json', '[]'), ['Store', 'Total Revenue'])
+                prev_stores_df = _json_to_df(prev_detail.get('top_stores_json', '[]') if prev_detail else '[]', ['Store', 'Total Revenue'])
+
+                # Build minimal DataFrames compatible with calculate_churn
+                curr_df = curr_stores_df.rename(columns={'Store': 'Particulars', 'Total Revenue': 'Sales_Value'}) \
+                    if not curr_stores_df.empty else pd.DataFrame(columns=['Particulars', 'Sales_Value'])
+                prev_df = prev_stores_df.rename(columns={'Store': 'Particulars', 'Total Revenue': 'Sales_Value'}) \
+                    if not prev_stores_df.empty else pd.DataFrame(columns=['Particulars', 'Sales_Value'])
+
+                churn = calculate_churn(curr_df, prev_df)
+                ds.save_store_churn(report_id, brand_name, churn)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _queue_catalog_candidates(df, source_filename=None, report_id=None):
+    """Register unknown brands/SKUs discovered in an imported dataset."""
+    try:
+        ds.sync_catalog_from_history()
+        return ds.register_catalog_candidates(
+            df,
+            source_filename=source_filename,
+            source_report_id=report_id,
+        )
+    except Exception:
+        return {'queued_brands': 0, 'queued_skus': 0}
+
+
+def _review_catalog_item(item_id, action, note=None, target_brand_id=None, target_sku_id=None):
+    """Approve, map, or reject one catalog review item."""
+    item = ds.get_catalog_review_item(item_id)
+    if not item:
+        raise ValueError('Catalog review item not found.')
+    if item.get('status') != 'pending':
+        raise ValueError('Catalog review item has already been processed.')
+
+    action = (action or '').strip().lower()
+    if action == 'reject':
+        ds.update_catalog_review_status(item_id, 'rejected', note)
+        return item
+
+    if item['entity_type'] == 'brand':
+        if action == 'approve':
+            brand = ds.ensure_brand_master(item['canonical_candidate'] or item['raw_name'])
+            if not brand:
+                raise ValueError('Could not create brand master record.')
+            ds.add_brand_alias(brand['id'], item['raw_name'])
+            ds.update_catalog_review_status(item_id, 'approved', note)
+            return brand
+        if action == 'map':
+            brand = ds.get_brand_master(int(target_brand_id or 0))
+            if not brand:
+                raise ValueError('Select a valid existing brand.')
+            ds.add_brand_alias(brand['id'], item['raw_name'])
+            ds.update_catalog_review_status(item_id, 'merged', note or f"Mapped to {brand['canonical_name']}")
+            return brand
+        raise ValueError('Unsupported brand review action.')
+
+    if item['entity_type'] == 'sku':
+        brand = None
+        if target_brand_id:
+            brand = ds.get_brand_master(int(target_brand_id))
+        if not brand and item.get('brand_candidate'):
+            brand = ds.resolve_brand_master(item['brand_candidate'])
+        if not brand:
+            raise ValueError('Select or approve the parent brand first.')
+
+        if action == 'approve':
+            sku = ds.ensure_sku_master(brand['id'], item['canonical_candidate'] or item['raw_name'])
+            if not sku:
+                raise ValueError('Could not create SKU master record.')
+            ds.add_sku_alias(sku['id'], brand['id'], item['raw_name'])
+            ds.update_catalog_review_status(item_id, 'approved', note)
+            return sku
+        if action == 'map':
+            sku = ds.get_sku_master(int(target_sku_id or 0))
+            if not sku or sku['brand_id'] != brand['id']:
+                raise ValueError('Select a valid existing SKU for that brand.')
+            ds.add_sku_alias(sku['id'], brand['id'], item['raw_name'])
+            ds.update_catalog_review_status(item_id, 'merged', note or f"Mapped to {sku['sku_name']}")
+            return sku
+        raise ValueError('Unsupported SKU review action.')
+
+    raise ValueError('Unsupported catalog entity type.')
 
 
 def _merge_depletions_by_brand(brand_kpis_rows):
@@ -372,6 +513,10 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
             brand_data = {b: df for b, df in brand_data.items() if b in selected_brands}
 
         brands = list(brand_data.keys())
+        catalog_df = (
+            pd.concat(list(brand_data.values()), ignore_index=True)
+            if brand_data else df_ranged.head(0).copy()
+        )
         _upd(total=len(brands) + 1)  # +1 for portfolio
 
         # Compute all KPIs
@@ -412,6 +557,7 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
                 report_type=report_type,
             )
         _upd(report_id=report_id)
+        _queue_catalog_candidates(catalog_df, source_filename=filename, report_id=report_id)
 
         # Save KPIs + alerts
         for b in brands:
@@ -425,6 +571,7 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
             history = ds.get_brand_history(b, limit=3)
             check_and_save_alerts(report_id, b, k, portfolio_avg_revenue, history[1:], ds)
         run_portfolio_alerts(report_id, ds.get_all_brand_kpis(report_id), ds)
+        _compute_and_save_churn(report_id)
 
         # ── Pre-generate AI narratives (batch, before PDFs so they embed in them) ─
         ai_narratives = {}
@@ -808,6 +955,30 @@ def admin_retailers():
                            alert_count=ds.get_unacknowledged_count())
 
 
+# ── Login / Logout ────────────────────────────────────────────────────────────
+
+@app.route('/login', methods=['GET', 'POST'])
+def login_page():
+    error = None
+    if not ADMIN_PASSWORD:
+        # No password configured — no auth needed, redirect to home
+        return redirect(url_for('index'))
+    if request.method == 'POST':
+        pw = request.form.get('password', '')
+        if pw == ADMIN_PASSWORD:
+            session['admin_authenticated'] = True
+            next_url = request.args.get('next') or url_for('dashboard')
+            return redirect(next_url)
+        error = 'Incorrect password.'
+    return render_template('portal/login.html', error=error)
+
+
+@app.route('/logout')
+def logout():
+    session.pop('admin_authenticated', None)
+    return redirect(url_for('login_page'))
+
+
 # ── Home / Upload ─────────────────────────────────────────────────────────────
 
 @app.route('/')
@@ -852,6 +1023,10 @@ def generate():
         return jsonify({'success': False, 'error': 'No sales data found.'}), 422
 
     brands = list(brand_data.keys())
+    catalog_df = (
+        pd.concat(list(brand_data.values()), ignore_index=True)
+        if brand_data else df_ranged.head(0).copy()
+    )
 
     # Portfolio aggregates
     all_kpis = {}
@@ -887,6 +1062,7 @@ def generate():
             total_stores=len(all_stores),
             brand_count=len(brands),
         )
+    _queue_catalog_candidates(catalog_df, source_filename=file.filename, report_id=report_id)
 
     # Generate files
     ok_pdf = ok_html = 0
@@ -992,13 +1168,42 @@ def dashboard():
     portfolio_file = f"PORTFOLIO_Dashboard_{month_tag}.html"
     portfolio_exists = os.path.isfile(os.path.join(HTML_DIR, portfolio_file))
 
+    # YoY comparison
+    yoy_prev_report, yoy_prev_revenue, yoy_prev_qty, yoy_prev_stores = ds.get_portfolio_yoy(report_id)
+    yoy_brand_kpis = ds.get_yoy_kpis(report_id)
+    yoy_rev_pct = None
+    if yoy_prev_revenue and report and report.get('total_revenue'):
+        yoy_rev_pct = round((report['total_revenue'] - yoy_prev_revenue) / yoy_prev_revenue * 100, 1)
+
+    # Churn summary
+    churn_summary = ds.get_churn_summary(report_id)
+    total_churned = sum(v.get('churned', 0) for v in churn_summary.values())
+
+    # Revenue concentration risk
+    conc_warning = None
+    if brand_kpis and report and report.get('total_revenue', 0) > 0:
+        top2_rev = sum(b['total_revenue'] for b in brand_kpis[:2])
+        top2_pct = round(top2_rev / report['total_revenue'] * 100, 1)
+        if top2_pct >= 70:
+            top2_names = ' & '.join(b['brand_name'] for b in brand_kpis[:2])
+            conc_warning = f"Top 2 brands ({top2_names}) account for {top2_pct}% of portfolio revenue."
+
     return render_template('portal/dashboard.html',
                            report=report,
                            brand_kpis=brand_kpis,
                            reports=ds.get_all_reports(),
                            alerts=alerts[:5],
                            alert_count=alert_count,
-                           portfolio_file=portfolio_file if portfolio_exists else None)
+                           portfolio_file=portfolio_file if portfolio_exists else None,
+                           yoy_prev_report=yoy_prev_report,
+                           yoy_prev_revenue=yoy_prev_revenue,
+                           yoy_prev_qty=yoy_prev_qty,
+                           yoy_prev_stores=yoy_prev_stores,
+                           yoy_rev_pct=yoy_rev_pct,
+                           yoy_brand_kpis=yoy_brand_kpis,
+                           conc_warning=conc_warning,
+                           churn_summary=churn_summary,
+                           total_churned=total_churned)
 
 
 # ── Brands list ───────────────────────────────────────────────────────────────
@@ -1061,6 +1266,18 @@ def brand_detail(brand_name):
     # Token
     token = ds.get_or_create_token(brand_name)
 
+    # YoY for this brand
+    yoy_brand_kpis = ds.get_yoy_kpis(report_id) if report_id else {}
+    yoy_kpi = yoy_brand_kpis.get(brand_name)
+    yoy_rev_pct = None
+    if yoy_kpi and yoy_kpi.get('total_revenue') and kpis and kpis.get('total_revenue'):
+        yoy_rev_pct = round((kpis['total_revenue'] - yoy_kpi['total_revenue']) / yoy_kpi['total_revenue'] * 100, 1)
+
+    # Store churn
+    churn_data = ds.get_store_churn(report_id, brand_name) if report_id else []
+    churned_stores = [c for c in churn_data if c['churn_type'] == 'churned']
+    new_stores = [c for c in churn_data if c['churn_type'] == 'new']
+
     return render_template('portal/brand_detail.html',
                            brand_name=brand_name,
                            kpis=kpis,
@@ -1073,7 +1290,11 @@ def brand_detail(brand_name):
                            reports=ds.get_all_reports(),
                            report_id=report_id,
                            report=ds.get_report(report_id) if report_id else None,
-                           alert_count=alert_count)
+                           alert_count=alert_count,
+                           yoy_kpi=yoy_kpi,
+                           yoy_rev_pct=yoy_rev_pct,
+                           churned_stores=churned_stores,
+                           new_stores=new_stores)
 
 
 # ── History ───────────────────────────────────────────────────────────────────
@@ -1128,16 +1349,82 @@ def alerts_view():
 
 @app.route('/settings')
 def settings():
+    ds.sync_catalog_from_history()
     tokens = ds.get_all_tokens()
     alert_count = ds.get_unacknowledged_count()
     smtp_ok  = bool(os.environ.get('SMTP_USER') and os.environ.get('SMTP_PASSWORD'))
     twilio_ok = bool(os.environ.get('TWILIO_ACCOUNT_SID') and os.environ.get('TWILIO_AUTH_TOKEN'))
+    catalog_summary = ds.get_catalog_summary()
+    pending_reviews = ds.get_catalog_review_queue(limit=8)
     return render_template('portal/settings.html',
                            tokens=tokens,
+                           catalog_summary=catalog_summary,
+                           pending_reviews=pending_reviews,
                            alert_count=alert_count,
                            smtp_configured=smtp_ok,
                            twilio_configured=twilio_ok,
                            reports=ds.get_all_reports())
+
+
+@app.route('/catalog')
+def catalog():
+    ds.sync_catalog_from_history()
+    alert_count = ds.get_unacknowledged_count()
+    status = request.args.get('status', 'active')
+    review_status = request.args.get('review_status', 'pending')
+    brands_master = ds.get_all_brand_master(status=status)
+    brand_options = ds.get_all_brand_master(status='all')
+    review_queue = ds.get_catalog_review_queue(status=review_status, limit=300)
+    catalog_summary = ds.get_catalog_summary()
+    sku_counts = {}
+    brand_skus_map = {}
+    for brand in brand_options:
+        skus = ds.get_brand_skus(brand['id'], status='all')
+        sku_counts[brand['id']] = len(skus)
+        brand_skus_map[str(brand['id'])] = [
+            {'id': sku['id'], 'name': sku['sku_name']}
+            for sku in skus
+        ]
+    return render_template(
+        'portal/catalog.html',
+        brands_master=brands_master,
+        brand_options=brand_options,
+        review_queue=review_queue,
+        catalog_summary=catalog_summary,
+        sku_counts=sku_counts,
+        brand_skus_map=brand_skus_map,
+        status=status,
+        review_status=review_status,
+        alert_count=alert_count,
+    )
+
+
+@app.route('/catalog/brand/<slug>')
+def catalog_brand_detail(slug):
+    ds.sync_catalog_from_history()
+    brand = ds.get_brand_master_by_slug(slug)
+    if not brand:
+        abort(404)
+    aliases = ds.get_brand_aliases(brand['id'])
+    skus = ds.get_brand_skus(brand['id'], status='all')
+    sku_aliases = ds.get_sku_aliases(brand['id'])
+    review_queue = [
+        item for item in ds.get_catalog_review_queue(status='pending', limit=300)
+        if item.get('brand_candidate') == brand['canonical_name']
+    ]
+    token = next((t for t in ds.get_all_tokens() if t['brand_name'] == brand['canonical_name']), None)
+    latest_kpis = ds.get_brand_history(brand['canonical_name'], limit=1)
+    return render_template(
+        'portal/catalog_brand_detail.html',
+        brand=brand,
+        aliases=aliases,
+        skus=skus,
+        sku_aliases=sku_aliases,
+        review_queue=review_queue,
+        token=token,
+        latest_kpis=latest_kpis[0] if latest_kpis else None,
+        alert_count=ds.get_unacknowledged_count(),
+    )
 
 
 # ── Brand partner portal (token-auth) ────────────────────────────────────────
@@ -1164,6 +1451,26 @@ def brand_portal(token):
                 if os.path.isdir(PDF_DIR) else []
     pdf_file = pdf_files[0] if pdf_files else None
 
+    # Targets
+    report_obj = ds.get_report(report_id) if report_id else None
+    month_label = report_obj['month_label'] if report_obj else None
+    target = ds.get_target(brand_name, month_label) if month_label else None
+
+    # Portfolio rank
+    portfolio_rank = None
+    portfolio_total = None
+    if report_id and kpis:
+        all_kpis = ds.get_all_brand_kpis(report_id)
+        all_sorted = sorted(all_kpis, key=lambda x: x.get('total_revenue', 0), reverse=True)
+        portfolio_total = len(all_sorted)
+        for i, b in enumerate(all_sorted, 1):
+            if b['brand_name'] == brand_name:
+                portfolio_rank = i
+                break
+
+    # Activity log for this brand (last 5 entries)
+    activity_log = ds.get_activity_log(brand_name=brand_name, limit=5)
+
     return render_template('portal/brand_portal.html',
                            brand_name=brand_name,
                            brand_info=brand_info,
@@ -1172,10 +1479,29 @@ def brand_portal(token):
                            forecast=forecast,
                            daily=daily,
                            pdf_file=pdf_file,
-                           report=ds.get_report(report_id) if report_id else None)
+                           report=report_obj,
+                           target=target,
+                           portfolio_rank=portfolio_rank,
+                           portfolio_total=portfolio_total,
+                           activity_log=activity_log)
 
 
 # ── API endpoints ─────────────────────────────────────────────────────────────
+
+@app.route('/api/compute_churn/<int:report_id>', methods=['POST'])
+def api_compute_churn(report_id):
+    """On-demand churn computation for an existing report."""
+    report = ds.get_report(report_id)
+    if not report:
+        return jsonify({'error': 'Report not found'}), 404
+    try:
+        _compute_and_save_churn(report_id)
+        summary = ds.get_churn_summary(report_id)
+        total_churned = sum(v.get('churned', 0) for v in summary.values())
+        return jsonify({'success': True, 'brands_processed': len(summary), 'total_churned': total_churned})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/acknowledge', methods=['POST'])
 def acknowledge():
@@ -1207,6 +1533,80 @@ def regenerate_token():
     token = ds.regenerate_token(brand_name)
     portal_url = url_for('brand_portal', token=token, _external=True)
     return jsonify({'success': True, 'token': token, 'portal_url': portal_url})
+
+
+@app.route('/api/catalog/resync', methods=['POST'])
+def api_catalog_resync():
+    ds.sync_catalog_from_history()
+    return jsonify({'success': True, 'summary': ds.get_catalog_summary()})
+
+
+@app.route('/api/catalog/brand', methods=['POST'])
+def api_catalog_brand():
+    data = request.get_json(silent=True) or {}
+    brand_name = (data.get('brand_name') or '').strip()
+    if not brand_name:
+        return jsonify({'success': False, 'error': 'brand_name is required'}), 400
+
+    brand_id = data.get('brand_id')
+    if brand_id:
+        brand = ds.update_brand_master(
+            int(brand_id),
+            brand_name=brand_name,
+            status=(data.get('status') or 'active').strip(),
+            category=(data.get('category') or '').strip() or None,
+            start_date=(data.get('start_date') or '').strip() or None,
+            default_email=(data.get('default_email') or '').strip() or None,
+            default_whatsapp=(data.get('default_whatsapp') or '').strip() or None,
+            notes=(data.get('notes') or '').strip() or None,
+        )
+    else:
+        brand = ds.ensure_brand_master(
+            brand_name,
+            status=(data.get('status') or 'active').strip(),
+            category=(data.get('category') or '').strip() or None,
+            start_date=(data.get('start_date') or '').strip() or None,
+            email=(data.get('default_email') or '').strip() or None,
+            whatsapp=(data.get('default_whatsapp') or '').strip() or None,
+            notes=(data.get('notes') or '').strip() or None,
+        )
+    return jsonify({'success': True, 'brand': brand})
+
+
+@app.route('/api/catalog/sku', methods=['POST'])
+def api_catalog_sku():
+    data = request.get_json(silent=True) or {}
+    brand_id = int(data.get('brand_id') or 0)
+    sku_name = (data.get('sku_name') or '').strip()
+    if not brand_id or not sku_name:
+        return jsonify({'success': False, 'error': 'brand_id and sku_name are required'}), 400
+    sku = ds.ensure_sku_master(
+        brand_id,
+        sku_name,
+        sku_code=(data.get('sku_code') or '').strip() or None,
+        pack_size=(data.get('pack_size') or '').strip() or None,
+        unit_type=(data.get('unit_type') or '').strip() or None,
+        status=(data.get('status') or 'active').strip(),
+        launch_date=(data.get('launch_date') or '').strip() or None,
+        notes=(data.get('notes') or '').strip() or None,
+    )
+    return jsonify({'success': True, 'sku': sku})
+
+
+@app.route('/api/catalog/review/<int:item_id>', methods=['POST'])
+def api_catalog_review(item_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        result = _review_catalog_item(
+            item_id=item_id,
+            action=data.get('action'),
+            note=(data.get('note') or '').strip() or None,
+            target_brand_id=data.get('target_brand_id'),
+            target_sku_id=data.get('target_sku_id'),
+        )
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    return jsonify({'success': True, 'result': result, 'summary': ds.get_catalog_summary()})
 
 
 @app.route('/api/deliver', methods=['POST'])
@@ -1299,7 +1699,16 @@ def _reconstruct_kpis_from_db(report_id: int, brand_name: str) -> dict:
             if json_str and json_str != '[]':
                 records = _json.loads(json_str)
                 if records:
-                    return pd.DataFrame(records)
+                    frame = pd.DataFrame(records)
+                    if 'Date' in frame.columns and not frame.empty:
+                        try:
+                            if pd.api.types.is_numeric_dtype(frame['Date']):
+                                frame['Date'] = pd.to_datetime(frame['Date'], unit='ms', errors='coerce')
+                            else:
+                                frame['Date'] = pd.to_datetime(frame['Date'], errors='coerce')
+                        except Exception:
+                            frame['Date'] = pd.to_datetime(frame['Date'], errors='coerce')
+                    return frame
         except Exception:
             pass
         return pd.DataFrame(columns=columns)
@@ -1542,6 +1951,26 @@ def api_report_pdf_bulk(report_id):
     )
 
 
+@app.route('/api/portfolio_pdf/<int:report_id>')
+def api_portfolio_pdf(report_id):
+    """Convert the pre-generated portfolio HTML into a PDF and stream it."""
+    report = ds.get_report(report_id)
+    if not report:
+        abort(404)
+    month_tag = datetime.strptime(report['start_date'], '%Y-%m-%d').strftime('%b%Y')
+    html_path = os.path.join(HTML_DIR, f"PORTFOLIO_Dashboard_{month_tag}.html")
+    if not os.path.isfile(html_path):
+        return jsonify({'error': 'Portfolio HTML not yet generated. Run a full report generation first.'}), 404
+    with open(html_path, 'r', encoding='utf-8') as f:
+        html_content = f.read()
+    try:
+        pdf_bytes = render_pdf_bytes(prepare_interactive_html_for_pdf(html_content))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    fname = f"PORTFOLIO_ExecutiveSummary_{month_tag}.pdf"
+    return send_file(io.BytesIO(pdf_bytes), as_attachment=True, download_name=fname, mimetype='application/pdf')
+
+
 @app.route('/api/report_html/<int:report_id>/<path:brand_name>')
 def api_report_html(report_id, brand_name):
     """Generate and stream the interactive HTML report for a single brand from DB data."""
@@ -1652,27 +2081,46 @@ def sku_analytics():
                                brand_sku_counts_json='[]', brands=[], report=None,
                                alert_count=alert_count)
 
-    # Build SKU data from the raw file via daily_sales (proxy: brand + skus)
-    # For a real SKU breakdown we read from the latest in-memory data via DB
+    import json as _json
     brand_kpis_rows = ds.get_all_brand_kpis(report['id'])
+    brand_filter = request.args.get('brand', '')
 
-    # Approximate SKU list from daily_sales aggregated at brand level
-    # (Full SKU detail requires re-reading the raw file — we use brand summary here)
+    # Build real SKU data from brand_detail_json (product_value_json + product_qty_json)
     sku_data = []
     brand_sku_counts = []
     for bk in brand_kpis_rows:
-        brand_sku_counts.append({'brand': bk['brand_name'], 'sku_count': bk['unique_skus']})
-        # Revenue-per-sku estimate for visual
-        if bk['unique_skus'] > 0:
-            rev_per_sku = bk['total_revenue'] / bk['unique_skus']
-            qty_per_sku = bk['total_qty'] / bk['unique_skus']
-            sku_data.append({
-                'name': f"{bk['brand_name']} — Avg SKU",
-                'brand': bk['brand_name'],
-                'revenue': round(rev_per_sku, 0),
-                'qty': round(qty_per_sku, 0),
-                'stores': bk['num_stores'],
-            })
+        bname = bk['brand_name']
+        brand_sku_counts.append({'brand': bname, 'sku_count': bk['unique_skus']})
+        if brand_filter and bname != brand_filter:
+            continue
+        detail = ds.get_brand_detail_json(report['id'], bname)
+        if not detail:
+            continue
+        try:
+            val_rows = _json.loads(detail.get('product_value_json', '[]') or '[]')
+            qty_rows = _json.loads(detail.get('product_qty_json', '[]') or '[]')
+            qty_map = {}
+            for qr in qty_rows:
+                sku_key = qr.get('SKUs') or qr.get('Product') or next(iter(qr), None)
+                qty_val = qr.get('Quantity') or qr.get('Qty') or (list(qr.values())[1] if len(qr) > 1 else 0)
+                if sku_key:
+                    qty_map[str(sku_key)] = float(qty_val or 0)
+            for vr in val_rows:
+                sku_name = vr.get('SKUs') or vr.get('Product') or next(iter(vr), None)
+                rev = vr.get('Sales_Value') or vr.get('Revenue') or (list(vr.values())[1] if len(vr) > 1 else 0)
+                if not sku_name:
+                    continue
+                qty = qty_map.get(str(sku_name), 0)
+                avg_price = round(float(rev) / qty, 2) if qty > 0 else 0
+                sku_data.append({
+                    'name': str(sku_name),
+                    'brand': bname,
+                    'revenue': round(float(rev or 0), 0),
+                    'qty': round(float(qty or 0), 1),
+                    'avg_price': avg_price,
+                })
+        except Exception:
+            pass
 
     sku_data.sort(key=lambda x: x['revenue'], reverse=True)
     brands = [bk['brand_name'] for bk in brand_kpis_rows]
@@ -1681,7 +2129,8 @@ def sku_analytics():
                            sku_data=sku_data,
                            sku_json=_json.dumps(sku_data),
                            brand_sku_counts_json=_json.dumps(brand_sku_counts),
-                           brands=brands, report=report, alert_count=alert_count)
+                           brands=brands, report=report, alert_count=alert_count,
+                           brand_filter=brand_filter)
 
 
 # ── Target Setting ────────────────────────────────────────────────────────────
@@ -1963,6 +2412,46 @@ def api_narrative_brand(brand_name):
         return jsonify({'success': False, 'error': str(exc)}), 500
 
 
+@app.route('/api/recommendations/<path:brand_name>', methods=['GET', 'POST'])
+def api_recommendations(brand_name):
+    """
+    GET: Return cached AI recommendations for a brand (stored alongside narrative in ai_narratives as '__rec__' suffix).
+    POST: Regenerate recommendations on demand.
+    """
+    if not gemini_available():
+        return jsonify({'success': False, 'error': 'GEMINI_API_KEY not configured'}), 503
+
+    report = ds.get_latest_report()
+    if not report:
+        return jsonify({'success': False, 'error': 'No report data'}), 404
+
+    report_id = report['id']
+    regen = request.method == 'POST' or request.args.get('regenerate') == '1'
+    cache_key = f'__rec__{brand_name}'
+
+    if not regen:
+        cached = ds.get_narrative(report_id, cache_key)
+        if cached:
+            return jsonify({'success': True, 'recommendations': cached, 'cached': True})
+
+    kpis = ds.get_brand_kpis_single(report_id, brand_name)
+    if not kpis:
+        return jsonify({'success': False, 'error': 'No KPIs found for this brand'}), 404
+
+    churn_data = ds.get_store_churn(report_id, brand_name)
+    all_kpis = ds.get_all_brand_kpis(report_id)
+    portfolio_avg = sum(b['total_revenue'] for b in all_kpis) / max(len(all_kpis), 1)
+
+    try:
+        from modules.narrative_ai import generate_recommendations
+        text = generate_recommendations(brand_name, kpis, churn_data, portfolio_avg)
+        if text:
+            ds.save_narrative(report_id, cache_key, text)
+        return jsonify({'success': True, 'recommendations': text, 'cached': False})
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
 @app.route('/api/narrative/portfolio')
 def api_narrative_portfolio():
     """Return AI executive summary for the entire portfolio."""
@@ -2025,6 +2514,16 @@ def whatsapp_webhook():
             mimetype='text/xml'
         )
 
+    import difflib
+
+    def fuzzy_brand(query, all_brands):
+        ql = query.lower()
+        exact = next((b for b in all_brands if ql in b.lower()), None)
+        if exact:
+            return exact
+        close = difflib.get_close_matches(query, all_brands, n=1, cutoff=0.5)
+        return close[0] if close else None
+
     report = ds.get_latest_report()
 
     # ── HELP ──────────────────────────────────────────────────────────────────
@@ -2032,16 +2531,63 @@ def whatsapp_webhook():
         return twiml_reply(
             "DALA Analytics Bot\n\n"
             "Commands:\n"
+            "• STATUS [brand] — Brand KPIs + WoW\n"
+            "• TOP [n] — Top N brands (default 5)\n"
             "• REPORT — Portfolio summary\n"
-            "• REPORT [brand name] — Brand summary\n"
+            "• REPORT [brand] — Brand summary\n"
             "• ALERTS — Active alerts\n"
             "• BRANDS — All brand partners\n"
             "• HELP — Show this menu\n\n"
             f"Latest data: {report['month_label'] if report else 'No data yet'}"
         )
 
+    # ── STATUS <brand> ────────────────────────────────────────────────────────
+    if cmd.startswith('STATUS'):
+        if not report:
+            return twiml_reply("No report data yet.")
+        brand_query = body[6:].strip()
+        all_brands = ds.get_all_brands_in_db()
+        matched = fuzzy_brand(brand_query, all_brands) if brand_query else None
+        if not matched:
+            return twiml_reply(
+                "Usage: STATUS [brand name]\nExample: STATUS Zayith\n"
+                "Send BRANDS to see all brand names."
+            )
+        kpis = ds.get_brand_kpis_single(report['id'], matched)
+        if not kpis:
+            return twiml_reply(f"{matched} has no data in {report['month_label']}.")
+        wow = kpis.get('wow_rev_change', 0)
+        wow_str = (f"▲{wow}%" if wow > 0 else (f"▼{abs(wow)}%" if wow < 0 else "—")) + " WoW"
+        lines = [
+            f"{matched} — {report['month_label']}",
+            f"Grade: {kpis.get('perf_grade','-')} ({kpis.get('perf_score',0)}/100)",
+            f"Revenue: N{kpis.get('total_revenue',0):,.0f} ({wow_str})",
+            f"Qty: {kpis.get('total_qty',0):,.1f} packs",
+            f"Stores: {kpis.get('num_stores',0)} | Repeat: {kpis.get('repeat_pct',0):.1f}%",
+            f"Stock Days: {kpis.get('stock_days_cover',0):.0f}",
+        ]
+        return twiml_reply('\n'.join(lines))
+
+    # ── TOP [n] ───────────────────────────────────────────────────────────────
+    if cmd.startswith('TOP'):
+        if not report:
+            return twiml_reply("No report data yet.")
+        parts = cmd.split()
+        n = 5
+        if len(parts) > 1:
+            try:
+                n = min(int(parts[1]), 20)
+            except ValueError:
+                pass
+        kpis_all = ds.get_all_brand_kpis(report['id'])
+        top_brands = sorted(kpis_all, key=lambda x: x.get('total_revenue', 0), reverse=True)[:n]
+        lines = [f"Top {n} Brands — {report['month_label']}:"]
+        for i, b in enumerate(top_brands, 1):
+            lines.append(f"{i}. {b['brand_name']}: N{b['total_revenue']:,.0f} (Grade {b.get('perf_grade','-')})")
+        return twiml_reply('\n'.join(lines))
+
     # ── ALERTS ────────────────────────────────────────────────────────────────
-    if cmd == 'ALERTS':
+    if cmd in ('ALERTS', 'ALERT'):
         alerts = ds.get_alerts(unacknowledged_only=True)
         count = len(alerts)
         if count == 0:
@@ -2090,10 +2636,7 @@ def whatsapp_webhook():
 
         # Find brand (fuzzy match)
         all_brands = ds.get_all_brands_in_db()
-        query_lower = brand_query.lower()
-        matched = next(
-            (b for b in all_brands if query_lower in b.lower()), None
-        )
+        matched = fuzzy_brand(brand_query, all_brands)
         if not matched:
             return twiml_reply(
                 f"Brand '{brand_query}' not found.\n"
@@ -2380,6 +2923,7 @@ def api_db_import():
                         total_revenue=total_rev, total_qty=total_qty,
                         total_stores=len(all_stores), brand_count=len(brands),
                     )
+                _queue_catalog_candidates(df_filtered, source_filename='db_import_additive', report_id=report_id)
                 for b in brands:
                     k = all_kpis[b]
                     share = round(k['total_revenue'] / max(total_rev, 1) * 100, 2)
@@ -2390,6 +2934,7 @@ def api_db_import():
                     history = ds.get_brand_history(b, limit=3)
                     check_and_save_alerts(report_id, b, k, avg_rev, history[1:], ds)
                 run_portfolio_alerts(report_id, ds.get_all_brand_kpis(report_id), ds)
+                _compute_and_save_churn(report_id)
             else:
                 result = _run_pipeline_from_df(combined, 'db_import_upload', s, e, ds)
                 report_id = result.get('report_id')
