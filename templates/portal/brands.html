@@ -9,6 +9,11 @@
   {% endfor %}
 </select>
 <input type="text" id="search" placeholder="Search brands..." class="form-control" style="width:200px;" oninput="filterBrands(this.value)">
+{% if report %}
+<button type="button" class="btn btn-outline btn-sm" onclick="downloadBrandPdfs(true)">All PDFs</button>
+<button type="button" class="btn btn-primary btn-sm" onclick="downloadBrandPdfs(false)">Selected PDFs</button>
+<span id="bulkStatus" class="text-muted fs-sm"></span>
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -16,6 +21,9 @@
   <table class="data-table" id="brandTable">
     <thead>
       <tr>
+        <th style="width:36px;text-align:center;">
+          <input type="checkbox" id="selectAllBrands" aria-label="Select all brands">
+        </th>
         <th>#</th>
         <th>Brand Partner</th>
         <th>Revenue</th>
@@ -36,6 +44,9 @@
       {% set token_info = tokens.get(b.brand_name) %}
       {% set fcast = forecasts.get(b.brand_name, {}) %}
       <tr class="brand-row" data-name="{{ b.brand_name|lower }}">
+        <td style="text-align:center;">
+          <input type="checkbox" class="brand-select" value="{{ b.brand_name }}" aria-label="Select {{ b.brand_name }}">
+        </td>
         <td style="color:var(--muted);font-weight:700;">{{ loop.index }}</td>
         <td><a href="/brand/{{ b.brand_name }}" style="color:var(--navy);font-weight:600;text-decoration:none;">{{ b.brand_name }}</a></td>
         <td style="font-weight:700;">₦{{ "{:,.0f}".format(b.total_revenue) }}</td>
@@ -72,7 +83,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="12" style="text-align:center;color:var(--muted);padding:48px;">No brand data. Generate a report first.</td></tr>
+      <tr><td colspan="13" style="text-align:center;color:var(--muted);padding:48px;">No brand data. Generate a report first.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -86,6 +97,72 @@ function filterBrands(q) {
   document.querySelectorAll('.brand-row').forEach(row => {
     row.style.display = row.dataset.name.includes(q) ? '' : 'none';
   });
+}
+
+const selectAllBrands = document.getElementById('selectAllBrands');
+if (selectAllBrands) {
+  selectAllBrands.addEventListener('change', (event) => {
+    document.querySelectorAll('.brand-select').forEach((checkbox) => {
+      if (checkbox.closest('.brand-row').style.display !== 'none') {
+        checkbox.checked = event.target.checked;
+      }
+    });
+    updateBulkStatus();
+  });
+}
+
+document.querySelectorAll('.brand-select').forEach((checkbox) => {
+  checkbox.addEventListener('change', updateBulkStatus);
+});
+
+function updateBulkStatus() {
+  const status = document.getElementById('bulkStatus');
+  if (!status) return;
+  const selected = document.querySelectorAll('.brand-select:checked').length;
+  status.textContent = selected ? `${selected} selected` : '';
+}
+
+async function downloadBrandPdfs(downloadAll) {
+  const reportId = {{ report.id if report else 'null' }};
+  const selected = Array.from(document.querySelectorAll('.brand-select:checked')).map(el => el.value);
+  const brands = downloadAll ? [] : selected;
+
+  if (!downloadAll && !brands.length) {
+    alert('Select at least one brand to bulk download.');
+    return;
+  }
+
+  const status = document.getElementById('bulkStatus');
+  if (status) status.textContent = downloadAll ? 'Preparing all PDFs...' : `Preparing ${brands.length} PDFs...`;
+
+  try {
+    const response = await fetch(`/api/report_pdf_bulk/${reportId}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({brands})
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({error: 'Bulk download failed.'}));
+      throw new Error(errorData.error || 'Bulk download failed.');
+    }
+
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    link.href = downloadUrl;
+    link.download = match ? match[1] : 'brand-reports.zip';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+    if (status) status.textContent = downloadAll ? 'All PDFs downloaded.' : `${brands.length} PDFs downloaded.`;
+  } catch (error) {
+    if (status) status.textContent = 'Bulk download failed.';
+    alert(error.message || 'Bulk download failed.');
+  }
 }
 </script>
 {% endblock %}

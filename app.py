@@ -22,7 +22,7 @@ Routes:
   GET  /api/reports         JSON list of all reports
 """
 
-import os, io, json, traceback, shutil, uuid, threading, tempfile
+import os, io, json, traceback, shutil, uuid, threading, tempfile, zipfile
 from datetime import datetime
 from functools import wraps
 import numpy as np
@@ -41,7 +41,7 @@ from modules.ingestion        import load_and_clean, filter_by_date, split_by_br
 from modules.kpi              import calculate_kpis, calculate_perf_score, generate_narrative
 from modules.pdf_generator_html import generate_pdf_html
 from modules.pdf_generator      import generate_pdf as generate_pdf_reportlab
-from modules.pdf_generator_html import render_pdf_report_html, render_pdf_bytes
+from modules.pdf_generator_html import render_pdf_report_html, render_pdf_bytes, prepare_interactive_html_for_pdf
 from modules.html_generator   import generate_html, render_html_report
 from modules.portfolio_generator import generate_portfolio_html
 from modules.data_store       import DataStore
@@ -1392,6 +1392,60 @@ def _reconstruct_kpis_from_db(report_id: int, brand_name: str) -> dict:
     }
 
 
+def _build_brand_report_pdf_bytes(report_id: int, brand_name: str,
+                                  report: dict | None = None,
+                                  kpis: dict | None = None,
+                                  all_brand_kpis: list | None = None) -> bytes:
+    """Build PDF bytes for a brand, preferring the interactive HTML layout."""
+    report = report or ds.get_report(report_id)
+    if not report:
+        raise ValueError(f'Report {report_id} not found')
+
+    kpis = kpis or _reconstruct_kpis_from_db(report_id, brand_name)
+    if not kpis:
+        raise ValueError(f'KPI data not found for {brand_name}')
+
+    all_brand_kpis = all_brand_kpis or ds.get_all_brand_kpis(report_id)
+    total_portfolio = sum(b['total_revenue'] for b in all_brand_kpis)
+    avg_portfolio = total_portfolio / max(len(all_brand_kpis), 1)
+
+    try:
+        interactive_html = render_html_report(
+            brand_name=brand_name,
+            kpis=kpis,
+            start_date=report['start_date'],
+            end_date=report['end_date'],
+            portfolio_avg_revenue=avg_portfolio,
+            total_portfolio_revenue=total_portfolio,
+        )
+        return render_pdf_bytes(prepare_interactive_html_for_pdf(interactive_html))
+    except Exception as html_pdf_error:
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
+                temp_path = temp_file.name
+            generate_pdf_reportlab(
+                output_path=temp_path,
+                brand_name=brand_name,
+                kpis=kpis,
+                start_date=report['start_date'],
+                end_date=report['end_date'],
+            )
+            with open(temp_path, 'rb') as fh:
+                return fh.read()
+        except Exception as fallback_error:
+            raise RuntimeError(
+                f'Interactive HTML PDF failed: {html_pdf_error}; '
+                f'ReportLab fallback failed: {fallback_error}'
+            ) from fallback_error
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
+
+
 @app.route('/api/report_pdf/<int:report_id>/<path:brand_name>')
 def api_report_pdf(report_id, brand_name):
     """Generate and serve a PDF report for a single brand from stored DB data."""
@@ -1411,46 +1465,80 @@ def api_report_pdf(report_id, brand_name):
     fname = f"{safe}_Report_{month_tag}.pdf"
 
     try:
-        html_content = render_pdf_report_html(
+        pdf_bytes = _build_brand_report_pdf_bytes(
+            report_id=report_id,
             brand_name=brand_name,
+            report=report,
             kpis=kpis,
-            start_date=report['start_date'],
-            end_date=report['end_date'],
-            portfolio_avg_revenue=avg_portfolio,
-            total_portfolio_revenue=total_portfolio,
+            all_brand_kpis=all_bk,
         )
-        pdf_bytes = render_pdf_bytes(html_content)
-    except Exception as html_pdf_error:
-        temp_path = None
-        try:
-            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
-                temp_path = temp_file.name
-            generate_pdf_reportlab(
-                output_path=temp_path,
-                brand_name=brand_name,
-                kpis=kpis,
-                start_date=report['start_date'],
-                end_date=report['end_date'],
-            )
-            with open(temp_path, 'rb') as fh:
-                pdf_bytes = fh.read()
-        except Exception as fallback_error:
-            return jsonify({
-                'error': str(html_pdf_error),
-                'fallback_error': str(fallback_error),
-            }), 500
-        finally:
-            if temp_path and os.path.exists(temp_path):
-                try:
-                    os.unlink(temp_path)
-                except OSError:
-                    pass
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
     return send_file(
         io.BytesIO(pdf_bytes),
         as_attachment=True,
         download_name=fname,
         mimetype='application/pdf',
+    )
+
+
+@app.route('/api/report_pdf_bulk/<int:report_id>', methods=['POST'])
+def api_report_pdf_bulk(report_id):
+    """Generate a ZIP containing PDFs for all or selected brands in a report."""
+    report = ds.get_report(report_id)
+    if not report:
+        abort(404)
+
+    all_bk = ds.get_all_brand_kpis(report_id)
+    brands_in_order = [b['brand_name'] for b in all_bk]
+    payload = request.get_json(silent=True) or {}
+    requested_brands = payload.get('brands') or []
+
+    if requested_brands:
+        requested_set = set(requested_brands)
+        brands = [brand for brand in brands_in_order if brand in requested_set]
+    else:
+        brands = brands_in_order
+
+    if not brands:
+        return jsonify({'error': 'No brands selected for bulk download.'}), 400
+
+    month_tag = datetime.strptime(report['start_date'], '%Y-%m-%d').strftime('%b%Y')
+    zip_name = (
+        f"Selected_Brand_Reports_{month_tag}.zip"
+        if requested_brands else
+        f"All_Brand_Reports_{month_tag}.zip"
+    )
+    zip_buffer = io.BytesIO()
+    failures = []
+
+    with zipfile.ZipFile(zip_buffer, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        for brand_name in brands:
+            try:
+                pdf_bytes = _build_brand_report_pdf_bytes(
+                    report_id=report_id,
+                    brand_name=brand_name,
+                    report=report,
+                    all_brand_kpis=all_bk,
+                )
+                safe = _safe_name(brand_name)
+                archive.writestr(f'{safe}_Report_{month_tag}.pdf', pdf_bytes)
+            except Exception as exc:
+                failures.append(f'{brand_name}: {exc}')
+
+        if failures:
+            archive.writestr(
+                'DOWNLOAD_ERRORS.txt',
+                'Some reports could not be generated.\n\n' + '\n'.join(failures),
+            )
+
+    zip_buffer.seek(0)
+    return send_file(
+        zip_buffer,
+        as_attachment=True,
+        download_name=zip_name,
+        mimetype='application/zip',
     )
 
 

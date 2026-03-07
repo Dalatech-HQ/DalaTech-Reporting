@@ -8,6 +8,9 @@
   <option value="{{ r.id }}" {% if report and r.id==report.id %}selected{% endif %}>{{ r.month_label }}</option>
   {% endfor %}
 </select>
+{% if report %}
+<a href="/brands?report_id={{ report.id }}" class="btn btn-outline btn-sm">Bulk PDFs</a>
+{% endif %}
 {% if portfolio_file %}
 <a href="/download/html/{{ portfolio_file }}" target="_blank" class="btn btn-primary btn-sm">Open Portfolio Dashboard</a>
 {% endif %}

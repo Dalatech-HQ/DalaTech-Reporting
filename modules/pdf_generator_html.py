@@ -147,6 +147,77 @@ def render_pdf_report_html(brand_name: str, kpis: dict,
     )
 
 
+INTERACTIVE_PDF_PRINT_OVERRIDES = """
+<style id="interactive-pdf-print-overrides">
+@page { size: A4; margin: 10mm; }
+@media print {
+  html, body { background: #ffffff !important; }
+  body { font-size: 11px !important; min-height: auto !important; }
+  .header {
+    position: static !important;
+    top: auto !important;
+    box-shadow: none !important;
+    padding: 12px 16px !important;
+  }
+  .nav-tabs { display: none !important; }
+  .filter-bar { padding: 8px 16px !important; }
+  .section { display: block !important; }
+  #section-overview {
+    page-break-after: always;
+    break-after: page;
+  }
+  .page-body {
+    max-width: none !important;
+    padding: 12px 14px !important;
+  }
+  .kpi-row {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+  }
+  .main-grid {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 260px !important;
+    gap: 12px !important;
+  }
+  .two-col,
+  .detail-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+  }
+  .kpi-card,
+  .card,
+  .scorecard,
+  .trend-section,
+  .heatmap-section {
+    box-shadow: none !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  .plotly-graph-div,
+  .js-plotly-plot {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  .card,
+  .scorecard { padding: 12px 14px !important; }
+  .header-center h1 { font-size: 18px !important; }
+  .header-center .sub { font-size: 11px !important; }
+}
+</style>
+"""
+
+
+def prepare_interactive_html_for_pdf(html_content: str) -> str:
+    """Inject print-only layout rules into the interactive HTML before PDF export."""
+    if 'interactive-pdf-print-overrides' in html_content:
+        return html_content
+    if '</head>' in html_content:
+        return html_content.replace('</head>', f'{INTERACTIVE_PDF_PRINT_OVERRIDES}\n</head>', 1)
+    return INTERACTIVE_PDF_PRINT_OVERRIDES + html_content
+
+
 def render_pdf_bytes(html_content: str) -> bytes:
     """Render PDF bytes from already-built HTML."""
     browsers_path = os.getenv('PLAYWRIGHT_BROWSERS_PATH')
