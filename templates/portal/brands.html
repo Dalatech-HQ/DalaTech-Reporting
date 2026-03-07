@@ -50,7 +50,7 @@
         </td>
         <td style="color:var(--muted);font-weight:700;" data-val="{{ loop.index }}">{{ loop.index }}</td>
         <td><a href="/brand/{{ b.brand_name }}" style="color:var(--navy);font-weight:600;text-decoration:none;">{{ b.brand_name }}</a></td>
-        <td style="font-weight:700;" data-val="{{ b.total_revenue }}">₦{{ "{:,.0f}".format(b.total_revenue) }}</td>
+        <td style="font-weight:700;" data-val="{{ b.total_revenue }}">₦{{ "{:,.2f}".format(b.total_revenue) }}</td>
         <td data-val="{{ b.total_qty }}">{{ "{:,.1f}".format(b.total_qty) }}</td>
         <td data-val="{{ b.num_stores }}">{{ b.num_stores }}</td>
         <td data-val="{{ b.repeat_pct }}">{{ b.repeat_pct }}%</td>

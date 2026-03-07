@@ -20,7 +20,7 @@
 <div class="grid-4" style="margin-bottom:20px;">
   <div class="kpi-card red">
     <div class="kpi-label">Total Revenue</div>
-    <div class="kpi-value-sm">₦{{ "{:,.0f}".format(kpis.total_revenue) }}</div>
+    <div class="kpi-value-sm">₦{{ "{:,.2f}".format(kpis.total_revenue) }}</div>
     <div class="kpi-sub">
       {{ report.month_label if report }}
       {% if yoy_rev_pct is not none %}

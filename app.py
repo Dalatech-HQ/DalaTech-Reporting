@@ -73,6 +73,14 @@ os.makedirs(HTML_DIR, exist_ok=True)
 
 ds = DataStore()
 
+
+def _money_2dp(value):
+    """Format currency-like floats consistently for exports/UI payloads."""
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return "0.00"
+
 # ── Admin Auth ────────────────────────────────────────────────────────────────
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '')
 
@@ -2332,7 +2340,8 @@ def api_v1_portfolio():
 def api_export_brands():
     """Export brand KPIs as CSV or JSON."""
     fmt    = request.args.get('format', 'csv')
-    report = ds.get_latest_report()
+    report_id = request.args.get('report_id', type=int)
+    report = ds.get_report(report_id) if report_id else ds.get_latest_report()
     if not report:
         abort(404)
     kpis = ds.get_all_brand_kpis(report['id'])
@@ -2344,7 +2353,19 @@ def api_export_brands():
     if kpis:
         writer = csv.DictWriter(buf, fieldnames=kpis[0].keys())
         writer.writeheader()
-        writer.writerows(kpis)
+        money_fields = {
+            'total_revenue', 'avg_revenue_per_store', 'closing_stock_total',
+            'stock_days_cover', 'portfolio_share_pct', 'wow_rev_change',
+            'wow_qty_change', 'peak_revenue', 'top_store_revenue',
+        }
+        for row in kpis:
+            sanitized = {}
+            for key, value in row.items():
+                if key in money_fields and isinstance(value, (int, float)):
+                    sanitized[key] = _money_2dp(value)
+                else:
+                    sanitized[key] = value
+            writer.writerow(sanitized)
     buf.seek(0)
     return app.response_class(buf.getvalue(), mimetype='text/csv',
                                headers={'Content-Disposition':
@@ -2365,7 +2386,7 @@ def api_export_skus():
     for bk in kpis:
         rev_per = (bk['total_revenue'] / bk['unique_skus']) if bk['unique_skus'] else 0
         writer.writerow([bk['brand_name'], bk['unique_skus'],
-                         round(bk['total_revenue'], 0), round(rev_per, 0)])
+                         _money_2dp(bk['total_revenue']), _money_2dp(rev_per)])
     buf.seek(0)
     return app.response_class(buf.getvalue(), mimetype='text/csv',
                                headers={'Content-Disposition':
