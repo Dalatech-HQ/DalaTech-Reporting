@@ -519,6 +519,27 @@ class DataStore:
                 (brand_name, limit)
             ).fetchall()]
 
+    def get_all_brands_revenue_trends(self, limit=6):
+        """Batch version — returns {brand_name: [trend_rows]} for ALL brands in ONE query.
+        Replaces calling get_brand_revenue_trend() in a per-brand loop (N+1 problem)."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT bk.brand_name, r.month_label, r.start_date,
+                          bk.total_revenue, bk.perf_grade, bk.perf_score,
+                          ROW_NUMBER() OVER (
+                              PARTITION BY bk.brand_name ORDER BY r.start_date DESC
+                          ) AS rn
+                   FROM brand_kpis bk JOIN reports r ON bk.report_id=r.id
+                   ORDER BY bk.brand_name, r.start_date DESC"""
+            ).fetchall()
+        result = {}
+        for r in rows:
+            r = dict(r)
+            if r['rn'] > limit:
+                continue
+            result.setdefault(r['brand_name'], []).append(r)
+        return result
+
     def get_portfolio_monthly_trend(self, limit=12):
         """Returns monthly portfolio totals."""
         with self._connect() as conn:

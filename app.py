@@ -968,15 +968,13 @@ def brands():
     all_brand_names = ds.get_all_brands_in_db()
     tokens = {t['brand_name']: t for t in ds.get_all_tokens()}
 
-    # Attach forecast label to each brand from history
+    # Attach forecast label to each brand — one batch query instead of N per-brand queries
+    all_trends = ds.get_all_brands_revenue_trends(limit=6)
     forecasts = {}
     for b in all_brand_names:
-        hist = ds.get_brand_revenue_trend(b, limit=6)
-        hist_oldest_first = list(reversed(hist))
-        forecasts[b] = {
-            'growth_label': growth_label(hist_oldest_first),
-            'growth_color': growth_color(growth_label(hist_oldest_first)),
-        }
+        hist_oldest_first = list(reversed(all_trends.get(b, [])))
+        label = growth_label(hist_oldest_first)
+        forecasts[b] = {'growth_label': label, 'growth_color': growth_color(label)}
 
     return render_template('portal/brands.html',
                            brand_kpis=brand_kpis,

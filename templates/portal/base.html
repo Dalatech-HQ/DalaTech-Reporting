@@ -230,5 +230,64 @@
 </div>
 
 {% block scripts %}{% endblock %}
+
+<!-- Page loading bar — fires instantly on any nav or link click -->
+<style>
+  #topbar-loader {
+    position: fixed; top: 0; left: 0; width: 0; height: 3px;
+    background: var(--red); z-index: 9999;
+    transition: width .1s ease-out;
+    box-shadow: 0 0 8px rgba(232,25,44,.6);
+  }
+  #topbar-loader.running { animation: loader-pulse 1.2s ease-in-out infinite alternate; }
+  @keyframes loader-pulse { from { opacity: 1; } to { opacity: .7; } }
+</style>
+<div id="topbar-loader"></div>
+<script>
+(function () {
+  const bar = document.getElementById('topbar-loader');
+  let _timer;
+
+  function startLoader() {
+    clearTimeout(_timer);
+    bar.style.transition = 'width .1s ease-out';
+    bar.style.width = '0%';
+    requestAnimationFrame(() => {
+      bar.style.transition = 'width 8s cubic-bezier(.1,.4,.6,1)';
+      bar.style.width = '85%';
+      bar.classList.add('running');
+    });
+  }
+
+  function finishLoader() {
+    bar.classList.remove('running');
+    bar.style.transition = 'width .2s ease-out';
+    bar.style.width = '100%';
+    _timer = setTimeout(() => {
+      bar.style.transition = 'opacity .3s';
+      bar.style.opacity = '0';
+      setTimeout(() => { bar.style.width = '0%'; bar.style.opacity = '1'; }, 350);
+    }, 200);
+  }
+
+  // Trigger on any internal link click (not anchors, not external, not new tab)
+  document.addEventListener('click', function (e) {
+    const a = e.target.closest('a');
+    if (!a) return;
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    if (a.target === '_blank') return;
+    const href = a.getAttribute('href');
+    if (!href || href.startsWith('#') || href.startsWith('http') || href.startsWith('mailto')) return;
+    startLoader();
+  });
+
+  // Also on form submits (Generate All Reports, etc.)
+  document.addEventListener('submit', startLoader);
+
+  // Finish immediately when the new page is ready
+  window.addEventListener('pageshow', finishLoader);
+  window.addEventListener('load', finishLoader);
+})();
+</script>
 </body>
 </html>
