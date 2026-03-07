@@ -10,6 +10,7 @@ import os
 import base64
 import glob
 import shutil
+import subprocess
 from datetime import datetime
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -156,6 +157,23 @@ def render_pdf_bytes(html_content: str) -> bytes:
         try:
             browser = p.chromium.launch(**launch_options)
         except Exception:
+            shell_candidates = []
+            if os.name != 'nt':
+                try:
+                    probe = subprocess.run(
+                        [
+                            '/bin/sh', '-lc',
+                            "command -v chromium || command -v chromium-browser || command -v google-chrome || "
+                            "find /nix/store -type f \\( -name chromium -o -name chromium-browser -o -name google-chrome \\) 2>/dev/null | head -n 10"
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                        check=False,
+                    )
+                    shell_candidates = [line.strip() for line in probe.stdout.splitlines() if line.strip()]
+                except Exception:
+                    shell_candidates = []
             nix_candidates = []
             for pattern in (
                 '/nix/store/*/bin/chromium',
@@ -172,6 +190,7 @@ def render_pdf_bytes(html_content: str) -> bytes:
                 shutil.which('google-chrome'),
                 '/usr/bin/chromium',
                 '/usr/bin/chromium-browser',
+                *shell_candidates,
                 *nix_candidates,
             ]
             for candidate in candidates:
