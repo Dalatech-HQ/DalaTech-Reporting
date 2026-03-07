@@ -279,6 +279,25 @@ def _candidate_paths():
     return ordered
 
 
+def _run_playwright_install():
+    """Install Chromium binary + system dependencies (libglib etc.)."""
+    install_env = os.environ.copy()
+    bp = os.getenv('PLAYWRIGHT_BROWSERS_PATH')
+    if bp:
+        install_env['PLAYWRIGHT_BROWSERS_PATH'] = bp
+        os.makedirs(bp, exist_ok=True)
+    # Install the browser binary
+    subprocess.run(
+        [sys.executable, '-m', 'playwright', 'install', 'chromium'],
+        env=install_env, timeout=180, check=False,
+    )
+    # Install system deps (libglib-2.0, libnss, etc.) — fixes Railway Linux errors
+    subprocess.run(
+        [sys.executable, '-m', 'playwright', 'install-deps', 'chromium'],
+        env=install_env, timeout=120, check=False,
+    )
+
+
 def _launch_chromium(p):
     """Launch Chromium via playwright handle `p`, trying every fallback path."""
     opts = {'headless': True, 'args': ['--no-sandbox', '--disable-dev-shm-usage']}
@@ -290,14 +309,12 @@ def _launch_chromium(p):
         return p.chromium.launch(**o)
 
     errors = []
-    needs_install = False
 
     # 1. Default Playwright-managed browser
     try:
         return _try()
     except Exception as e:
         errors.append(f'default: {e}')
-        needs_install = 'playwright install' in str(e).lower()
 
     # 2. Known system paths
     for path in _candidate_paths():
@@ -307,27 +324,19 @@ def _launch_chromium(p):
             except Exception as e:
                 errors.append(f'{path}: {e}')
 
-    # 3. Auto-install then retry
-    if needs_install:
-        install_env = os.environ.copy()
-        bp = os.getenv('PLAYWRIGHT_BROWSERS_PATH')
-        if bp:
-            install_env['PLAYWRIGHT_BROWSERS_PATH'] = bp
-            os.makedirs(bp, exist_ok=True)
-        subprocess.run(
-            [sys.executable, '-m', 'playwright', 'install', 'chromium'],
-            env=install_env, timeout=180, check=False,
-        )
-        try:
-            return _try()
-        except Exception as e:
-            errors.append(f'post-install default: {e}')
-        for path in _candidate_paths():
-            if path and os.path.exists(path):
-                try:
-                    return _try(executable_path=path)
-                except Exception as e:
-                    errors.append(f'post-install {path}: {e}')
+    # 3. Auto-install browser + system deps, then retry
+    # Triggered on ANY launch failure — covers missing binary AND missing libglib etc.
+    _run_playwright_install()
+    try:
+        return _try()
+    except Exception as e:
+        errors.append(f'post-install default: {e}')
+    for path in _candidate_paths():
+        if path and os.path.exists(path):
+            try:
+                return _try(executable_path=path)
+            except Exception as e:
+                errors.append(f'post-install {path}: {e}')
 
     raise RuntimeError(f'Unable to launch Chromium. Errors: {" | ".join(errors[:6])}')
 
