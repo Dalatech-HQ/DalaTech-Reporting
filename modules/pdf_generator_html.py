@@ -8,6 +8,7 @@ Page 2: Inventory detail, performance scorecard, store heatmap
 
 import os
 import base64
+import shutil
 from datetime import datetime
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -145,8 +146,29 @@ def render_pdf_report_html(brand_name: str, kpis: dict,
 
 def render_pdf_bytes(html_content: str) -> bytes:
     """Render PDF bytes from already-built HTML."""
+    launch_options = {
+        'headless': True,
+        'args': ['--no-sandbox', '--disable-dev-shm-usage'],
+    }
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        browser = None
+        try:
+            browser = p.chromium.launch(**launch_options)
+        except Exception:
+            candidates = [
+                os.getenv('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'),
+                shutil.which('chromium'),
+                shutil.which('chromium-browser'),
+                shutil.which('google-chrome'),
+                '/usr/bin/chromium',
+                '/usr/bin/chromium-browser',
+            ]
+            for candidate in candidates:
+                if candidate and os.path.exists(candidate):
+                    browser = p.chromium.launch(executable_path=candidate, **launch_options)
+                    break
+            if browser is None:
+                raise
         page = browser.new_page()
         page.set_content(html_content, wait_until='networkidle')
         pdf_bytes = page.pdf(
