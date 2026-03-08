@@ -37,7 +37,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 12px 16px 10px 0;
+      padding: 11px 16px 9px 0;
       flex-shrink: 0;
       background: #fff;
     }
@@ -47,6 +47,7 @@
       align-items: center;
     }
 
+    /* Red vertical accent — full header height */
     .red-accent-bar {
       width: 5px;
       align-self: stretch;
@@ -55,6 +56,7 @@
       margin-right: 12px;
     }
 
+    /* Only the logo image — no duplicate text */
     .dala-logo {
       height: 52px;
       width: auto;
@@ -63,49 +65,23 @@
 
     .dala-logo-ph {
       height: 52px;
-      width: 52px;
+      width: 130px;
       background: #1B2B5E;
-      border-radius: 6px;
+      border-radius: 4px;
       display: flex;
       align-items: center;
       justify-content: center;
       color: #fff;
       font-weight: 900;
-      font-size: 18pt;
-    }
-
-    .company-name {
-      margin-left: 8px;
-      line-height: 1;
-    }
-
-    .company-name .brand {
-      font-size: 16pt;
-      font-weight: 900;
-      color: #1B2B5E;
-      letter-spacing: -0.5px;
-    }
-
-    .company-name .reg {
-      font-size: 7pt;
-      color: #1B2B5E;
-      vertical-align: super;
-      font-weight: 700;
-    }
-
-    .company-name .sub {
-      font-size: 6pt;
-      color: #666;
-      letter-spacing: 2.5px;
-      text-transform: uppercase;
-      margin-top: 3px;
+      font-size: 14pt;
+      letter-spacing: 2px;
     }
 
     /* ── Diamond cluster — top right ─────────────────────────────────────── */
     .diamond-cluster {
       position: relative;
       width: 88px;
-      height: 70px;
+      height: 68px;
       flex-shrink: 0;
     }
 
@@ -129,13 +105,13 @@
 
     /* ─── REPORT TITLE ────────────────────────────────────────────────────── */
     .title-area {
-      padding: 14px 22px 8px;
+      padding: 13px 20px 7px;
       flex-shrink: 0;
     }
 
     .report-title {
       font-family: Georgia, 'Times New Roman', 'DejaVu Serif', serif;
-      font-size: 20pt;
+      font-size: 21pt;
       font-style: italic;
       font-weight: bold;
       color: #C8191E;
@@ -144,18 +120,18 @@
 
     /* ─── DASHBOARD SNAPSHOT ──────────────────────────────────────────────── */
     .snapshot {
-      margin: 0 16px 10px;
+      margin: 0 14px 8px;
       background: #EAECF1;
-      border: 1px solid #C8CBD4;
+      border: 1px solid #C5C8D2;
       border-radius: 6px;
-      padding: 8px;
+      padding: 7px;
       flex-shrink: 0;
     }
 
     .snap-row {
       display: flex;
-      gap: 6px;
-      margin-bottom: 6px;
+      gap: 5px;
+      margin-bottom: 5px;
     }
 
     .snap-row:last-child { margin-bottom: 0; }
@@ -166,14 +142,14 @@
       background: #fff;
       border-radius: 5px;
       padding: 8px 10px 7px;
-      border: 1px solid #E4E7EE;
+      border: 1px solid #E2E5EE;
       border-top: 3px solid #E8192C;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
       display: flex;
       flex-direction: column;
     }
 
-    .snap-kpi.qty-card { border-top-color: #1B2B5E; }
+    .snap-kpi.qty-card   { border-top-color: #1B2B5E; }
     .snap-kpi.reach-card { border-top-color: #1A7A4A; }
 
     .snap-kpi-label {
@@ -181,16 +157,16 @@
       color: #777;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.4px;
+      letter-spacing: 0.5px;
       margin-bottom: 3px;
     }
 
     .snap-kpi-value {
-      font-size: 12.5pt;
+      font-size: 13pt;
       font-weight: 800;
       color: #111;
       line-height: 1;
-      margin-bottom: 2px;
+      margin-bottom: 1px;
     }
 
     .snap-kpi-unit {
@@ -199,18 +175,11 @@
       color: #555;
       text-transform: uppercase;
       letter-spacing: 0.6px;
-      margin-bottom: 5px;
+      margin-bottom: 4px;
     }
 
-    .snap-sparkline {
-      margin-top: auto;
-    }
-
-    .snap-sparkline-label {
-      font-size: 4.5pt;
-      color: #AAA;
-      margin-bottom: 2px;
-    }
+    .snap-sparkline { margin-top: auto; }
+    .snap-sparkline-label { font-size: 4.5pt; color: #BBB; margin-bottom: 2px; }
 
     /* ── Reach Card ───────────────────────────────────────────────────────── */
     .snap-reach {
@@ -218,55 +187,46 @@
       background: #fff;
       border-radius: 5px;
       padding: 8px 10px 7px;
-      border: 1px solid #E4E7EE;
+      border: 1px solid #E2E5EE;
       border-top: 3px solid #1A7A4A;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
       display: flex;
       flex-direction: column;
       justify-content: space-between;
     }
 
-    .snap-reach-label { font-size: 5.5pt; color: #777; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
-    .snap-reach-value { font-size: 22pt; font-weight: 900; color: #111; line-height: 1; }
+    .snap-reach-label { font-size: 5.5pt; color: #777; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .snap-reach-value { font-size: 24pt; font-weight: 900; color: #111; line-height: 1; }
     .snap-reach-unit  { font-size: 5.5pt; color: #555; font-weight: 600; margin-top: 1px; }
-    .snap-reach-sub   { font-size: 4.5pt; color: #AAA; margin-top: 4px; }
+    .snap-reach-sub   { font-size: 4.5pt; color: #AAA; margin-top: 3px; }
 
     /* ── Inventory Ring ───────────────────────────────────────────────────── */
     .snap-inventory {
-      width: 120px;
+      width: 116px;
       flex-shrink: 0;
       background: #fff;
       border-radius: 5px;
       padding: 7px 8px;
-      border: 1px solid #E4E7EE;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      border: 1px solid #E2E5EE;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
       display: flex;
       flex-direction: column;
       align-items: center;
     }
 
-    .snap-inv-title {
-      font-size: 5pt;
-      font-weight: 800;
-      color: #1B2B5E;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      text-align: center;
-      margin-bottom: 2px;
-    }
-
-    .snap-inv-sub { font-size: 4.5pt; color: #999; text-align: center; margin-bottom: 5px; }
+    .snap-inv-title { font-size: 5pt; font-weight: 800; color: #1B2B5E; text-transform: uppercase; letter-spacing: 0.5px; text-align: center; margin-bottom: 2px; }
+    .snap-inv-sub   { font-size: 4.5pt; color: #999; text-align: center; margin-bottom: 5px; }
 
     .snap-inv-ring {
-      width: 54px;
-      height: 54px;
+      width: 56px;
+      height: 56px;
       border-radius: 50%;
       border: 5px solid #E8192C;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 0 0 3px rgba(232,25,44,0.1);
+      box-shadow: 0 0 0 3px rgba(232,25,44,0.08);
     }
 
     .snap-inv-num   { font-size: 13pt; font-weight: 900; color: #111; line-height: 1; }
@@ -277,9 +237,9 @@
       flex: 1;
       background: #fff;
       border-radius: 5px;
-      padding: 7px 8px 6px;
-      border: 1px solid #E4E7EE;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      padding: 6px 7px 5px;
+      border: 1px solid #E2E5EE;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
       overflow: hidden;
       display: flex;
       flex-direction: column;
@@ -290,25 +250,26 @@
       font-weight: 700;
       color: #444;
       margin-bottom: 4px;
-      line-height: 1.25;
+      line-height: 1.3;
     }
 
+    /* Chart images: give them real height so they're readable */
     .snap-chart img {
       width: 100%;
-      height: 82px;
+      height: 100px;
       object-fit: contain;
       display: block;
     }
 
-    /* ── Stock Chart (narrower) ───────────────────────────────────────────── */
+    /* ── Stock Chart (narrower sidebar) ───────────────────────────────────── */
     .snap-stock {
-      width: 120px;
+      width: 116px;
       flex-shrink: 0;
       background: #fff;
       border-radius: 5px;
-      padding: 7px 8px 6px;
-      border: 1px solid #E4E7EE;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      padding: 6px 7px 5px;
+      border: 1px solid #E2E5EE;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
       overflow: hidden;
       display: flex;
       flex-direction: column;
@@ -316,64 +277,67 @@
 
     .snap-stock img {
       width: 100%;
+      height: 100px;
+      object-fit: contain;
+      display: block;
+    }
+
+    /* ── Trend Card (full-width bottom row) ───────────────────────────────── */
+    .snap-trend {
+      flex: 1;
+      background: #fff;
+      border-radius: 5px;
+      padding: 6px 10px 5px;
+      border: 1px solid #E2E5EE;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .snap-trend-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 3px;
+    }
+
+    .snap-trend-title { font-size: 5.5pt; font-weight: 700; color: #333; }
+    .snap-trend-sub   { font-size: 4.5pt; color: #BBB; }
+
+    .snap-trend img {
+      width: 100%;
       height: 82px;
       object-fit: contain;
       display: block;
     }
 
-    /* ── Trend Card (full width) ──────────────────────────────────────────── */
-    .snap-trend {
-      flex: 1;
-      background: #fff;
-      border-radius: 5px;
-      padding: 7px 10px 6px;
-      border: 1px solid #E4E7EE;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-      display: flex;
-      flex-direction: column;
-    }
-
-    .snap-trend-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
-    .snap-trend-title  { font-size: 5.5pt; font-weight: 700; color: #333; }
-    .snap-trend-sub    { font-size: 4.5pt; color: #AAA; }
-
-    .snap-trend img {
-      width: 100%;
-      height: 62px;
-      object-fit: contain;
-      display: block;
-    }
-
-    /* ─── CONTENT / NARRATIVE ─────────────────────────────────────────────── */
+    /* ─── NARRATIVE CONTENT ───────────────────────────────────────────────── */
     .content-area {
       flex: 1;
-      padding: 10px 22px 6px;
+      padding: 9px 20px 5px;
       overflow: hidden;
     }
 
     .sheets-link {
       font-size: 8.5pt;
       color: #333;
-      margin-bottom: 12px;
+      margin-bottom: 11px;
     }
 
     .sheets-link a { color: #0563C1; text-decoration: underline; }
 
-    .narrative-section { margin-bottom: 11px; }
+    .narrative-section { margin-bottom: 10px; }
 
     .narrative-section h3 {
       font-size: 9pt;
       font-weight: 700;
       color: #1A1A1A;
-      margin-bottom: 5px;
+      margin-bottom: 4px;
       padding-bottom: 3px;
       border-bottom: 1.5px solid #EAEDF2;
     }
 
-    .narrative-section ul {
-      list-style: disc;
-      padding-left: 20px;
-    }
+    .narrative-section ul { list-style: disc; padding-left: 20px; }
 
     .narrative-section ul li {
       font-size: 8.5pt;
@@ -391,7 +355,7 @@
       background: #1B2B5E;
       display: flex;
       align-items: stretch;
-      padding: 7px 16px;
+      padding: 6px 16px;
       position: relative;
     }
 
@@ -418,10 +382,13 @@
 
     .footer-page-num {
       position: absolute;
-      right: 16px;
-      bottom: 7px;
-      font-size: 7pt;
-      color: rgba(255,255,255,0.4);
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 8pt;
+      font-weight: 600;
+      color: rgba(255,255,255,0.35);
+      letter-spacing: 0.5px;
     }
   </style>
 </head>
@@ -437,15 +404,11 @@
       {% if logo_path %}
         <img class="dala-logo" src="{{ logo_path }}" alt="DALA Technologies">
       {% else %}
-        <div class="dala-logo-ph">D</div>
+        <div class="dala-logo-ph">DALA</div>
       {% endif %}
-      <div class="company-name">
-        <div><span class="brand">DALA</span><span class="reg">®</span></div>
-        <div class="sub">Technologies</div>
-      </div>
     </div>
 
-    <!-- Geometric diamond cluster -->
+    <!-- Geometric diamond cluster (top right) -->
     <div class="diamond-cluster">
       <div class="d" style="width:32px;height:32px;background:#E8192C;top:2px;right:4px;"></div>
       <div class="d" style="width:32px;height:32px;background:#1B2B5E;top:2px;right:30px;opacity:0.88;"></div>
@@ -527,7 +490,7 @@
       </div>
     </div><!-- /row 2 -->
 
-    <!-- Row 3: Sales Trend -->
+    <!-- Row 3: Sales Trend (full width) -->
     <div class="snap-trend">
       <div class="snap-trend-header">
         <span class="snap-trend-title">Sales Trend</span>
@@ -542,7 +505,7 @@
   <div class="content-area">
 
     {% if sheets_url %}
-    <p class="sheets-link">Kindly Click <a href="{{ sheets_url }}">Here</a> for a detailed {{ month_label }} Sales performance.</p>
+    <p class="sheets-link">Kindly click <a href="{{ sheets_url }}">here</a> for a detailed {{ month_label }} Sales performance.</p>
     {% endif %}
 
     <div class="narrative-section">
@@ -578,7 +541,7 @@
         <div class="footer-icon">&#127760;</div>
         <div class="footer-text">info@dalatechnologies.com<br>www.dalatechnologies.com</div>
       </div>
-      <div class="footer-page-num">1</div>
+      <div class="footer-page-num">1 / 2</div>
     </div>
   </div>
 
@@ -588,19 +551,15 @@
 <!-- ═══════════════════════════════ PAGE 2 ═══════════════════════════════════ -->
 <div class="page page-break">
 
-  <!-- ── Header (identical) ──────────────────────────────────────────────── -->
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
   <div class="page-header">
     <div class="header-left">
       <div class="red-accent-bar"></div>
       {% if logo_path %}
         <img class="dala-logo" src="{{ logo_path }}" alt="DALA Technologies">
       {% else %}
-        <div class="dala-logo-ph">D</div>
+        <div class="dala-logo-ph">DALA</div>
       {% endif %}
-      <div class="company-name">
-        <div><span class="brand">DALA</span><span class="reg">®</span></div>
-        <div class="sub">Technologies</div>
-      </div>
     </div>
     <div class="diamond-cluster">
       <div class="d" style="width:32px;height:32px;background:#E8192C;top:2px;right:4px;"></div>
@@ -639,7 +598,7 @@
         <div class="footer-icon">&#127760;</div>
         <div class="footer-text">info@dalatechnologies.com<br>www.dalatechnologies.com</div>
       </div>
-      <div class="footer-page-num">2</div>
+      <div class="footer-page-num">2 / 2</div>
     </div>
   </div>
 

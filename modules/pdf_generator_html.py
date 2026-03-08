@@ -247,7 +247,7 @@ def _build_narrative_sections(brand_name: str, kpis: dict,
 
     if is_full_month:
         # Full month → strategic recommendations for NEXT month
-        rec_label = f'{next_month_name} Recommendations'
+        rec_label = 'Recommendations'
 
         # Stock replenishment
         if closing_stock_df is not None and not closing_stock_df.empty:
@@ -283,7 +283,7 @@ def _build_narrative_sections(brand_name: str, kpis: dict,
 
     else:
         # Partial month → actionable focus items for the REMAINDER of this month
-        rec_label = f'{month_name} Recommendations'
+        rec_label = 'Recommendations'
         week_label = (
             'Week 1' if weeks_elapsed == 1 else
             f'Week {weeks_elapsed}'
@@ -354,12 +354,14 @@ def render_pdf_report_html(brand_name: str, kpis: dict,
                            sheets_url: str = None) -> str:
     """Render the print-oriented report HTML used for PDF export."""
     # ── Charts (matplotlib → base64) ──────────────────────────────────────────
-    dual_trend_chart  = chart_dual_trend(kpis['daily_sales'])
-    stock_chart       = chart_stock_vertical(kpis['closing_stock'])
-    reorder_chart     = chart_reorder(kpis['reorder_analysis'])
-    heatmap_chart     = chart_store_heatmap(kpis['store_heatmap_df'])
-    top_stores_chart  = chart_top_stores(kpis['top_stores'])
-    top_products_chart = chart_product_value(kpis['product_value'])
+    # Use _for_print=True so charts are generated at print-optimised sizes
+    # with fonts scaled to be legible at the PDF snapshot display size.
+    dual_trend_chart   = chart_dual_trend(kpis['daily_sales'], _for_print=True)
+    stock_chart        = chart_stock_vertical(kpis['closing_stock'], _for_print=True)
+    reorder_chart      = chart_reorder(kpis['reorder_analysis'])
+    heatmap_chart      = chart_store_heatmap(kpis['store_heatmap_df'])
+    top_stores_chart   = chart_top_stores(kpis['top_stores'], _for_print=True)
+    top_products_chart = chart_product_value(kpis['product_value'], _for_print=True)
 
     # ── Performance scorecard ──────────────────────────────────────────────────
     perf = calculate_perf_score(kpis, portfolio_avg_revenue)
