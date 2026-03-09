@@ -47,8 +47,9 @@ from modules.portfolio_generator import generate_portfolio_html
 from modules.data_store       import DataStore
 from modules.alerts           import check_and_save_alerts, run_portfolio_alerts
 from modules.predictor        import build_brand_forecasts, stock_depletion_date, growth_label, growth_color
+from modules.gmv              import build_gmv_window
 from modules.activity_intelligence import load_activity_dataframe, build_activity_payload
-from modules.agent_copilot    import build_default_agent_actions, answer_admin_query
+from modules.agent_copilot    import build_default_agent_actions, answer_admin_query, execute_admin_request
 from modules.historical       import (
     get_brand_monthly_history, get_portfolio_monthly_trend,
     get_repeat_purchase_map_data, generate_insights,
@@ -119,6 +120,25 @@ def _safe_name(brand_name):
     return brand_name.replace(' ', '_').replace("'", '').replace('/', '-')
 
 
+def _brand_report_context(brand_name: str, cutoff_date: str | None = None) -> dict:
+    history = list(reversed(ds.get_brand_history(brand_name, limit=36)))
+    if cutoff_date:
+        cutoff = str(cutoff_date)[:10]
+        history = [
+            row for row in history
+            if not row.get('start_date') or str(row.get('start_date'))[:10] <= cutoff
+        ]
+
+    forecast_bundle = build_brand_forecasts({brand_name: history}).get(
+        ds.analytics_brand_name(brand_name), {}
+    )
+    return {
+        'history': history,
+        'growth_outlook': forecast_bundle.get('growth_outlook'),
+        'gmv_window': build_gmv_window(history, cutoff_date=cutoff_date),
+    }
+
+
 def _compute_and_save_churn(report_id: int):
     """
     Compute store churn for all brands in a report by comparing top_stores_json
@@ -182,6 +202,286 @@ def _queue_catalog_candidates(df, source_filename=None, report_id=None):
         )
     except Exception:
         return {'queued_brands': 0, 'queued_skus': 0}
+
+
+def _coerce_int(value):
+    try:
+        if value in (None, '', False):
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _current_copilot_context(overrides=None):
+    overrides = overrides or {}
+    view_args = request.view_args or {}
+    endpoint = str(overrides.get('endpoint') or request.endpoint or '')
+    path = str(overrides.get('path') or request.path or '')
+    report_id = (
+        _coerce_int(overrides.get('report_id')) or
+        request.args.get('report_id', type=int) or
+        _coerce_int(view_args.get('report_id'))
+    )
+    batch_id = (
+        _coerce_int(overrides.get('batch_id')) or
+        request.args.get('batch_id', type=int)
+    )
+    brand_name = (
+        str(
+            overrides.get('brand_name') or
+            overrides.get('brand') or
+            request.args.get('brand') or
+            view_args.get('brand_name') or
+            ''
+        ).strip() or None
+    )
+    retailer_code = (
+        str(
+            overrides.get('retailer_code') or
+            view_args.get('retailer_code') or
+            ''
+        ).strip() or None
+    )
+    token = str(overrides.get('token') or view_args.get('token') or '').strip() or None
+    if token and not brand_name:
+        brand_info = ds.get_brand_by_token(token)
+        brand_name = brand_info['brand_name'] if brand_info else None
+
+    report = ds.get_report(report_id) if report_id else None
+    if not report and endpoint in {
+        'dashboard', 'brands', 'brand_detail', 'copilot_dashboard',
+        'agent_actions_page', 'activity_intelligence', 'forecasting',
+    }:
+        report = ds.get_latest_report()
+        report_id = report['id'] if report else None
+    elif not report:
+        report = ds.get_latest_report()
+
+    page_label_map = {
+        'index': 'Home',
+        'dashboard': 'Dashboard',
+        'brands': 'Brand Partners',
+        'brand_detail': 'Brand 360',
+        'brand_portal': 'Brand Portal',
+        'forecasting': 'Forecasting',
+        'activity_intelligence': 'Activity',
+        'store_360': 'Store 360',
+        'catalog': 'Catalog',
+        'catalog_brand_detail': 'Catalog Brand',
+        'copilot_dashboard': 'Copilot',
+        'agent_actions_page': 'Agent Actions',
+        'database_page': 'Database',
+    }
+
+    return {
+        'endpoint': endpoint,
+        'path': path,
+        'page_label': page_label_map.get(endpoint, 'Workspace'),
+        'report_id': report_id or (report['id'] if report else None),
+        'report_label': report['month_label'] if report else None,
+        'report_type': report.get('report_type') if report else None,
+        'batch_id': batch_id,
+        'brand_name': brand_name,
+        'retailer_code': retailer_code,
+    }
+
+
+def _agent_action_link(action):
+    subject_type = action.get('subject_type')
+    subject_key = action.get('subject_key')
+    report_id = action.get('report_id')
+    if subject_type == 'brand' and subject_key:
+        if report_id:
+            return url_for('brand_detail', brand_name=subject_key, report_id=report_id)
+        return url_for('brand_detail', brand_name=subject_key)
+    if subject_type == 'store' and subject_key:
+        return url_for('store_360', retailer_code=subject_key)
+    if subject_type == 'catalog':
+        return url_for('catalog')
+    if subject_type == 'activity_batch':
+        return url_for('activity_intelligence', report_id=report_id) if report_id else url_for('activity_intelligence')
+    if report_id:
+        return url_for('dashboard', report_id=report_id)
+    return url_for('copilot_dashboard')
+
+
+def _serialize_agent_action_for_ui(action):
+    return {
+        'id': action.get('id'),
+        'title': action.get('title'),
+        'reason': action.get('reason'),
+        'priority': action.get('priority'),
+        'status': action.get('status'),
+        'agent_type': action.get('agent_type'),
+        'subject_type': action.get('subject_type'),
+        'subject_key': action.get('subject_key'),
+        'report_id': action.get('report_id'),
+        'payload': action.get('proposed_payload') or {},
+        'link': _agent_action_link(action),
+    }
+
+
+def _action_priority_rank(priority):
+    return {'critical': 0, 'high': 1, 'medium': 2, 'low': 3}.get(str(priority or '').lower(), 4)
+
+
+def _copilot_actions_for_context(context, limit=6):
+    pending_actions = ds.list_agent_actions(status='pending', limit=120)
+    brand_name = context.get('brand_name')
+    retailer_code = context.get('retailer_code')
+    report_id = context.get('report_id')
+    endpoint = context.get('endpoint')
+    scored = []
+    for action in pending_actions:
+        score = 0
+        subject_key = str(action.get('subject_key') or '')
+        if report_id and action.get('report_id') == report_id:
+            score += 2
+        if brand_name and ds.analytics_brand_name(subject_key) == ds.analytics_brand_name(brand_name):
+            score += 6
+        if retailer_code and subject_key.lower() == retailer_code.lower():
+            score += 6
+        if endpoint == 'activity_intelligence' and action.get('agent_type') == 'Activity Agent':
+            score += 3
+        if endpoint == 'forecasting' and action.get('agent_type') == 'Forecast Agent':
+            score += 3
+        if endpoint in {'catalog', 'catalog_brand_detail'} and action.get('agent_type') == 'Data Quality Agent':
+            score += 3
+        if endpoint in {'dashboard', 'brands'} and action.get('report_id') == report_id:
+            score += 1
+        if score <= 0 and not brand_name and not retailer_code and action.get('report_id') == report_id:
+            score = 1
+        scored.append((score, _action_priority_rank(action.get('priority')), action))
+
+    scored.sort(key=lambda item: (-(item[0]), item[1], -(item[2].get('id') or 0)))
+    selected = [item[2] for item in scored if item[0] > 0][:limit]
+    if len(selected) < limit:
+        used_ids = {item.get('id') for item in selected}
+        for _, _, action in scored:
+            if action.get('id') in used_ids:
+                continue
+            selected.append(action)
+            if len(selected) >= limit:
+                break
+    return [_serialize_agent_action_for_ui(action) for action in selected[:limit]]
+
+
+def _copilot_prompt_suggestions(context):
+    brand_name = context.get('brand_name')
+    retailer_code = context.get('retailer_code')
+    endpoint = context.get('endpoint')
+    if brand_name:
+        return [
+            f"Summarize {brand_name} right now.",
+            f"What should we do next for {brand_name}?",
+            f"Explain {brand_name} growth outlook.",
+            f"Draft a partner update for {brand_name}.",
+        ]
+    if retailer_code:
+        return [
+            "Summarize this store's latest issues.",
+            "Which brands have the strongest opportunity here?",
+            "What should the field team do next at this store?",
+            "List unresolved store risks.",
+        ]
+    if endpoint == 'forecasting':
+        return [
+            "Which brands need attention first from forecasting?",
+            "Explain the weakest forecast confidence items.",
+            "Which brands are growing by supermarket count?",
+            "What do the next actions look like from this forecast set?",
+        ]
+    if endpoint == 'activity_intelligence':
+        return [
+            "Summarize the latest activity issues.",
+            "Which field issues need immediate action?",
+            "Which stores show the strongest opportunities?",
+            "What should the field team prioritize next?",
+        ]
+    return [
+        "What needs attention this week?",
+        "What changed across the business?",
+        "Which brands are at risk right now?",
+        "Draft the next best actions for the team.",
+    ]
+
+
+def _copilot_welcome_text(context):
+    brand_name = context.get('brand_name')
+    retailer_code = context.get('retailer_code')
+    if brand_name:
+        return f"Watching {brand_name} across sales, forecast, activity, and pending actions."
+    if retailer_code:
+        return f"Tracking store {retailer_code} across visits, issues, and brand mentions."
+    return "Connected to reports, forecasts, activity, alerts, catalog decisions, and agent memory."
+
+
+def _refresh_copilot_state(report_id=None, reason='system_update', brand_name=None,
+                           retailer_code=None, batch_id=None, source='system'):
+    report = ds.get_report(report_id) if report_id else ds.get_latest_report()
+    if report:
+        report_id = report['id']
+        build_default_agent_actions(ds, report)
+    activity_summary = ds.get_activity_summary(
+        batch_id=batch_id,
+        report_id=report_id,
+        brand_name=brand_name,
+    )
+    pending_count = len(ds.list_agent_actions(status='pending', limit=100))
+    memory_parts = [f"State refresh triggered by {reason}."]
+    if report:
+        memory_parts.append(
+            f"Current report is {report['month_label']} ({report.get('report_type') or 'custom'})."
+        )
+    if brand_name and report_id:
+        kpis = ds.get_brand_kpis_single(report_id, brand_name)
+        if kpis:
+            memory_parts.append(
+                f"{brand_name}: revenue ₦{float(kpis.get('total_revenue', 0)):,.2f}, "
+                f"{int(kpis.get('num_stores', 0))} stores, repeat {float(kpis.get('repeat_pct', 0)):.1f}%."
+            )
+    if retailer_code:
+        store_summary = ds.get_store_activity_summary(retailer_code)
+        if store_summary.get('store'):
+            memory_parts.append(
+                f"Store {store_summary['store'].get('retailer_name') or retailer_code}: "
+                f"{int(store_summary.get('visit_count', 0))} visits, "
+                f"{int(store_summary.get('issue_count', 0))} issues."
+            )
+    if activity_summary.get('totals'):
+        memory_parts.append(
+            f"Activity snapshot: {int(activity_summary['totals'].get('visits', 0))} visits, "
+            f"{int(activity_summary['totals'].get('issues', 0))} issues, "
+            f"{pending_count} pending actions."
+        )
+    scope_type = 'system'
+    scope_key = 'global'
+    if brand_name:
+        scope_type = 'brand'
+        scope_key = ds.analytics_brand_name(brand_name)
+    elif retailer_code:
+        scope_type = 'store'
+        scope_key = retailer_code
+    elif batch_id:
+        scope_type = 'activity_batch'
+        scope_key = str(batch_id)
+    elif report_id:
+        scope_type = 'report'
+        scope_key = str(report_id)
+    ds.save_agent_memory(
+        scope_type=scope_type,
+        scope_key=scope_key,
+        memory_text=' '.join(memory_parts),
+        memory_kind='state_refresh',
+        confidence=0.72,
+        source=source,
+    )
+
+
+@app.context_processor
+def inject_copilot_context():
+    return {'copilot_context': _current_copilot_context()}
 
 
 def _review_catalog_item(item_id, action, note=None, target_brand_id=None, target_sku_id=None):
@@ -683,10 +983,7 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
             """Attempt PDF generation with retries. Returns (success, is_pdf, error)."""
             for attempt in range(max_retries):
                 try:
-                    growth_history = list(reversed(ds.get_brand_history(brand_name, limit=36)))
-                    growth_outlook = build_brand_forecasts({brand_name: growth_history}).get(
-                        ds.analytics_brand_name(brand_name), {}
-                    ).get('growth_outlook')
+                    report_context = _brand_report_context(brand_name, cutoff_date=end_date)
                     result_path = generate_pdf_html(
                         output_path=pdf_path, brand_name=brand_name, kpis=kpis,
                         start_date=start_date, end_date=end_date,
@@ -696,7 +993,8 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
                         month_label=report_meta.get('month_label'),
                         ai_narrative=ai_narratives.get(brand_name),
                         sheets_url=sheets_urls.get(brand_name),
-                        growth_outlook=growth_outlook,
+                        growth_outlook=report_context.get('growth_outlook'),
+                        gmv_window=report_context.get('gmv_window'),
                     )
                     # Check if PDF was actually created or if HTML fallback was used
                     is_pdf = result_path.endswith('.pdf') and os.path.exists(result_path)
@@ -718,17 +1016,15 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
             """Attempt HTML generation with retries."""
             for attempt in range(max_retries):
                 try:
-                    growth_history = list(reversed(ds.get_brand_history(brand_name, limit=36)))
-                    growth_outlook = build_brand_forecasts({brand_name: growth_history}).get(
-                        ds.analytics_brand_name(brand_name), {}
-                    ).get('growth_outlook')
+                    report_context = _brand_report_context(brand_name, cutoff_date=end_date)
                     generate_html(output_path=html_path, brand_name=brand_name, kpis=kpis,
                                   start_date=start_date, end_date=end_date,
                                   portfolio_avg_revenue=portfolio_avg_revenue,
                                   total_portfolio_revenue=total_portfolio_revenue,
                                   report_type=report_type or report_meta.get('report_type'),
                                   month_label=report_meta.get('month_label'),
-                                  growth_outlook=growth_outlook)
+                                  growth_outlook=report_context.get('growth_outlook'),
+                                  gmv_window=report_context.get('gmv_window'))
                     return True, None
                 except Exception as e:
                     if attempt < max_retries - 1:
@@ -791,6 +1087,11 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
         for b in brands:
             ds.get_or_create_token(b)
 
+        _refresh_copilot_state(
+            report_id=report_id,
+            reason=f'report_generation:{filename}',
+            source='report_generation',
+        )
         _upd(progress=100, status='done', current_brand=None,
              portfolio_file=portfolio_filename)
 
@@ -1165,6 +1466,7 @@ def generate():
         history = ds.get_brand_history(brand_name, limit=3)
         check_and_save_alerts(report_id, brand_name, kpis,
                               portfolio_avg_revenue, history[1:], ds)
+        report_context = _brand_report_context(brand_name, cutoff_date=end_date)
 
         # PDF
         try:
@@ -1178,6 +1480,8 @@ def generate():
                 total_portfolio_revenue=total_portfolio_revenue,
                 report_type=report_type or report_meta.get('report_type'),
                 month_label=report_meta.get('month_label'),
+                growth_outlook=report_context.get('growth_outlook'),
+                gmv_window=report_context.get('gmv_window'),
             )
             ok_pdf += 1
         except Exception as e:
@@ -1195,6 +1499,8 @@ def generate():
                 total_portfolio_revenue=total_portfolio_revenue,
                 report_type=report_type or report_meta.get('report_type'),
                 month_label=report_meta.get('month_label'),
+                growth_outlook=report_context.get('growth_outlook'),
+                gmv_window=report_context.get('gmv_window'),
             )
             ok_html += 1
         except Exception as e:
@@ -1216,6 +1522,11 @@ def generate():
 
     # Portfolio-level alerts
     run_portfolio_alerts(report_id, ds.get_all_brand_kpis(report_id), ds)
+    _refresh_copilot_state(
+        report_id=report_id,
+        reason=f'sync_generate:{file.filename}',
+        source='report_generation',
+    )
 
     return jsonify({
         'success':    True,
@@ -1595,6 +1906,7 @@ def acknowledge():
     if not alert_id:
         return jsonify({'success': False}), 400
     ds.acknowledge_alert(alert_id)
+    _refresh_copilot_state(reason=f'alert_acknowledged:{alert_id}', source='alert_update')
     return jsonify({'success': True, 'remaining': ds.get_unacknowledged_count()})
 
 
@@ -1608,6 +1920,7 @@ def update_contact():
         return jsonify({'success': False, 'error': 'brand_name required'}), 400
     ds.get_or_create_token(brand_name)  # ensure row exists
     ds.update_brand_contact(brand_name, email=email, whatsapp=whatsapp)
+    _refresh_copilot_state(brand_name=brand_name, reason='contact_update', source='brand_update')
     return jsonify({'success': True})
 
 
@@ -1624,6 +1937,7 @@ def regenerate_token():
 @app.route('/api/catalog/resync', methods=['POST'])
 def api_catalog_resync():
     ds.sync_catalog_from_history()
+    _refresh_copilot_state(reason='catalog_resync', source='catalog_update')
     return jsonify({'success': True, 'summary': ds.get_catalog_summary()})
 
 
@@ -1656,6 +1970,11 @@ def api_catalog_brand():
             whatsapp=(data.get('default_whatsapp') or '').strip() or None,
             notes=(data.get('notes') or '').strip() or None,
         )
+    _refresh_copilot_state(
+        brand_name=brand.get('canonical_name') if brand else brand_name,
+        reason='catalog_brand_upsert',
+        source='catalog_update',
+    )
     return jsonify({'success': True, 'brand': brand})
 
 
@@ -1676,12 +1995,19 @@ def api_catalog_sku():
         launch_date=(data.get('launch_date') or '').strip() or None,
         notes=(data.get('notes') or '').strip() or None,
     )
+    brand = ds.get_brand_master(brand_id)
+    _refresh_copilot_state(
+        brand_name=brand.get('canonical_name') if brand else None,
+        reason='catalog_sku_upsert',
+        source='catalog_update',
+    )
     return jsonify({'success': True, 'sku': sku})
 
 
 @app.route('/api/catalog/review/<int:item_id>', methods=['POST'])
 def api_catalog_review(item_id):
     data = request.get_json(silent=True) or {}
+    item = ds.get_catalog_review_item(item_id)
     try:
         result = _review_catalog_item(
             item_id=item_id,
@@ -1692,6 +2018,11 @@ def api_catalog_review(item_id):
         )
     except Exception as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
+    _refresh_copilot_state(
+        brand_name=item.get('brand_candidate') if item else None,
+        reason=f'catalog_review:{data.get("action") or "unknown"}',
+        source='catalog_update',
+    )
     return jsonify({'success': True, 'result': result, 'summary': ds.get_catalog_summary()})
 
 
@@ -1816,7 +2147,7 @@ def _reconstruct_kpis_from_db(report_id: int, brand_name: str) -> dict:
     heatmap_df       = _load_df(detail.get('heatmap_json'),       ['Store', 'Date', 'Orders'])
 
     # Derive top SKU from product_qty
-    top_sku     = product_qty_df.iloc[0]['SKU']     if not product_qty_df.empty else '—'
+    top_sku     = product_qty_df.iloc[0]['SKU']     if not product_qty_df.empty else '-'
     top_sku_qty = product_qty_df.iloc[0]['Quantity'] if not product_qty_df.empty else 0
     peak_date = bk.get('peak_date')
     peak_qty = 0
@@ -1865,6 +2196,7 @@ def _reconstruct_kpis_from_db(report_id: int, brand_name: str) -> dict:
     return {
         # Scalars
         'total_revenue':         bk.get('total_revenue', 0),
+        'gmv':                   bk.get('total_revenue', 0),
         'total_qty':             bk.get('total_qty', 0),
         'num_stores':            bk.get('num_stores', 0),
         'unique_skus':           bk.get('unique_skus', 0),
@@ -1881,7 +2213,7 @@ def _reconstruct_kpis_from_db(report_id: int, brand_name: str) -> dict:
         'peak_date':             peak_date,
         'peak_revenue':          bk.get('peak_revenue', 0),
         'peak_qty':              peak_qty,
-        'top_store_name':        bk.get('top_store_name') or '—',
+        'top_store_name':        bk.get('top_store_name') or '-',
         'top_store_revenue':     bk.get('top_store_revenue', 0),
         'top_store_pct':         top_store_pct,
         'wow_rev_change':        bk.get('wow_rev_change', 0),
@@ -1923,10 +2255,7 @@ def _build_brand_report_pdf_bytes(report_id: int, brand_name: str,
     all_brand_kpis = all_brand_kpis or ds.get_all_brand_kpis(report_id)
     total_portfolio = sum(b['total_revenue'] for b in all_brand_kpis)
     avg_portfolio   = total_portfolio / max(len(all_brand_kpis), 1)
-    growth_history = list(reversed(ds.get_brand_history(brand_name, limit=36)))
-    growth_outlook = build_brand_forecasts({brand_name: growth_history}).get(
-        ds.analytics_brand_name(brand_name), {}
-    ).get('growth_outlook')
+    report_context = _brand_report_context(brand_name, cutoff_date=report.get('end_date'))
 
     # Use the premium 2-page print template (report_template.html)
     html = render_pdf_report_html(
@@ -1938,7 +2267,8 @@ def _build_brand_report_pdf_bytes(report_id: int, brand_name: str,
         total_portfolio_revenue=total_portfolio,
         report_type=report.get('report_type'),
         month_label=report.get('month_label'),
-        growth_outlook=growth_outlook,
+        growth_outlook=report_context.get('growth_outlook'),
+        gmv_window=report_context.get('gmv_window'),
     )
     return render_pdf_bytes(html)
 
@@ -2115,10 +2445,7 @@ def api_report_html(report_id, brand_name):
     all_bk          = ds.get_all_brand_kpis(report_id)
     total_portfolio = sum(b['total_revenue'] for b in all_bk)
     avg_portfolio   = total_portfolio / max(len(all_bk), 1)
-    growth_history = list(reversed(ds.get_brand_history(brand_name, limit=36)))
-    growth_outlook = build_brand_forecasts({brand_name: growth_history}).get(
-        ds.analytics_brand_name(brand_name), {}
-    ).get('growth_outlook')
+    report_context = _brand_report_context(brand_name, cutoff_date=report.get('end_date'))
 
     try:
         html_content = render_html_report(
@@ -2130,7 +2457,8 @@ def api_report_html(report_id, brand_name):
             total_portfolio_revenue=total_portfolio,
             report_type=report.get('report_type'),
             month_label=report.get('month_label'),
-            growth_outlook=growth_outlook,
+            growth_outlook=report_context.get('growth_outlook'),
+            gmv_window=report_context.get('gmv_window'),
         )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2149,6 +2477,12 @@ def list_files():
 
 @app.route('/forecasting')
 def forecasting():
+    import re as _re
+    import json as _json
+
+    def _forecast_anchor(value):
+        return _re.sub(r'[^a-z0-9]+', '-', str(value or '').lower()).strip('-') or 'brand'
+
     alert_count = ds.get_unacknowledged_count()
     report      = ds.get_latest_report()
     all_brands  = ds.get_all_brands_in_db()
@@ -2157,7 +2491,8 @@ def forecasting():
                                forecasts_json='{}', depletions={},
                                growing_count=0, declining_count=0,
                                stable_count=0, stock_warning_count=0,
-                               report=None, alert_count=alert_count)
+                               report=None, alert_count=alert_count,
+                               forecast_groups={}, horizon_sections={}, horizon_nav=[])
 
     brand_histories = {b: list(reversed(ds.get_brand_history(b, limit=36)))
                        for b in all_brands}
@@ -2178,19 +2513,60 @@ def forecasting():
     eligible_6m_count = sum(1 for f in forecasts.values() if f.get('horizons', {}).get('6m', {}).get('eligible'))
     eligible_12m_count = sum(1 for f in forecasts.values() if f.get('horizons', {}).get('12m', {}).get('eligible'))
 
-    # Serialise forecasts to JSON (no numpy types)
-    import json as _json
-    forecasts_safe = forecasts
+    sorted_forecast_items = sorted(forecasts.items(), key=lambda item: item[0].lower())
+    forecast_groups = {
+        'Growing': [],
+        'Stable': [],
+        'Declining': [],
+        'Insufficient Data': [],
+    }
+    horizon_sections = {
+        '3m': {'label': '3-Month Analysis', 'months': 3, 'items': []},
+        '6m': {'label': '6-Month Analysis', 'months': 6, 'items': []},
+        '12m': {'label': '1-Year Analysis', 'months': 12, 'items': []},
+    }
+
+    ordered_forecasts = {}
+    for brand, fc in sorted_forecast_items:
+        anchor = _forecast_anchor(brand)
+        item = {
+            'brand': brand,
+            'anchor': anchor,
+            'forecast': fc,
+            'depletion': depletions.get(brand, {}),
+        }
+        forecast_groups.setdefault(fc.get('growth_label') or 'Insufficient Data', []).append(item)
+        ordered_forecasts[brand] = fc
+
+        for key in ('3m', '6m', '12m'):
+            hz = (fc.get('horizons') or {}).get(key, {})
+            if hz.get('eligible'):
+                horizon_sections[key]['items'].append({
+                    'brand': brand,
+                    'anchor': anchor,
+                    'forecast': fc,
+                    'horizon': hz,
+                    'depletion': depletions.get(brand, {}),
+                })
+
+    horizon_nav = [
+        {'key': '3m', 'label': '3-Month Analysis', 'count': len(horizon_sections['3m']['items'])},
+        {'key': '6m', 'label': '6-Month Analysis', 'count': len(horizon_sections['6m']['items'])},
+        {'key': '12m', 'label': '1-Year Analysis', 'count': len(horizon_sections['12m']['items'])},
+    ]
 
     return render_template('portal/forecasting.html',
-                           forecasts=forecasts, forecasts_json=_json.dumps(forecasts_safe),
+                           forecasts=ordered_forecasts, forecasts_json=_json.dumps(ordered_forecasts),
                            depletions=depletions, report=report,
                            growing_count=growing_count, declining_count=declining_count,
                            stable_count=stable_count, stock_warning_count=stock_warning_count,
                            eligible_3m_count=eligible_3m_count,
                            eligible_6m_count=eligible_6m_count,
                            eligible_12m_count=eligible_12m_count,
-                           alert_count=alert_count)
+                           alert_count=alert_count,
+                           forecast_groups=forecast_groups,
+                           horizon_sections=horizon_sections,
+                           horizon_nav=horizon_nav)
 
 
 # ── Brand Leaderboard ─────────────────────────────────────────────────────────
@@ -2323,6 +2699,11 @@ def api_set_target():
         return redirect(url_for('targets'))
     ds.set_target(brand_name, month_label, target_revenue=target_revenue)
     ds.log_activity('target_set', f'Target ₦{target_revenue:,.0f} for {brand_name} ({month_label})', brand_name)
+    _refresh_copilot_state(
+        brand_name=brand_name,
+        reason=f'target_update:{month_label}',
+        source='target_update',
+    )
     return redirect(url_for('targets', month=month_label))
 
 
@@ -2348,6 +2729,7 @@ def api_save_alert_rule():
         severity    = request.form.get('severity', 'medium'),
     )
     ds.log_activity('alert_rule_created', request.form.get('rule_name', ''))
+    _refresh_copilot_state(reason='alert_rule_created', source='alert_rule')
     return redirect(url_for('alert_rules_view'))
 
 
@@ -2356,6 +2738,7 @@ def api_toggle_alert_rule():
     rule_id = int(request.form.get('rule_id', 0))
     active  = int(request.form.get('active', 1))
     ds.toggle_alert_rule(rule_id, active)
+    _refresh_copilot_state(reason=f'alert_rule_toggle:{rule_id}', source='alert_rule')
     return redirect(url_for('alert_rules_view'))
 
 
@@ -2363,6 +2746,7 @@ def api_toggle_alert_rule():
 def api_delete_alert_rule():
     rule_id = int(request.form.get('rule_id', 0))
     ds.delete_alert_rule(rule_id)
+    _refresh_copilot_state(reason=f'alert_rule_delete:{rule_id}', source='alert_rule')
     return redirect(url_for('alert_rules_view'))
 
 
@@ -2579,6 +2963,72 @@ def agent_actions_page():
     )
 
 
+def _build_copilot_state_payload(context):
+    report_id = context.get('report_id')
+    report = ds.get_report(report_id) if report_id else ds.get_latest_report()
+    if report:
+        build_default_agent_actions(ds, report)
+    pending_total = len(ds.list_agent_actions(status='pending', limit=100))
+    payload = {
+        'context': context,
+        'welcome': _copilot_welcome_text(context),
+        'prompts': _copilot_prompt_suggestions(context),
+        'actions': _copilot_actions_for_context(context, limit=6),
+        'pending_total': pending_total,
+        'execution_states': ['thinking', 'planning', 'executing', 'waiting', 'job_running', 'completed', 'failed'],
+        'report': {
+            'id': report['id'],
+            'month_label': report['month_label'],
+            'report_type': report.get('report_type'),
+        } if report else None,
+        'activity_totals': {},
+        'memory_preview': [],
+        'schedule_preview': ds.list_assistant_jobs(limit=6),
+        'pending_actions': ds.list_agent_actions(status='pending', limit=12),
+    }
+    subject_type = 'system'
+    subject_key = 'global'
+    if context.get('brand_name'):
+        subject_type = 'brand'
+        subject_key = context['brand_name']
+    elif context.get('retailer_code'):
+        subject_type = 'store'
+        subject_key = context['retailer_code']
+    elif report:
+        subject_type = 'report'
+        subject_key = str(report['id'])
+    payload['memory_preview'] = ds.list_agent_memories(
+        limit=6,
+        subject_type=subject_type,
+        subject_key=subject_key,
+    )
+    if report:
+        activity_summary = ds.get_activity_summary(
+            batch_id=context.get('batch_id'),
+            report_id=report['id'],
+            brand_name=context.get('brand_name'),
+        )
+        payload['activity_totals'] = activity_summary.get('totals', {})
+    if context.get('brand_name') and report:
+        brand_kpis = ds.get_brand_kpis_single(report['id'], context['brand_name'])
+        payload['brand_snapshot'] = {
+            'brand_name': context['brand_name'],
+            'revenue': float(brand_kpis.get('total_revenue', 0)) if brand_kpis else 0,
+            'stores': int(brand_kpis.get('num_stores', 0)) if brand_kpis else 0,
+            'repeat_pct': float(brand_kpis.get('repeat_pct', 0)) if brand_kpis else 0,
+        } if brand_kpis else None
+    if context.get('retailer_code'):
+        store_summary = ds.get_store_activity_summary(context['retailer_code'])
+        if store_summary.get('store'):
+            payload['store_snapshot'] = {
+                'retailer_name': store_summary['store'].get('retailer_name'),
+                'visit_count': int(store_summary.get('visit_count', 0)),
+                'issue_count': int(store_summary.get('issue_count', 0)),
+                'brand_mentions': int(store_summary.get('brand_mentions', 0)),
+            }
+    return payload
+
+
 @app.route('/api/activity')
 def api_activity():
     limit = min(int(request.args.get('limit', 50)), 200)
@@ -2591,36 +3041,107 @@ def api_activity_import():
     if not uploaded or uploaded.filename == '':
         return jsonify({'success': False, 'error': 'No activity file uploaded.'}), 400
 
+    file_bytes = uploaded.read()
+    if not file_bytes:
+        return jsonify({'success': False, 'error': 'The uploaded activity file is empty.'}), 400
+
+    filename = uploaded.filename or 'activity_upload'
     explicit_report_id = request.form.get('report_id', type=int)
-    try:
-        df, meta = load_activity_dataframe(uploaded)
-    except Exception as exc:
-        return jsonify({'success': False, 'error': f'Could not parse activity file: {exc}'}), 422
+    job_id = uuid.uuid4().hex
+    ds.create_job(job_id)
+    ds.update_job(job_id, progress=3, current_brand='Preparing activity import')
 
-    report_id = explicit_report_id
-    if not report_id and not df.empty:
-        inferred = ds.find_report_covering_range(df['activity_date'].min(), df['activity_date'].max())
-        report_id = inferred['id'] if inferred else None
+    def _run():
+        report_id = explicit_report_id
+        try:
+            ds.update_job(job_id, progress=8, current_brand='Reading activity file')
+            df, meta = load_activity_dataframe(file_bytes)
 
-    try:
-        payload = build_activity_payload(df, ds=ds, source_filename=uploaded.filename, report_id=report_id)
-        batch_id = ds.save_activity_import(
-            payload,
-            source_filename=uploaded.filename,
-            source_type=meta.get('source_type'),
-            report_id=report_id,
-        )
-        linked_report = ds.get_report(report_id) if report_id else None
-        if linked_report:
-            build_default_agent_actions(ds, linked_report)
-        return jsonify({
-            'success': True,
-            'batch_id': batch_id,
-            'report_id': report_id,
-            'summary': payload.get('summary', {}),
-        })
-    except Exception as exc:
-        return jsonify({'success': False, 'error': str(exc)}), 500
+            ds.update_job(
+                job_id,
+                progress=18,
+                total=len(df),
+                current_brand='Matching activity dates to a report',
+            )
+
+            if not report_id and not df.empty:
+                inferred = ds.find_report_covering_range(df['activity_date'].min(), df['activity_date'].max())
+                report_id = inferred['id'] if inferred else None
+
+            def _progress(progress_value, message):
+                ds.update_job(
+                    job_id,
+                    progress=max(18, min(int(progress_value), 95)),
+                    current_brand=message,
+                    report_id=report_id,
+                )
+
+            payload = build_activity_payload(
+                df,
+                ds=ds,
+                source_filename=filename,
+                report_id=report_id,
+                progress_cb=_progress,
+            )
+
+            ds.update_job(job_id, progress=92, current_brand='Saving activity summary', report_id=report_id)
+            batch_id = ds.save_activity_import(
+                payload,
+                source_filename=filename,
+                source_type=meta.get('source_type'),
+                report_id=report_id,
+            )
+
+            linked_report = ds.get_report(report_id) if report_id else None
+            if linked_report:
+                build_default_agent_actions(ds, linked_report)
+
+            top_brands = (payload.get('summary') or {}).get('top_brands') or []
+            primary_brand = top_brands[0].get('brand_name') if top_brands else None
+
+            ds.update_job(
+                job_id,
+                progress=97,
+                current_brand='Refreshing Activity summaries',
+                report_id=report_id,
+                result_json={
+                    'batch_id': batch_id,
+                    'report_id': report_id,
+                    'summary': payload.get('summary', {}),
+                },
+            )
+
+            _refresh_copilot_state(
+                report_id=report_id,
+                batch_id=batch_id,
+                brand_name=primary_brand,
+                reason=f'activity_import:{filename}',
+                source='activity_import',
+            )
+
+            ds.update_job(
+                job_id,
+                status='done',
+                progress=100,
+                current_brand='Activity import complete',
+                report_id=report_id,
+                result_json={
+                    'batch_id': batch_id,
+                    'report_id': report_id,
+                    'summary': payload.get('summary', {}),
+                },
+            )
+        except Exception as exc:
+            ds.update_job(
+                job_id,
+                status='error',
+                current_brand='Activity import failed',
+                report_id=report_id,
+                error_msg=str(exc),
+            )
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({'success': True, 'job_id': job_id})
 
 
 @app.route('/api/activity/summary')
@@ -2629,6 +3150,14 @@ def api_activity_summary():
     report_id = request.args.get('report_id', type=int)
     brand_name = (request.args.get('brand_name') or '').strip() or None
     return jsonify(ds.get_activity_summary(batch_id=batch_id, report_id=report_id, brand_name=brand_name))
+
+
+@app.route('/api/activity/job/<job_id>')
+def api_activity_job(job_id):
+    job = ds.get_job(job_id)
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+    return jsonify(job)
 
 
 @app.route('/api/activity/brand/<path:brand_name>')
@@ -2641,17 +3170,231 @@ def api_activity_store_summary(retailer_code):
     return jsonify(ds.get_store_activity_summary(retailer_code))
 
 
+@app.route('/api/copilot/state')
+def api_copilot_state():
+    context = _current_copilot_context(request.args.to_dict())
+    return jsonify({'success': True, **_build_copilot_state_payload(context)})
+
+
 @app.route('/api/copilot/query', methods=['POST'])
 def api_copilot_query():
     payload = request.get_json(silent=True) or request.form or {}
     question = str(payload.get('question') or '').strip()
-    brand_name = str(payload.get('brand_name') or '').strip() or None
     if not question:
         return jsonify({'success': False, 'error': 'question is required'}), 400
-    report = ds.get_latest_report()
+    context = _current_copilot_context(payload.get('page_context') or payload)
+    report_id = context.get('report_id')
+    report = ds.get_report(report_id) if report_id else ds.get_latest_report()
     if report:
         build_default_agent_actions(ds, report)
-    result = answer_admin_query(ds, question, report=report, brand_name=brand_name)
+    result = answer_admin_query(
+        ds,
+        question,
+        report=report,
+        brand_name=context.get('brand_name'),
+        retailer_code=context.get('retailer_code'),
+        batch_id=context.get('batch_id'),
+        page_context=context,
+        confirmation_token=payload.get('confirmation_token'),
+        operator_mode=bool(payload.get('operator_mode', True)),
+        idempotency_key=payload.get('idempotency_key'),
+    )
+    return jsonify({
+        'success': True,
+        **result,
+        **_build_copilot_state_payload(context),
+    })
+
+
+@app.route('/api/copilot/execute', methods=['POST'])
+def api_copilot_execute():
+    payload = request.get_json(silent=True) or request.form or {}
+    tool_name = str(payload.get('tool_name') or '').strip()
+    if not tool_name:
+        return jsonify({'success': False, 'error': 'tool_name is required'}), 400
+    context = _current_copilot_context(payload.get('page_context') or payload)
+    report_id = context.get('report_id')
+    report = ds.get_report(report_id) if report_id else ds.get_latest_report()
+    result = execute_admin_request(
+        ds,
+        tool_name,
+        arguments=payload.get('arguments') or {},
+        page_context=context,
+        report=report,
+        brand_name=context.get('brand_name'),
+        retailer_code=context.get('retailer_code'),
+        batch_id=context.get('batch_id'),
+        confirmation_token=payload.get('confirmation_token'),
+        operator_mode=bool(payload.get('operator_mode', True)),
+        idempotency_key=payload.get('idempotency_key'),
+    )
+    return jsonify({
+        'success': True,
+        **result,
+        **_build_copilot_state_payload(context),
+    })
+
+
+@app.route('/api/copilot/memory')
+def api_copilot_memory():
+    limit = min(int(request.args.get('limit', 25)), 100)
+    pinned_raw = request.args.get('pinned')
+    pinned = None if pinned_raw in (None, '', 'all') else pinned_raw.lower() in {'1', 'true', 'yes'}
+    memories = ds.list_agent_memories(
+        limit=limit,
+        memory_layer=request.args.get('memory_layer') or None,
+        pinned=pinned,
+        subject_type=request.args.get('subject_type') or None,
+        subject_key=request.args.get('subject_key') or None,
+        query=request.args.get('query') or None,
+    )
+    return jsonify({'success': True, 'items': memories})
+
+
+@app.route('/api/copilot/memory/pin', methods=['POST'])
+def api_copilot_memory_pin():
+    payload = request.get_json(silent=True) or request.form or {}
+    memory_id = int(payload.get('memory_id') or 0)
+    if not memory_id:
+        return jsonify({'success': False, 'error': 'memory_id is required'}), 400
+    memory = ds.pin_agent_memory(memory_id, pinned=bool(payload.get('pinned', True)))
+    return jsonify({'success': True, 'memory': memory})
+
+
+@app.route('/api/copilot/connectors')
+def api_copilot_connectors():
+    context = _current_copilot_context(request.args.to_dict())
+    report_id = context.get('report_id')
+    report = ds.get_report(report_id) if report_id else ds.get_latest_report()
+    result = execute_admin_request(
+        ds,
+        'list_connectors',
+        arguments={},
+        page_context=context,
+        report=report,
+        brand_name=context.get('brand_name'),
+        retailer_code=context.get('retailer_code'),
+        batch_id=context.get('batch_id'),
+    )
+    return jsonify({'success': True, **result})
+
+
+@app.route('/api/copilot/connectors/<connector>/run', methods=['POST'])
+def api_copilot_connector_run(connector):
+    payload = request.get_json(silent=True) or request.form or {}
+    context = _current_copilot_context(payload.get('page_context') or payload)
+    report_id = context.get('report_id')
+    report = ds.get_report(report_id) if report_id else ds.get_latest_report()
+    arguments = dict(payload.get('arguments') or {})
+    arguments['connector'] = connector
+    if payload.get('action') and 'action' not in arguments:
+        arguments['action'] = payload.get('action')
+    result = execute_admin_request(
+        ds,
+        'run_connector',
+        arguments=arguments,
+        page_context=context,
+        report=report,
+        brand_name=context.get('brand_name'),
+        retailer_code=context.get('retailer_code'),
+        batch_id=context.get('batch_id'),
+        confirmation_token=payload.get('confirmation_token'),
+        operator_mode=bool(payload.get('operator_mode', True)),
+        idempotency_key=payload.get('idempotency_key'),
+    )
+    return jsonify({'success': True, **result})
+
+
+@app.route('/api/copilot/schedules', methods=['GET', 'POST'])
+def api_copilot_schedules():
+    if request.method == 'GET':
+        status = request.args.get('status', 'all')
+        limit = min(int(request.args.get('limit', 25)), 100)
+        return jsonify({'success': True, 'items': ds.list_assistant_jobs(status=status, limit=limit)})
+
+    payload = request.get_json(silent=True) or request.form or {}
+    context = _current_copilot_context(payload.get('page_context') or payload)
+    report_id = context.get('report_id')
+    report = ds.get_report(report_id) if report_id else ds.get_latest_report()
+    arguments = dict(payload.get('arguments') or {})
+    for key in ('label', 'job_type', 'target', 'connector', 'cadence', 'next_run', 'status'):
+        if payload.get(key) is not None and key not in arguments:
+            arguments[key] = payload.get(key)
+    if payload.get('payload') is not None and 'payload' not in arguments:
+        arguments['payload'] = payload.get('payload')
+    result = execute_admin_request(
+        ds,
+        'create_schedule',
+        arguments=arguments,
+        page_context=context,
+        report=report,
+        brand_name=context.get('brand_name'),
+        retailer_code=context.get('retailer_code'),
+        batch_id=context.get('batch_id'),
+        idempotency_key=payload.get('idempotency_key'),
+    )
+    return jsonify({'success': True, **result})
+
+
+@app.route('/api/copilot/schedules/<int:schedule_id>/pause', methods=['POST'])
+def api_copilot_schedule_pause(schedule_id):
+    payload = request.get_json(silent=True) or request.form or {}
+    context = _current_copilot_context(payload.get('page_context') or payload)
+    report_id = context.get('report_id')
+    report = ds.get_report(report_id) if report_id else ds.get_latest_report()
+    result = execute_admin_request(
+        ds,
+        'pause_schedule',
+        arguments={'schedule_id': schedule_id},
+        page_context=context,
+        report=report,
+        brand_name=context.get('brand_name'),
+        retailer_code=context.get('retailer_code'),
+        batch_id=context.get('batch_id'),
+        idempotency_key=payload.get('idempotency_key'),
+    )
+    return jsonify({'success': True, **result})
+
+
+@app.route('/api/copilot/schedules/<int:schedule_id>/resume', methods=['POST'])
+def api_copilot_schedule_resume(schedule_id):
+    payload = request.get_json(silent=True) or request.form or {}
+    context = _current_copilot_context(payload.get('page_context') or payload)
+    report_id = context.get('report_id')
+    report = ds.get_report(report_id) if report_id else ds.get_latest_report()
+    result = execute_admin_request(
+        ds,
+        'resume_schedule',
+        arguments={'schedule_id': schedule_id},
+        page_context=context,
+        report=report,
+        brand_name=context.get('brand_name'),
+        retailer_code=context.get('retailer_code'),
+        batch_id=context.get('batch_id'),
+        idempotency_key=payload.get('idempotency_key'),
+    )
+    return jsonify({'success': True, **result})
+
+
+@app.route('/api/copilot/schedules/<int:schedule_id>/run-now', methods=['POST'])
+def api_copilot_schedule_run_now(schedule_id):
+    payload = request.get_json(silent=True) or request.form or {}
+    context = _current_copilot_context(payload.get('page_context') or payload)
+    report_id = context.get('report_id')
+    report = ds.get_report(report_id) if report_id else ds.get_latest_report()
+    result = execute_admin_request(
+        ds,
+        'run_schedule_now',
+        arguments={'schedule_id': schedule_id},
+        page_context=context,
+        report=report,
+        brand_name=context.get('brand_name'),
+        retailer_code=context.get('retailer_code'),
+        batch_id=context.get('batch_id'),
+        confirmation_token=payload.get('confirmation_token'),
+        operator_mode=bool(payload.get('operator_mode', True)),
+        idempotency_key=payload.get('idempotency_key'),
+    )
     return jsonify({'success': True, **result})
 
 
@@ -2670,6 +3413,13 @@ def api_agent_action_approve(action_id):
     action = ds.update_agent_action_status(action_id, 'approved', actor='admin', note=note)
     if not action:
         return jsonify({'success': False, 'error': 'Action not found'}), 404
+    _refresh_copilot_state(
+        report_id=action.get('report_id'),
+        brand_name=action.get('subject_key') if action.get('subject_type') == 'brand' else None,
+        retailer_code=action.get('subject_key') if action.get('subject_type') == 'store' else None,
+        reason=f'agent_action_approved:{action_id}',
+        source='agent_feedback',
+    )
     return jsonify({'success': True, 'action': action})
 
 
@@ -2679,6 +3429,13 @@ def api_agent_action_reject(action_id):
     action = ds.update_agent_action_status(action_id, 'rejected', actor='admin', note=note)
     if not action:
         return jsonify({'success': False, 'error': 'Action not found'}), 404
+    _refresh_copilot_state(
+        report_id=action.get('report_id'),
+        brand_name=action.get('subject_key') if action.get('subject_type') == 'brand' else None,
+        retailer_code=action.get('subject_key') if action.get('subject_type') == 'store' else None,
+        reason=f'agent_action_rejected:{action_id}',
+        source='agent_feedback',
+    )
     return jsonify({'success': True, 'action': action})
 
 
@@ -3257,6 +4014,11 @@ def api_db_import():
 
             ds.log_activity('db_import_upload',
                             detail=f'{len(file_buffers)} file(s), {s} -> {e}, mode={merge_mode}')
+            _refresh_copilot_state(
+                report_id=report_id,
+                reason=f'db_import_upload:{merge_mode}',
+                source='db_import',
+            )
             ds.update_job(job_id, status='done', progress=100,
                           current_brand=f'Complete — {s} to {e}',
                           report_id=report_id)
@@ -3291,6 +4053,7 @@ def api_database_delete_report(report_id):
         detail=f"Deleted {report['month_label']} ({report['start_date']} to {report['end_date']})",
         report_id=None,
     )
+    _refresh_copilot_state(reason=f'report_delete:{report_id}', source='database_update')
     return jsonify({'success': True})
 
 
@@ -3317,6 +4080,12 @@ def api_database_remove_brand(report_id):
         detail=f"Removed {ds.analytics_brand_name(brand_name)} from {report['month_label']}",
         brand_name=ds.analytics_brand_name(brand_name),
         report_id=report_id,
+    )
+    _refresh_copilot_state(
+        report_id=report_id,
+        brand_name=brand_name,
+        reason=f'brand_remove:{report_id}',
+        source='database_update',
     )
     return jsonify({'success': True})
 
@@ -3376,6 +4145,11 @@ def api_db_import_sheet():
                 return
             result = _run_pipeline_from_df(df, f'sheets:{sheet_id[:20]}', s, e, ds)
             ds.log_activity('db_import_sheet', detail=f'{sheet_id[:30]}, {s} -> {e}')
+            _refresh_copilot_state(
+                report_id=result.get('report_id'),
+                reason='db_import_sheet',
+                source='db_import',
+            )
             ds.update_job(job_id, status='done', progress=100,
                           current_brand=f'Complete — {s} to {e}',
                           report_id=result.get('report_id'))
@@ -3393,6 +4167,8 @@ def api_drive_sync_trigger():
         from modules.drive_sync import DriveSyncOrchestrator
         orch    = DriveSyncOrchestrator()
         results = orch.check_new_files()
+        if any(r.get('status') == 'success' for r in results):
+            _refresh_copilot_state(reason='drive_sync_trigger', source='drive_sync')
         return jsonify({
             'success':  True,
             'imported': sum(1 for r in results if r.get('status') == 'success'),
@@ -3435,6 +4211,8 @@ def api_drive_sync_full_import():
             results = orch.full_historical_sync(progress_cb=_progress, groups=groups)
             imported = sum(1 for r in results if r.get('status') == 'success')
             errors   = sum(1 for r in results if r.get('status') == 'error')
+            if imported:
+                _refresh_copilot_state(reason='drive_sync_full_import', source='drive_sync')
 
             ds.update_job(job_id, status='done', progress=100,
                           current_brand=f'Complete: {imported} imported, {errors} errors')

@@ -32,6 +32,7 @@ def calculate_kpis(brand_df):
 
     # ── Core KPIs ────────────────────────────────────────────────────────────
     total_revenue        = sales['Sales_Value'].sum()
+    gmv                  = total_revenue
     total_qty            = sales['Quantity'].sum()
     unique_skus          = sales['SKUs'].nunique()
     num_stores           = sales['Particulars'].nunique()
@@ -198,6 +199,7 @@ def calculate_kpis(brand_df):
     return {
         # Core KPIs
         'total_revenue':         total_revenue,
+        'gmv':                   gmv,
         'total_qty':             total_qty,
         'unique_skus':           unique_skus,
         'num_stores':            num_stores,

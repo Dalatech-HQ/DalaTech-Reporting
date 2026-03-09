@@ -339,7 +339,16 @@ class DataStore:
                     end_offset   INTEGER DEFAULT 0,
                     active       INTEGER DEFAULT 1,
                     last_run     TEXT,
-                    created_at   TEXT NOT NULL
+                    created_at   TEXT NOT NULL,
+                    job_type     TEXT DEFAULT 'report',
+                    target       TEXT,
+                    payload_json TEXT DEFAULT '{}',
+                    cadence      TEXT,
+                    next_run     TEXT,
+                    last_result  TEXT DEFAULT '{}',
+                    status       TEXT DEFAULT 'active',
+                    updated_at   TEXT,
+                    connector    TEXT
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_bkpis_report ON brand_kpis(report_id);
@@ -389,6 +398,7 @@ class DataStore:
                     portfolio_file TEXT,
                     brands_done TEXT DEFAULT '[]',
                     errors      TEXT DEFAULT '[]',
+                    result_json TEXT DEFAULT '{}',
                     error_msg   TEXT,
                     created_at  TEXT NOT NULL,
                     updated_at  TEXT NOT NULL
@@ -406,6 +416,17 @@ class DataStore:
                     created_at        TEXT NOT NULL,
                     UNIQUE(report_id, brand_name),
                     FOREIGN KEY (report_id) REFERENCES reports(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS tool_execution_log (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    idempotency_key TEXT NOT NULL UNIQUE,
+                    tool_name       TEXT NOT NULL,
+                    arguments_json  TEXT DEFAULT '{}',
+                    result_json     TEXT DEFAULT '{}',
+                    status          TEXT DEFAULT 'success',
+                    created_at      TEXT NOT NULL,
+                    updated_at      TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS store_churn (
@@ -592,6 +613,68 @@ class DataStore:
             existing = [r[1] for r in conn.execute("PRAGMA table_info(reports)").fetchall()]
             if 'report_type' not in existing:
                 conn.execute("ALTER TABLE reports ADD COLUMN report_type TEXT DEFAULT 'monthly'")
+            job_cols = [r[1] for r in conn.execute("PRAGMA table_info(generation_jobs)").fetchall()]
+            if 'result_json' not in job_cols:
+                conn.execute("ALTER TABLE generation_jobs ADD COLUMN result_json TEXT DEFAULT '{}'")
+            memory_cols = [r[1] for r in conn.execute("PRAGMA table_info(agent_memories)").fetchall()]
+            if 'memory_layer' not in memory_cols:
+                conn.execute("ALTER TABLE agent_memories ADD COLUMN memory_layer TEXT DEFAULT 'session'")
+            if 'subject_type' not in memory_cols:
+                conn.execute("ALTER TABLE agent_memories ADD COLUMN subject_type TEXT")
+            if 'subject_key' not in memory_cols:
+                conn.execute("ALTER TABLE agent_memories ADD COLUMN subject_key TEXT")
+            if 'recency' not in memory_cols:
+                conn.execute("ALTER TABLE agent_memories ADD COLUMN recency REAL DEFAULT 0")
+            if 'tags' not in memory_cols:
+                conn.execute("ALTER TABLE agent_memories ADD COLUMN tags TEXT DEFAULT '[]'")
+            if 'related_report_id' not in memory_cols:
+                conn.execute("ALTER TABLE agent_memories ADD COLUMN related_report_id INTEGER")
+            if 'related_brand' not in memory_cols:
+                conn.execute("ALTER TABLE agent_memories ADD COLUMN related_brand TEXT")
+            if 'pinned' not in memory_cols:
+                conn.execute("ALTER TABLE agent_memories ADD COLUMN pinned INTEGER DEFAULT 0")
+            if 'metadata_json' not in memory_cols:
+                conn.execute("ALTER TABLE agent_memories ADD COLUMN metadata_json TEXT DEFAULT '{}'")
+            conn.execute(
+                """UPDATE agent_memories
+                   SET subject_type=COALESCE(subject_type, scope_type),
+                       subject_key=COALESCE(subject_key, scope_key),
+                       memory_layer=COALESCE(memory_layer, 'session'),
+                       recency=CASE
+                           WHEN recency IS NULL OR recency=0 THEN strftime('%s', COALESCE(updated_at, created_at))
+                           ELSE recency
+                       END,
+                       tags=COALESCE(tags, '[]'),
+                       metadata_json=COALESCE(metadata_json, '{}'),
+                       pinned=COALESCE(pinned, 0)"""
+            )
+            schedule_cols = [r[1] for r in conn.execute("PRAGMA table_info(scheduled_reports)").fetchall()]
+            if 'job_type' not in schedule_cols:
+                conn.execute("ALTER TABLE scheduled_reports ADD COLUMN job_type TEXT DEFAULT 'report'")
+            if 'target' not in schedule_cols:
+                conn.execute("ALTER TABLE scheduled_reports ADD COLUMN target TEXT")
+            if 'payload_json' not in schedule_cols:
+                conn.execute("ALTER TABLE scheduled_reports ADD COLUMN payload_json TEXT DEFAULT '{}'")
+            if 'cadence' not in schedule_cols:
+                conn.execute("ALTER TABLE scheduled_reports ADD COLUMN cadence TEXT")
+            if 'next_run' not in schedule_cols:
+                conn.execute("ALTER TABLE scheduled_reports ADD COLUMN next_run TEXT")
+            if 'last_result' not in schedule_cols:
+                conn.execute("ALTER TABLE scheduled_reports ADD COLUMN last_result TEXT DEFAULT '{}'")
+            if 'status' not in schedule_cols:
+                conn.execute("ALTER TABLE scheduled_reports ADD COLUMN status TEXT DEFAULT 'active'")
+            if 'updated_at' not in schedule_cols:
+                conn.execute("ALTER TABLE scheduled_reports ADD COLUMN updated_at TEXT")
+            if 'connector' not in schedule_cols:
+                conn.execute("ALTER TABLE scheduled_reports ADD COLUMN connector TEXT")
+            conn.execute(
+                """UPDATE scheduled_reports
+                   SET cadence=COALESCE(cadence, cron_expr),
+                       status=COALESCE(status, CASE WHEN active=1 THEN 'active' ELSE 'paused' END),
+                       updated_at=COALESCE(updated_at, created_at),
+                       payload_json=COALESCE(payload_json, '{}'),
+                       last_result=COALESCE(last_result, '{}')"""
+            )
             queue_cols = [r[1] for r in conn.execute("PRAGMA table_info(catalog_review_queue)").fetchall()]
             if 'suggested_match_name' not in queue_cols:
                 conn.execute("ALTER TABLE catalog_review_queue ADD COLUMN suggested_match_name TEXT")
@@ -2443,6 +2526,31 @@ class DataStore:
 
     # ── Agent action + memory operations ────────────────────────────────────
 
+    @staticmethod
+    def _safe_json_loads(value, fallback):
+        try:
+            return json.loads(value) if isinstance(value, str) else (value if value is not None else fallback)
+        except Exception:
+            return fallback
+
+    def _hydrate_agent_memory(self, row):
+        item = dict(row)
+        item['tags'] = self._safe_json_loads(item.get('tags') or '[]', [])
+        item['metadata'] = self._safe_json_loads(item.get('metadata_json') or '{}', {})
+        item['subject_type'] = item.get('subject_type') or item.get('scope_type')
+        item['subject_key'] = item.get('subject_key') or item.get('scope_key')
+        item['pinned'] = bool(item.get('pinned'))
+        return item
+
+    def _hydrate_scheduled_job(self, row):
+        item = dict(row)
+        item['payload'] = self._safe_json_loads(item.get('payload_json') or '{}', {})
+        item['last_result'] = self._safe_json_loads(item.get('last_result') or '{}', {})
+        item['active'] = bool(item.get('active'))
+        item['status'] = item.get('status') or ('active' if item['active'] else 'paused')
+        item['cadence'] = item.get('cadence') or item.get('cron_expr')
+        return item
+
     def _sync_agent_memory_fts(self, conn, memory_id, scope_type, scope_key, memory_text):
         try:
             conn.execute("DELETE FROM agent_memories_fts WHERE rowid=?", (memory_id,))
@@ -2526,44 +2634,178 @@ class DataStore:
         return items
 
     def save_agent_memory(self, scope_type, scope_key, memory_text,
-                          memory_kind='note', confidence=0.5, source=None):
+                          memory_kind='note', confidence=0.5, source=None,
+                          memory_layer='session', subject_type=None, subject_key=None,
+                          recency=None, tags=None, related_report_id=None,
+                          related_brand=None, pinned=False, metadata=None):
         now = datetime.now().isoformat(timespec='seconds')
+        subject_type = subject_type or scope_type
+        subject_key = subject_key or scope_key
+        recency = float(recency if recency is not None else datetime.now().timestamp())
         with self._connect() as conn:
             cur = conn.execute(
                 """INSERT INTO agent_memories
-                   (scope_type, scope_key, memory_kind, memory_text, confidence, source, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?)""",
-                (scope_type, scope_key, memory_kind, memory_text, confidence, source, now, now)
+                   (scope_type, scope_key, memory_kind, memory_text, confidence, source,
+                    created_at, updated_at, memory_layer, subject_type, subject_key,
+                    recency, tags, related_report_id, related_brand, pinned, metadata_json)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    scope_type,
+                    scope_key,
+                    memory_kind,
+                    memory_text,
+                    confidence,
+                    source,
+                    now,
+                    now,
+                    memory_layer,
+                    subject_type,
+                    subject_key,
+                    recency,
+                    json.dumps(tags or []),
+                    related_report_id,
+                    related_brand,
+                    1 if pinned else 0,
+                    json.dumps(metadata or {}),
+                )
             )
             memory_id = cur.lastrowid
             self._sync_agent_memory_fts(conn, memory_id, scope_type, scope_key, memory_text)
             return memory_id
 
-    def search_agent_memories(self, query, limit=8):
-        q = str(query or '').strip()
-        if not q:
-            return []
+    def get_agent_memory(self, memory_id):
         with self._connect() as conn:
-            try:
-                rows = conn.execute(
-                    """SELECT am.*
-                       FROM agent_memories_fts f
-                       JOIN agent_memories am ON am.id = f.rowid
-                       WHERE agent_memories_fts MATCH ?
-                       ORDER BY rank
-                       LIMIT ?""",
-                    (q, limit)
-                ).fetchall()
-            except sqlite3.OperationalError:
-                rows = conn.execute(
+            row = conn.execute(
+                "SELECT * FROM agent_memories WHERE id=?",
+                (memory_id,)
+            ).fetchone()
+        return self._hydrate_agent_memory(row) if row else None
+
+    def list_agent_memories(self, limit=50, memory_layer=None, pinned=None,
+                            subject_type=None, subject_key=None, query=None):
+        clauses = []
+        params = []
+        if memory_layer:
+            clauses.append("memory_layer=?")
+            params.append(memory_layer)
+        if pinned is not None:
+            clauses.append("pinned=?")
+            params.append(1 if pinned else 0)
+        if subject_type:
+            clauses.append("(subject_type=? OR scope_type=?)")
+            params.extend([subject_type, subject_type])
+        if subject_key:
+            clauses.append("(subject_key=? OR scope_key=?)")
+            params.extend([subject_key, subject_key])
+        if query:
+            clauses.append("memory_text LIKE ?")
+            params.append(f'%{query}%')
+        where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ''
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""SELECT *
+                    FROM agent_memories
+                    {where_clause}
+                    ORDER BY pinned DESC, confidence DESC, recency DESC, updated_at DESC
+                    LIMIT ?""",
+                (*params, limit)
+            ).fetchall()
+        return [self._hydrate_agent_memory(row) for row in rows]
+
+    def pin_agent_memory(self, memory_id, pinned=True):
+        now = datetime.now().isoformat(timespec='seconds')
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE agent_memories SET pinned=?, updated_at=? WHERE id=?",
+                (1 if pinned else 0, now, memory_id)
+            )
+        return self.get_agent_memory(memory_id)
+
+    def search_agent_memories(self, query, limit=8, subject_type=None, subject_key=None, tags=None):
+        q = str(query or '').strip()
+        tag_terms = [str(tag).strip().lower() for tag in (tags or []) if str(tag).strip()]
+        if not q and not subject_type and not subject_key and not tag_terms:
+            return []
+        rows = []
+        seen = set()
+
+        def _add_rows(found_rows, retrieval_stage):
+            for raw in found_rows:
+                memory = self._hydrate_agent_memory(raw)
+                memory_id = memory.get('id')
+                if memory_id in seen:
+                    continue
+                memory['retrieval_stage'] = retrieval_stage
+                rows.append(memory)
+                seen.add(memory_id)
+
+        with self._connect() as conn:
+            if subject_type and subject_key:
+                entity_rows = conn.execute(
                     """SELECT *
                        FROM agent_memories
-                       WHERE memory_text LIKE ?
-                       ORDER BY updated_at DESC
+                       WHERE (subject_type=? OR scope_type=?)
+                         AND (subject_key=? OR scope_key=?)
+                       ORDER BY pinned DESC, confidence DESC, recency DESC, updated_at DESC
                        LIMIT ?""",
-                    (f'%{q}%', limit)
+                    (subject_type, subject_type, subject_key, subject_key, max(limit * 2, 12))
                 ).fetchall()
-        return [dict(r) for r in rows]
+                _add_rows(entity_rows, 'entity')
+
+            if tag_terms:
+                tag_rows = conn.execute(
+                    """SELECT *
+                       FROM agent_memories
+                       WHERE """ + " OR ".join(["LOWER(tags) LIKE ?" for _ in tag_terms]) + """
+                       ORDER BY pinned DESC, confidence DESC, recency DESC, updated_at DESC
+                       LIMIT ?""",
+                    (*[f'%"{tag}"%' for tag in tag_terms], max(limit * 2, 12))
+                ).fetchall()
+                _add_rows(tag_rows, 'tag')
+
+            if q:
+                try:
+                    semantic_rows = conn.execute(
+                        """SELECT am.*
+                           FROM agent_memories_fts f
+                           JOIN agent_memories am ON am.id = f.rowid
+                           WHERE agent_memories_fts MATCH ?
+                           ORDER BY rank
+                           LIMIT ?""",
+                        (q, max(limit * 2, 12))
+                    ).fetchall()
+                except sqlite3.OperationalError:
+                    semantic_rows = conn.execute(
+                        """SELECT *
+                           FROM agent_memories
+                           WHERE memory_text LIKE ?
+                           ORDER BY updated_at DESC
+                           LIMIT ?""",
+                        (f'%{q}%', max(limit * 2, 12))
+                    ).fetchall()
+                _add_rows(semantic_rows, 'semantic')
+
+        query_terms = set(normalize_name_key(q).split()) if q else set()
+
+        def _score(memory):
+            score = 0.0
+            if memory.get('retrieval_stage') == 'entity':
+                score += 60
+            elif memory.get('retrieval_stage') == 'tag':
+                score += 35
+            elif memory.get('retrieval_stage') == 'semantic':
+                score += 20
+            if memory.get('pinned'):
+                score += 30
+            score += float(memory.get('confidence') or 0) * 10
+            score += min(float(memory.get('recency') or 0) / 1_000_000_000, 25)
+            if query_terms:
+                memory_terms = set(normalize_name_key(memory.get('memory_text')).split())
+                score += len(query_terms & memory_terms) * 3
+            return score
+
+        rows.sort(key=lambda item: (_score(item), item.get('updated_at') or ''), reverse=True)
+        return rows[:limit]
 
     def record_agent_feedback(self, action_id, feedback_type, actor=None, note=None):
         now = datetime.now().isoformat(timespec='seconds')
@@ -2615,6 +2857,35 @@ class DataStore:
                 (brand_name, report_id, recommendation_key, outcome_type, outcome_value, note, now)
             )
 
+    def get_recommendation_outcome_scores(self, brand_name=None):
+        clauses = []
+        params = []
+        if brand_name:
+            clauses.append("brand_name=?")
+            params.append(brand_name)
+        where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ''
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""SELECT recommendation_key,
+                           COUNT(*) AS total_events,
+                           COALESCE(SUM(CASE
+                               WHEN outcome_type IN ('success', 'approved', 'improved', 'positive') THEN COALESCE(outcome_value, 1)
+                               WHEN outcome_type IN ('failed', 'rejected', 'negative') THEN -ABS(COALESCE(outcome_value, 1))
+                               ELSE 0
+                           END), 0) AS weighted_score
+                    FROM recommendation_outcomes
+                    {where_clause}
+                    GROUP BY recommendation_key""",
+                params
+            ).fetchall()
+        return {
+            row['recommendation_key']: {
+                'total_events': row['total_events'],
+                'weighted_score': float(row['weighted_score'] or 0),
+            }
+            for row in rows
+        }
+
     # ── SKU analytics queries ─────────────────────────────────────────────────
 
     def get_top_skus_all_brands(self, report_id, limit=20):
@@ -2640,29 +2911,160 @@ class DataStore:
             return [dict(r) for r in rows]
 
     def get_scheduled_reports(self):
-        with self._connect() as conn:
-            return [dict(r) for r in conn.execute(
-                "SELECT * FROM scheduled_reports ORDER BY created_at DESC"
-            ).fetchall()]
+        return self.list_assistant_jobs(limit=100)
 
     def save_scheduled_report(self, label, cron_expr, file_path=None,
                                start_offset=1, end_offset=0):
+        return self.create_assistant_job(
+            job_type='report',
+            label=label,
+            target=file_path,
+            cadence=cron_expr,
+            payload={
+                'start_offset': start_offset,
+                'end_offset': end_offset,
+            },
+        )
+
+    def update_scheduled_last_run(self, schedule_id):
+        self.record_assistant_job_run(schedule_id)
+
+    def get_assistant_job(self, job_id):
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM scheduled_reports WHERE id=?",
+                (job_id,)
+            ).fetchone()
+        return self._hydrate_scheduled_job(row) if row else None
+
+    def list_assistant_jobs(self, status=None, limit=100):
+        params = []
+        where_clause = ""
+        if status and status != 'all':
+            where_clause = "WHERE status=?"
+            params.append(status)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""SELECT * FROM scheduled_reports
+                    {where_clause}
+                    ORDER BY
+                      CASE status WHEN 'running' THEN 0 WHEN 'active' THEN 1
+                                  WHEN 'paused' THEN 2 ELSE 3 END,
+                      COALESCE(next_run, last_run, created_at) ASC
+                    LIMIT ?""",
+                (*params, limit)
+            ).fetchall()
+        return [self._hydrate_scheduled_job(row) for row in rows]
+
+    def create_assistant_job(self, job_type, target=None, payload=None, cadence='manual',
+                             label=None, connector=None, next_run=None, status='active'):
         now = datetime.now().isoformat(timespec='seconds')
+        normalized_status = status or 'active'
         with self._connect() as conn:
             cur = conn.execute(
                 """INSERT INTO scheduled_reports
-                   (label, cron_expr, file_path, start_offset, end_offset, active, created_at)
-                   VALUES (?,?,?,?,?,1,?)""",
-                (label, cron_expr, file_path, start_offset, end_offset, now)
+                   (label, cron_expr, file_path, start_offset, end_offset, active, last_run,
+                    created_at, job_type, target, payload_json, cadence, next_run,
+                    last_result, status, updated_at, connector)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    label or f'{job_type} job',
+                    cadence or 'manual',
+                    target,
+                    int((payload or {}).get('start_offset', 1)),
+                    int((payload or {}).get('end_offset', 0)),
+                    0 if normalized_status == 'paused' else 1,
+                    None,
+                    now,
+                    job_type,
+                    target,
+                    json.dumps(payload or {}),
+                    cadence or 'manual',
+                    next_run,
+                    json.dumps({}),
+                    normalized_status,
+                    now,
+                    connector,
+                )
             )
             return cur.lastrowid
 
-    def update_scheduled_last_run(self, schedule_id):
+    def update_assistant_job(self, job_id, **updates):
+        if not updates:
+            return self.get_assistant_job(job_id)
+        now = datetime.now().isoformat(timespec='seconds')
+        prepared = {}
+        for key, value in updates.items():
+            if key == 'payload':
+                prepared['payload_json'] = json.dumps(value or {})
+            elif key == 'last_result':
+                prepared['last_result'] = json.dumps(value or {})
+            elif key == 'status':
+                prepared['status'] = value
+                if value in {'paused', 'disabled'}:
+                    prepared['active'] = 0
+                elif value in {'active', 'running'}:
+                    prepared['active'] = 1
+            else:
+                prepared[key] = value
+        prepared['updated_at'] = now
+        cols = ', '.join(f"{col}=?" for col in prepared)
+        vals = list(prepared.values()) + [job_id]
+        with self._connect() as conn:
+            conn.execute(f"UPDATE scheduled_reports SET {cols} WHERE id=?", vals)
+        return self.get_assistant_job(job_id)
+
+    def pause_assistant_job(self, job_id):
+        return self.update_assistant_job(job_id, status='paused')
+
+    def resume_assistant_job(self, job_id):
+        return self.update_assistant_job(job_id, status='active')
+
+    def record_assistant_job_run(self, job_id, result=None, next_run=None, status='active'):
+        now = datetime.now().isoformat(timespec='seconds')
+        updates = {'last_run': now, 'status': status}
+        if result is not None:
+            updates['last_result'] = result
+        if next_run is not None:
+            updates['next_run'] = next_run
+        return self.update_assistant_job(job_id, **updates)
+
+    def save_tool_execution(self, idempotency_key, tool_name, arguments=None, result=None, status='success'):
         now = datetime.now().isoformat(timespec='seconds')
         with self._connect() as conn:
             conn.execute(
-                "UPDATE scheduled_reports SET last_run=? WHERE id=?", (now, schedule_id)
+                """INSERT INTO tool_execution_log
+                   (idempotency_key, tool_name, arguments_json, result_json, status, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?)
+                   ON CONFLICT(idempotency_key) DO UPDATE SET
+                     tool_name=excluded.tool_name,
+                     arguments_json=excluded.arguments_json,
+                     result_json=excluded.result_json,
+                     status=excluded.status,
+                     updated_at=excluded.updated_at""",
+                (
+                    idempotency_key,
+                    tool_name,
+                    json.dumps(arguments or {}),
+                    json.dumps(result or {}),
+                    status,
+                    now,
+                    now,
+                )
             )
+
+    def get_tool_execution(self, idempotency_key):
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM tool_execution_log WHERE idempotency_key=?",
+                (idempotency_key,)
+            ).fetchone()
+        if not row:
+            return None
+        item = dict(row)
+        item['arguments'] = self._safe_json_loads(item.get('arguments_json') or '{}', {})
+        item['result'] = self._safe_json_loads(item.get('result_json') or '{}', {})
+        return item
 
     # ── AI Narratives ─────────────────────────────────────────────────────────
 
@@ -2706,10 +3108,10 @@ class DataStore:
             conn.execute(
                 """INSERT OR REPLACE INTO generation_jobs
                    (id, status, progress, total, current_brand, report_id,
-                    portfolio_file, brands_done, errors, error_msg, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    portfolio_file, brands_done, errors, result_json, error_msg, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (job_id, 'running', 0, 0, None, None, None,
-                 '[]', '[]', None, now, now)
+                 '[]', '[]', '{}', None, now, now)
             )
 
     def update_job(self, job_id, **kwargs):
@@ -2719,7 +3121,7 @@ class DataStore:
             return
         now = datetime.now().isoformat(timespec='seconds')
         # Serialize list/dict fields
-        for key in ('brands_done', 'errors'):
+        for key in ('brands_done', 'errors', 'result_json'):
             if key in kwargs and isinstance(kwargs[key], (list, dict)):
                 kwargs[key] = _json.dumps(kwargs[key])
         kwargs['updated_at'] = now
@@ -2738,11 +3140,11 @@ class DataStore:
             if not row:
                 return None
             job = dict(row)
-            for key in ('brands_done', 'errors'):
+            for key in ('brands_done', 'errors', 'result_json'):
                 try:
-                    job[key] = _json.loads(job[key] or '[]')
+                    job[key] = _json.loads(job[key] or ('{}' if key == 'result_json' else '[]'))
                 except Exception:
-                    job[key] = []
+                    job[key] = {} if key == 'result_json' else []
             return job
 
     # ── Database health & additive merge ─────────────────────────────────────

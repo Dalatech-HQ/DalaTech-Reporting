@@ -1,6 +1,6 @@
 {% extends "portal/base.html" %}
-{% block title %}Activity Intelligence — DALA Analytics{% endblock %}
-{% block page_title %}Activity Intelligence{% endblock %}
+{% block title %}Activity - DALA Analytics{% endblock %}
+{% block page_title %}Activity{% endblock %}
 
 {% block topbar_actions %}
 <span class="text-muted fs-sm">
@@ -14,6 +14,18 @@
   .issue-list, .visit-list { display:flex; flex-direction:column; gap:8px; }
   .issue-row, .visit-row { padding:12px; border:1px solid var(--gray); border-radius:10px; background:var(--bg); }
   .split-grid { display:grid; grid-template-columns:1.2fr .8fr; gap:20px; }
+  .summary-banner { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+  .summary-banner-copy { max-width:720px; }
+  .summary-banner-kicker { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); margin-bottom:8px; }
+  .summary-banner-text { font-size:15px; line-height:1.65; color:var(--text); }
+  .summary-banner-meta { display:flex; gap:8px; flex-wrap:wrap; }
+  .activity-progress { margin-top:16px; padding:16px; border-radius:12px; border:1px solid rgba(27,43,94,.08); background:linear-gradient(180deg,#ffffff 0%,#f7f9fe 100%); }
+  .activity-progress[hidden] { display:none; }
+  .activity-progress-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+  .activity-progress-track { height:10px; border-radius:999px; background:#E5EAF4; overflow:hidden; }
+  .activity-progress-fill { height:100%; width:0%; background:linear-gradient(90deg,var(--navy) 0%, var(--blue) 100%); border-radius:999px; transition:width .25s ease; }
+  .activity-progress-note { margin-top:10px; font-size:12px; color:var(--muted); line-height:1.6; }
+  .activity-progress-summary { margin-top:8px; font-size:12px; color:var(--navy); font-weight:700; }
   @media(max-width:900px){ .summary-grid,.split-grid { grid-template-columns:1fr; } }
 </style>
 {% endblock %}
@@ -22,8 +34,8 @@
 <div class="card mb-3">
   <div class="flex items-center justify-between mb-2">
     <div>
-      <h3 class="text-navy fw-bold">Import Activity Report</h3>
-      <p class="text-muted fs-sm">Supports Excel, CSV, TXT, and tab-delimited .xls exports.</p>
+      <h3 class="text-navy fw-bold">Import Activity File</h3>
+      <p class="text-muted fs-sm">Upload field activity in Excel or CSV. We will match it to the right report and build the summary for you.</p>
     </div>
   </div>
   <form id="activityImportForm" class="grid-3">
@@ -41,32 +53,78 @@
       </select>
     </div>
     <div>
-      <button class="btn btn-primary" type="submit">Import Activity</button>
+      <button class="btn btn-primary" id="activityImportBtn" type="submit">Import Activity</button>
       <span id="activityImportMsg" class="text-muted fs-sm" style="margin-left:10px;"></span>
     </div>
   </form>
+
+  <div id="activityProgressCard" class="activity-progress" hidden>
+    <div class="activity-progress-top">
+      <div>
+        <div class="summary-banner-kicker" style="margin-bottom:4px;">Import Progress</div>
+        <div id="activityProgressStage" class="text-navy fw-bold">Preparing activity import</div>
+      </div>
+      <div id="activityProgressPct" class="kpi-value-sm">0%</div>
+    </div>
+    <div class="activity-progress-track">
+      <div id="activityProgressFill" class="activity-progress-fill"></div>
+    </div>
+    <div id="activityProgressNote" class="activity-progress-note">We will show progress here while the file is being processed.</div>
+    <div id="activityProgressSummary" class="activity-progress-summary"></div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="summary-banner">
+    <div class="summary-banner-copy">
+      <div class="summary-banner-kicker">Current Summary</div>
+      {% if summary.totals.events %}
+      <div class="summary-banner-text">
+        {{ summary.totals.events }} responses were captured across {{ summary.totals.visits }} visits,
+        {{ summary.totals.stores }} stores, and {{ summary.totals.active_days }} active day{% if summary.totals.active_days != 1 %}s{% endif %}.
+        We found {{ summary.totals.issues }} issue{% if summary.totals.issues != 1 %}s{% endif %}
+        and {{ summary.totals.opportunities }} opportunity{% if summary.totals.opportunities != 1 %}ies{% else %}y{% endif %}.
+      </div>
+      {% else %}
+      <div class="summary-banner-text">
+        Upload an activity file to see a clean summary of visits, stores, issues, and opportunities here.
+      </div>
+      {% endif %}
+    </div>
+    <div class="summary-banner-meta">
+      {% if report %}
+      <span class="badge badge-blue">{{ report.month_label }}</span>
+      {% endif %}
+      {% if selected_batch_id %}
+      <span class="badge badge-green">Batch {{ selected_batch_id }}</span>
+      {% endif %}
+      {% if selected_brand %}
+      <span class="badge badge-amber">{{ selected_brand }}</span>
+      {% endif %}
+    </div>
+  </div>
 </div>
 
 <div class="summary-grid">
   <div class="kpi-card blue">
     <div class="kpi-label">Events</div>
     <div class="kpi-value">{{ summary.totals.events or 0 }}</div>
-    <div class="kpi-sub">Raw responses logged</div>
+    <div class="kpi-sub">Responses captured</div>
   </div>
   <div class="kpi-card green">
     <div class="kpi-label">Visits</div>
     <div class="kpi-value">{{ summary.totals.visits or 0 }}</div>
-    <div class="kpi-sub">Store visits derived</div>
+    <div class="kpi-sub">Store visits logged</div>
   </div>
   <div class="kpi-card red">
     <div class="kpi-label">Issues</div>
     <div class="kpi-value">{{ summary.totals.issues or 0 }}</div>
-    <div class="kpi-sub">Open field issues/opportunities</div>
+    <div class="kpi-sub">Issues found in the field</div>
   </div>
   <div class="kpi-card amber">
-    <div class="kpi-label">Salespeople</div>
-    <div class="kpi-value">{{ summary.totals.salespeople or 0 }}</div>
-    <div class="kpi-sub">{{ summary.totals.stores or 0 }} stores visited</div>
+    <div class="kpi-label">Coverage</div>
+    <div class="kpi-value">{{ summary.totals.stores or 0 }}</div>
+    <div class="kpi-sub">{{ summary.totals.salespeople or 0 }} salespeople active</div>
   </div>
 </div>
 
@@ -155,7 +213,7 @@
         {% for batch in batches %}
         <tr>
           <td>{{ batch.source_filename }}</td>
-          <td>{{ batch.start_date or '—' }}{% if batch.end_date and batch.end_date != batch.start_date %} to {{ batch.end_date }}{% endif %}</td>
+          <td>{{ batch.start_date or '-' }}{% if batch.end_date and batch.end_date != batch.start_date %} to {{ batch.end_date }}{% endif %}</td>
           <td>{{ batch.row_count }}</td>
         </tr>
         {% else %}
@@ -173,15 +231,78 @@ document.getElementById('activityImportForm')?.addEventListener('submit', async 
   event.preventDefault();
   const form = event.currentTarget;
   const msg = document.getElementById('activityImportMsg');
-  msg.textContent = 'Importing...';
+  const btn = document.getElementById('activityImportBtn');
+  const progressCard = document.getElementById('activityProgressCard');
+  const progressFill = document.getElementById('activityProgressFill');
+  const progressPct = document.getElementById('activityProgressPct');
+  const progressStage = document.getElementById('activityProgressStage');
+  const progressNote = document.getElementById('activityProgressNote');
+  const progressSummary = document.getElementById('activityProgressSummary');
+
+  const setProgress = (pct, stage, note = '', summary = '') => {
+    const safePct = Math.max(0, Math.min(100, Number(pct || 0)));
+    progressCard.hidden = false;
+    progressFill.style.width = `${safePct}%`;
+    progressPct.textContent = `${Math.round(safePct)}%`;
+    progressStage.textContent = stage || 'Processing activity import';
+    progressNote.textContent = note || '';
+    progressSummary.textContent = summary || '';
+  };
+
+  btn.disabled = true;
+  msg.textContent = 'Starting import...';
+  setProgress(3, 'Preparing activity import', 'We will show each step here.');
+
   const res = await fetch('/api/activity/import', { method: 'POST', body: new FormData(form) });
   const data = await res.json();
-  if (data.success) {
-    msg.textContent = 'Imported successfully. Reloading...';
-    window.location.reload();
+  if (!data.success || !data.job_id) {
+    btn.disabled = false;
+    msg.textContent = data.error || 'Import failed.';
+    setProgress(0, 'Import did not start', data.error || 'Please try again.');
     return;
   }
-  msg.textContent = data.error || 'Import failed.';
+
+  msg.textContent = 'Import in progress...';
+
+  const poll = async () => {
+    const jobRes = await fetch(`/api/activity/job/${data.job_id}`);
+    const job = await jobRes.json();
+    if (!jobRes.ok) {
+      btn.disabled = false;
+      msg.textContent = job.error || 'Could not read import progress.';
+      setProgress(0, 'Progress unavailable', job.error || '');
+      return;
+    }
+
+    setProgress(
+      job.progress || 0,
+      job.current_brand || 'Processing activity import',
+      job.status === 'error' ? (job.error_msg || 'Import failed.') : 'Activity summaries will open as soon as the import is done.'
+    );
+
+    if (job.status === 'done') {
+      const result = job.result_json || {};
+      const summary = result.summary || {};
+      const summaryText = `${summary.visit_count || 0} visits, ${summary.issue_count || 0} issues, ${summary.stores_visited || 0} stores`;
+      setProgress(100, 'Activity import complete', 'Opening the updated summary now.', summaryText);
+      msg.textContent = 'Activity import complete.';
+      const target = new URL(window.location.href);
+      if (result.batch_id) target.searchParams.set('batch_id', result.batch_id);
+      if (result.report_id) target.searchParams.set('report_id', result.report_id);
+      window.setTimeout(() => { window.location.href = target.toString(); }, 700);
+      return;
+    }
+
+    if (job.status === 'error') {
+      btn.disabled = false;
+      msg.textContent = job.error_msg || 'Import failed.';
+      return;
+    }
+
+    window.setTimeout(poll, 900);
+  };
+
+  poll();
 });
 </script>
 {% endblock %}

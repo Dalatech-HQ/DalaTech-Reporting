@@ -20,6 +20,7 @@ from playwright.sync_api import sync_playwright
 
 from .kpi import generate_narrative, calculate_perf_score
 from .predictor import monthly_growth_outlook
+from .gmv import render_gmv_window_svg
 from .charts_html import (
     chart_top_stores,
     chart_product_value,
@@ -442,7 +443,8 @@ def render_pdf_report_html(brand_name: str, kpis: dict,
                            month_label: str | None = None,
                            ai_narrative: str = None,
                            sheets_url: str = None,
-                           growth_outlook: dict | None = None) -> str:
+                           growth_outlook: dict | None = None,
+                           gmv_window: dict | None = None) -> str:
     """Render the print-oriented report HTML used for PDF export."""
     # ── Charts (matplotlib → base64) ──────────────────────────────────────────
     # Use _for_print=True so charts are generated at print-optimised sizes
@@ -462,6 +464,7 @@ def render_pdf_report_html(brand_name: str, kpis: dict,
     # ── Performance scorecard ──────────────────────────────────────────────────
     perf = calculate_perf_score(kpis, portfolio_avg_revenue)
     growth_outlook = growth_outlook or monthly_growth_outlook([])
+    gmv_chart_svg = render_gmv_window_svg(gmv_window) if gmv_window else ''
 
     # ── Portfolio share ────────────────────────────────────────────────────────
     portfolio_share = None
@@ -614,6 +617,8 @@ def render_pdf_report_html(brand_name: str, kpis: dict,
         pickup_table=pickup_table,
         supply_table=supply_table,
         growth_outlook=growth_outlook,
+        gmv_window=gmv_window,
+        gmv_chart_svg=gmv_chart_svg,
     )
 
 
@@ -878,7 +883,8 @@ def generate_pdf_html(output_path: str, brand_name: str, kpis: dict,
                       month_label: str | None = None,
                       ai_narrative: str = None,
                       sheets_url: str = None,
-                      growth_outlook: dict | None = None) -> str:
+                      growth_outlook: dict | None = None,
+                      gmv_window: dict | None = None) -> str:
     """
     Generate a 2-page PDF using HTML template + Playwright.
 
@@ -907,6 +913,7 @@ def generate_pdf_html(output_path: str, brand_name: str, kpis: dict,
         ai_narrative=ai_narrative,
         sheets_url=sheets_url,
         growth_outlook=growth_outlook,
+        gmv_window=gmv_window,
     )
 
     # ── Render to PDF via Playwright ───────────────────────────────────────────

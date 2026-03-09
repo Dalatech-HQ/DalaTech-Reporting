@@ -1,5 +1,5 @@
 {% extends "portal/base.html" %}
-{% block title %}Forecasting — DALA Analytics{% endblock %}
+{% block title %}Forecasting - DALA Analytics{% endblock %}
 {% block page_title %}Forecasting & Predictions{% endblock %}
 
 {% block topbar_actions %}
@@ -9,37 +9,90 @@
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
+  .summary-cards { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:28px; }
+  .forecast-toolbar { display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:18px; }
+  .forecast-nav { display:flex; gap:10px; flex-wrap:wrap; }
+  .forecast-nav-link {
+    display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:999px;
+    text-decoration:none; border:1px solid rgba(27,43,94,.08); background:#fff; color:var(--navy); font-weight:700;
+  }
+  .forecast-nav-link .count { display:inline-flex; align-items:center; justify-content:center; min-width:24px; height:24px; border-radius:999px; background:#eef3ff; color:var(--navy); font-size:11px; }
+  .chart-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+  .chart-toggle-group { display:flex; gap:8px; flex-wrap:wrap; }
+  .chart-toggle {
+    border:1px solid rgba(27,43,94,.1); background:#fff; color:var(--navy); border-radius:999px;
+    padding:8px 12px; font-size:12px; font-weight:800; cursor:pointer;
+  }
+  .chart-toggle.active { background:var(--navy); color:#fff; border-color:var(--navy); }
+  .chart-helper { color:var(--muted); font-size:12px; }
+  .forecast-group { margin-top:24px; }
+  .forecast-group-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+  .forecast-group-head p { color:var(--muted); font-size:13px; margin:0; }
   .forecast-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:20px; }
-  .forecast-card { background:var(--white); border-radius:12px; padding:20px; box-shadow:0 2px 8px rgba(27,43,94,.08); border-left:4px solid var(--navy); position:relative; overflow:hidden; }
+  .forecast-card {
+    background:var(--white); border-radius:16px; padding:20px; box-shadow:0 2px 10px rgba(27,43,94,.08);
+    border-left:4px solid var(--navy); position:relative; overflow:hidden; scroll-margin-top:90px;
+  }
   .forecast-card.growing  { border-left-color:#1E8449; }
   .forecast-card.declining{ border-left-color:#E8192C; }
   .forecast-card.stable   { border-left-color:#2E86C1; }
   .forecast-value { font-size:26px; font-weight:800; color:var(--navy); margin:8px 0 2px; }
   .forecast-delta { font-size:13px; font-weight:600; }
-  .forecast-delta.up   { color:#1E8449; }
+  .forecast-delta.up { color:#1E8449; }
   .forecast-delta.down { color:#E8192C; }
   .confidence-ring { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; }
   .confidence-dot { width:8px; height:8px; border-radius:50%; }
-  .conf-high   { background:#1E8449; }
+  .conf-high { background:#1E8449; }
   .conf-medium { background:#C0922A; }
-  .conf-low    { background:#7A849E; }
-  .depletion-bar { height:6px; border-radius:3px; background:var(--gray); margin:8px 0; overflow:hidden; }
-  .depletion-fill { height:100%; border-radius:3px; transition:width .4s; }
-  .stock-ok       { background:#1E8449; }
-  .stock-warning  { background:#C0922A; }
-  .stock-critical { background:#E8192C; }
-  .trend-spark { height:50px; margin-top:8px; }
-  .summary-cards { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:28px; }
-  .horizon-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:14px; }
-  .horizon-box { border:1px solid var(--gray); border-radius:10px; padding:10px; background:var(--bg); min-height:88px; }
-  .horizon-box strong { display:block; color:var(--navy); font-size:12px; margin-bottom:4px; }
-  .horizon-value { font-size:14px; font-weight:800; color:var(--text); }
-  .horizon-range { font-size:10px; color:var(--muted); margin-top:2px; }
-  .readiness-strip { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
-  .mini-badge { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:999px; font-size:10px; font-weight:700; }
-  .mini-badge.ok { background:rgba(30,132,73,.1); color:var(--green); }
-  .mini-badge.no { background:var(--gray); color:var(--muted); }
-  @media(max-width:900px){.summary-cards{grid-template-columns:1fr 1fr;}}
+  .conf-low { background:#7A849E; }
+  .metric-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:14px; }
+  .metric-tile { background:#f7f9fc; border:1px solid rgba(27,43,94,.08); border-radius:12px; padding:10px 12px; }
+  .metric-tile .label { font-size:10px; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); font-weight:700; }
+  .metric-tile .value { font-size:18px; font-weight:800; color:var(--navy); margin-top:4px; }
+  .metric-tile .sub { font-size:11px; color:var(--muted); margin-top:2px; }
+  .readiness-strip { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  .readiness-link, .readiness-chip {
+    display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px; font-size:11px; font-weight:800;
+    text-decoration:none;
+  }
+  .readiness-link.ready-3m { background:rgba(30,132,73,.12); color:#1E8449; }
+  .readiness-link.ready-6m { background:rgba(46,134,193,.12); color:#2E86C1; }
+  .readiness-link.ready-12m { background:rgba(192,146,42,.14); color:#9C6D10; }
+  .readiness-chip.off { background:var(--gray); color:var(--muted); }
+  .mini-metrics { margin-top:14px; padding-top:12px; border-top:1px solid var(--gray); }
+  .mini-metrics-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:11px; }
+  .mini-metrics-grid .row { display:flex; justify-content:space-between; padding:3px 0; }
+  .horizon-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:14px; }
+  .horizon-box {
+    border:1px solid var(--gray); border-radius:12px; padding:12px; background:var(--bg); min-height:110px;
+    transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  }
+  .horizon-box strong { display:block; color:var(--navy); font-size:12px; margin-bottom:6px; }
+  .horizon-box.is-ready { cursor:pointer; text-decoration:none; }
+  .horizon-box.is-ready:hover { transform:translateY(-2px); box-shadow:0 8px 16px rgba(27,43,94,.08); }
+  .horizon-box.ready-3m { border-color:rgba(30,132,73,.25); background:rgba(30,132,73,.05); }
+  .horizon-box.ready-6m { border-color:rgba(46,134,193,.25); background:rgba(46,134,193,.05); }
+  .horizon-box.ready-12m { border-color:rgba(192,146,42,.3); background:rgba(192,146,42,.08); }
+  .horizon-value { font-size:15px; font-weight:800; color:var(--text); }
+  .horizon-range { font-size:11px; color:var(--muted); margin-top:4px; line-height:1.4; }
+  .analysis-section { margin-top:30px; scroll-margin-top:90px; }
+  .analysis-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; margin-top:14px; }
+  .analysis-card { border:1px solid rgba(27,43,94,.08); border-radius:16px; background:#fff; padding:18px; scroll-margin-top:90px; }
+  .analysis-card.growing { border-top:4px solid #1E8449; }
+  .analysis-card.stable { border-top:4px solid #2E86C1; }
+  .analysis-card.declining { border-top:4px solid #E8192C; }
+  .analysis-card h4 { color:var(--navy); margin-bottom:6px; }
+  .analysis-meta { display:flex; gap:8px; flex-wrap:wrap; font-size:11px; color:var(--muted); margin-bottom:10px; }
+  .analysis-stat-list { display:grid; gap:6px; font-size:12px; }
+  .analysis-stat { display:flex; justify-content:space-between; gap:10px; }
+  .analysis-card .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  .stock-callout { margin-top:12px; padding-top:12px; border-top:1px solid var(--gray); }
+  .empty-analysis { color:var(--muted); font-size:13px; padding:14px 0 4px; }
+  .ring-focus { box-shadow:0 0 0 3px rgba(46,134,193,.24), 0 10px 24px rgba(27,43,94,.12); transition:box-shadow .2s ease; }
+  @media(max-width:1100px){ .summary-cards{grid-template-columns:repeat(2,1fr);} }
+  @media(max-width:900px){
+    .horizon-grid, .metric-grid, .mini-metrics-grid, .summary-cards { grid-template-columns:1fr; }
+  }
 </style>
 {% endblock %}
 
@@ -53,163 +106,260 @@
 </div>
 {% else %}
 
-<!-- Summary Strip -->
 <div class="summary-cards">
   <div class="kpi-card green">
     <div class="kpi-label">Growing Brands</div>
     <div class="kpi-value">{{ growing_count }}</div>
-    <div class="kpi-sub">Upward revenue trend</div>
-  </div>
-  <div class="kpi-card red">
-    <div class="kpi-label">Declining Brands</div>
-    <div class="kpi-value">{{ declining_count }}</div>
-    <div class="kpi-sub">Needs attention</div>
+    <div class="kpi-sub">Alphabetical inside group</div>
   </div>
   <div class="kpi-card blue">
     <div class="kpi-label">Stable Brands</div>
     <div class="kpi-value">{{ stable_count }}</div>
-    <div class="kpi-sub">Consistent performance</div>
+    <div class="kpi-sub">Balanced performers</div>
+  </div>
+  <div class="kpi-card red">
+    <div class="kpi-label">Declining Brands</div>
+    <div class="kpi-value">{{ declining_count }}</div>
+    <div class="kpi-sub">Priority review list</div>
   </div>
   <div class="kpi-card amber">
     <div class="kpi-label">Stock Warnings</div>
     <div class="kpi-value">{{ stock_warning_count }}</div>
     <div class="kpi-sub">Critical or watch</div>
   </div>
-  <div class="kpi-card blue">
+  <div class="kpi-card green">
     <div class="kpi-label">3-Month Ready</div>
     <div class="kpi-value">{{ eligible_3m_count }}</div>
-    <div class="kpi-sub">Brands with enough depth</div>
+    <div class="kpi-sub">Clickable analysis cards</div>
   </div>
-  <div class="kpi-card">
+  <div class="kpi-card blue">
     <div class="kpi-label">6-Month Ready</div>
     <div class="kpi-value">{{ eligible_6m_count }}</div>
-    <div class="kpi-sub">Higher-confidence set</div>
+    <div class="kpi-sub">Mid-range planning</div>
   </div>
-  <div class="kpi-card">
-    <div class="kpi-label">12-Month Ready</div>
+  <div class="kpi-card amber">
+    <div class="kpi-label">1-Year Ready</div>
     <div class="kpi-value">{{ eligible_12m_count }}</div>
-    <div class="kpi-sub">Strategic-only candidates</div>
+    <div class="kpi-sub">Strategic view</div>
   </div>
 </div>
 
-<!-- Portfolio Forecast Chart -->
+<div class="forecast-toolbar">
+  <div>
+    <h3 class="text-navy fw-bold mb-1">Portfolio Revenue Forecast</h3>
+    <p class="text-muted fs-sm">Brands are sorted alphabetically, grouped into Growing, Stable, and Declining, and every ready horizon links to its deeper analysis.</p>
+  </div>
+  <div class="forecast-nav">
+    {% for nav in horizon_nav %}
+    <a class="forecast-nav-link" href="#analysis-{{ nav.key }}">
+      <span>{{ nav.label }}</span>
+      <span class="count">{{ nav.count }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
 <div class="card mb-3">
   <div class="flex items-center justify-between mb-2">
-    <h3 class="text-navy fw-bold">Portfolio Revenue Forecast — Next Month</h3>
+    <div>
+      <h3 class="text-navy fw-bold" id="forecastChartTitle">Next-Month Forecast Chart</h3>
+      <div class="chart-helper" id="forecastChartHelper">Click a bar to jump to that brand's forecast card or deeper analysis if the horizon is ready.</div>
+    </div>
     <span class="badge badge-blue">{{ forecasts|length }} brands</span>
+  </div>
+  <div class="chart-toolbar">
+    <div class="chart-toggle-group">
+      <button type="button" class="chart-toggle active" data-horizon="1m">1 Month</button>
+      <button type="button" class="chart-toggle" data-horizon="3m">3 Months</button>
+      <button type="button" class="chart-toggle" data-horizon="6m">6 Months</button>
+      <button type="button" class="chart-toggle" data-horizon="12m">1 Year</button>
+    </div>
   </div>
   <canvas id="portfolioForecastChart" height="80"></canvas>
 </div>
 
-<!-- Brand Forecast Cards -->
-<h3 class="text-navy fw-bold mb-2">Brand-Level Forecasts</h3>
-<div class="forecast-grid">
-{% for brand, fc in forecasts.items() %}
-{% set dep = depletions.get(brand, {}) %}
-{% set trend_class = 'growing' if fc.growth_label == 'Growing' else ('declining' if fc.growth_label == 'Declining' else 'stable') %}
-<div class="forecast-card {{ trend_class }}">
-  <div class="flex items-center justify-between">
-    <div style="font-size:13px;font-weight:700;color:var(--text);">{{ brand }}</div>
-    <span class="badge {% if fc.growth_label == 'Growing' %}badge-green{% elif fc.growth_label == 'Declining' %}badge-red{% else %}badge-blue{% endif %}">
-      {{ fc.growth_label }}
+{% for group_name in ['Growing', 'Stable', 'Declining'] %}
+{% set items = forecast_groups.get(group_name, []) %}
+<section class="forecast-group" id="group-{{ group_name|lower|replace(' ', '-') }}">
+  <div class="forecast-group-head">
+    <div>
+      <h3 class="text-navy fw-bold mb-1">{{ group_name }} Forecasts</h3>
+      <p>{{ items|length }} brand{{ '' if items|length == 1 else 's' }} in alphabetical order.</p>
+    </div>
+    <span class="badge {% if group_name == 'Growing' %}badge-green{% elif group_name == 'Declining' %}badge-red{% else %}badge-blue{% endif %}">
+      {{ items|length }}
     </span>
   </div>
-  <div class="forecast-value">₦{{ fc.forecast | money2 }}</div>
-  <div class="forecast-delta {% if fc.pct_change >= 0 %}up{% else %}down{% endif %}">
-    {% if fc.pct_change >= 0 %}▲{% else %}▼{% endif %}
-    {{ fc.pct_change|abs|round(1) }}% vs last month
-  </div>
-  <div class="flex items-center gap-2 mt-1">
-    <div class="confidence-ring">
-      <div class="confidence-dot conf-{{ fc.confidence.lower() }}"></div>
-      {{ fc.confidence }} confidence
-    </div>
-    <span class="text-muted fs-sm">· {{ fc.data_points }} months data</span>
-    <span class="text-muted fs-sm">· {{ fc.consecutive_months }} consecutive</span>
-  </div>
-  <div class="text-muted fs-sm mt-1">Readiness score: <strong style="color:var(--navy);">{{ fc.confidence_score }}/100</strong> ({{ fc.confidence_band }})</div>
+  <div class="forecast-grid">
+    {% for item in items %}
+    {% set brand = item.brand %}
+    {% set fc = item.forecast %}
+    {% set dep = item.depletion %}
+    {% set trend_class = 'growing' if fc.growth_label == 'Growing' else ('declining' if fc.growth_label == 'Declining' else 'stable') %}
+    <article class="forecast-card {{ trend_class }}" id="brand-{{ item.anchor }}">
+      <div class="flex items-center justify-between">
+        <div style="font-size:13px;font-weight:700;color:var(--text);">{{ brand }}</div>
+        <span class="badge {% if fc.growth_label == 'Growing' %}badge-green{% elif fc.growth_label == 'Declining' %}badge-red{% else %}badge-blue{% endif %}">
+          {{ fc.growth_label }}
+        </span>
+      </div>
 
-  <div class="readiness-strip">
-    {% for key, label in [('3m', '3M'), ('6m', '6M'), ('12m', '12M')] %}
-    {% set hz = fc.horizons.get(key, {}) %}
-    <span class="mini-badge {% if hz.eligible %}ok{% else %}no{% endif %}">
-      {{ label }} {% if hz.eligible %}Ready{% else %}Not Ready{% endif %}
-    </span>
-    {% endfor %}
-  </div>
+      <div class="forecast-value">₦{{ fc.forecast | money2 }}</div>
+      <div class="forecast-delta {% if fc.pct_change >= 0 %}up{% else %}down{% endif %}">
+        {% if fc.pct_change >= 0 %}▲{% else %}▼{% endif %}
+        {{ fc.pct_change|abs|round(1) }}% vs last month
+      </div>
 
-  {% set go = fc.growth_outlook %}
-  <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--gray);">
-    <div class="kpi-label" style="margin-bottom:6px;">Store & Revenue / Supermarket Growth</div>
-    {% if go and go.available %}
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:11px;">
-      <div>
-        <div class="text-muted" style="margin-bottom:4px;">Supermarket Growth</div>
-        {% for key, label in [('1m','1M'), ('3m','3M'), ('6m','6M')] %}
-        {% set item = go.metrics.supermarket_growth.get(key, {}) %}
-        <div style="display:flex;justify-content:space-between;padding:2px 0;">
-          <span>{{ label }}</span>
-          {% if item.eligible %}
-          <strong>{{ '%+.1f'|format(item.change_pct) }}%</strong>
-          {% else %}
-          <span class="text-muted">N/A</span>
-          {% endif %}
+      <div class="flex items-center gap-2 mt-1">
+        <div class="confidence-ring">
+          <div class="confidence-dot conf-{{ fc.confidence.lower() }}"></div>
+          {{ fc.confidence }} confidence
         </div>
+        <span class="text-muted fs-sm">· {{ fc.data_points }} months data</span>
+        <span class="text-muted fs-sm">· {{ fc.consecutive_months }} consecutive</span>
+      </div>
+      <div class="text-muted fs-sm mt-1">Readiness score: <strong style="color:var(--navy);">{{ fc.confidence_score }}/100</strong> ({{ fc.confidence_band }})</div>
+
+      <div class="metric-grid">
+        <div class="metric-tile">
+          <div class="label">Forecast Band</div>
+          <div class="value">{{ fc.confidence_band }}</div>
+          <div class="sub">{{ fc.confidence }} confidence</div>
+        </div>
+        <div class="metric-tile">
+          <div class="label">Live Horizons</div>
+          <div class="value">{{ fc.eligible_horizons|length }}</div>
+          <div class="sub">{{ fc.eligible_horizons|join(', ') if fc.eligible_horizons else 'No ready forecast yet' }}</div>
+        </div>
+        <div class="metric-tile">
+          <div class="label">1-Month Range</div>
+          <div class="value">₦{{ fc.horizons['1m'].low | money2 }}</div>
+          <div class="sub">to ₦{{ fc.horizons['1m'].high | money2 }}</div>
+        </div>
+        <div class="metric-tile">
+          <div class="label">Model Fit</div>
+          <div class="value">{{ (fc.horizons['1m'].r_squared * 100)|round(0) }}%</div>
+          <div class="sub">R² for current baseline</div>
+        </div>
+      </div>
+
+      <div class="readiness-strip">
+        {% for key, label in [('3m', '3M'), ('6m', '6M'), ('12m', '1Y')] %}
+        {% set hz = fc.horizons.get(key, {}) %}
+        {% if hz.eligible %}
+        <a class="readiness-link ready-{{ key }}" href="#analysis-{{ key }}-{{ item.anchor }}">{{ label }} Ready</a>
+        {% else %}
+        <span class="readiness-chip off">{{ label }} Not Ready</span>
+        {% endif %}
         {% endfor %}
       </div>
-      <div>
-        <div class="text-muted" style="margin-bottom:4px;">Avg Revenue / Supermarket</div>
-        {% for key, label in [('1m','1M'), ('3m','3M'), ('6m','6M')] %}
-        {% set item = go.metrics.avg_revenue_per_store_growth.get(key, {}) %}
-        <div style="display:flex;justify-content:space-between;padding:2px 0;">
-          <span>{{ label }}</span>
-          {% if item.eligible %}
-          <strong>{{ '%+.1f'|format(item.change_pct) }}%</strong>
-          {% else %}
-          <span class="text-muted">N/A</span>
-          {% endif %}
+
+      {% set go = fc.growth_outlook %}
+      <div class="mini-metrics">
+        <div class="kpi-label" style="margin-bottom:6px;">Different Metrics</div>
+        {% if go and go.available %}
+        <div class="mini-metrics-grid">
+          <div>
+            <div class="text-muted" style="margin-bottom:4px;">Supermarket Growth</div>
+            {% for key, label in [('1m','1M'), ('3m','3M'), ('6m','6M')] %}
+            {% set metric = go.metrics.supermarket_growth.get(key, {}) %}
+            <div class="row">
+              <span>{{ label }}</span>
+              <strong>{% if metric.eligible %}{{ '%+.1f'|format(metric.change_pct) }}%{% else %}N/A{% endif %}</strong>
+            </div>
+            {% endfor %}
+          </div>
+          <div>
+            <div class="text-muted" style="margin-bottom:4px;">Revenue / Store Growth</div>
+            {% for key, label in [('1m','1M'), ('3m','3M'), ('6m','6M')] %}
+            {% set metric = go.metrics.avg_revenue_per_store_growth.get(key, {}) %}
+            <div class="row">
+              <span>{{ label }}</span>
+              <strong>{% if metric.eligible %}{{ '%+.1f'|format(metric.change_pct) }}%{% else %}N/A{% endif %}</strong>
+            </div>
+            {% endfor %}
+          </div>
         </div>
+        {% else %}
+        <div class="text-muted fs-sm">Insufficient monthly history for 1M, 3M, and 6M comparison metrics yet.</div>
+        {% endif %}
+      </div>
+
+      <div class="horizon-grid">
+        {% for key, label in [('3m', '3 Months'), ('6m', '6 Months'), ('12m', '1 Year')] %}
+        {% set hz = fc.horizons.get(key, {}) %}
+        {% if hz.eligible %}
+        <a class="horizon-box is-ready ready-{{ key }}" href="#analysis-{{ key }}-{{ item.anchor }}">
+          <strong>{{ label }}</strong>
+          <div class="horizon-value">₦{{ hz.forecast | money2 }}</div>
+          <div class="horizon-range">Range: ₦{{ hz.low | money2 }} to ₦{{ hz.high | money2 }}</div>
+          <div class="horizon-range">{{ '%+.1f'|format(hz.pct_change) }}% vs latest month</div>
+        </a>
+        {% else %}
+        <div class="horizon-box">
+          <strong>{{ label }}</strong>
+          <div class="horizon-range">{{ hz.reason }}</div>
+        </div>
+        {% endif %}
         {% endfor %}
       </div>
-    </div>
-    {% else %}
-    <div class="text-muted fs-sm">Insufficient monthly history for 1M / 3M / 6M growth comparisons.</div>
-    {% endif %}
-  </div>
 
-  <div class="horizon-grid">
-    {% for key, label in [('3m', '3 Months'), ('6m', '6 Months'), ('12m', '12 Months')] %}
-    {% set hz = fc.horizons.get(key, {}) %}
-    <div class="horizon-box">
-      <strong>{{ label }}</strong>
-      {% if hz.eligible %}
-      <div class="horizon-value">₦{{ hz.forecast | money2 }}</div>
-      <div class="horizon-range">Range: ₦{{ hz.low | money2 }} to ₦{{ hz.high | money2 }}</div>
-      {% else %}
-      <div class="horizon-range">{{ hz.reason }}</div>
+      {% if dep.urgency in ('critical','warning') %}
+      <div class="stock-callout">
+        <div class="analysis-stat">
+          <span class="text-muted">Stock depletion</span>
+          <strong style="color:{% if dep.urgency == 'critical' %}var(--red){% else %}var(--amber){% endif %};">{{ dep.days_remaining }}d left</strong>
+        </div>
+        <div class="text-muted fs-sm">Depletes {{ dep.depletion_date }}</div>
+      </div>
       {% endif %}
-    </div>
+    </article>
     {% endfor %}
   </div>
-
-  {% if dep.urgency in ('critical','warning') %}
-  <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--gray);">
-    <div class="flex items-center justify-between fs-sm">
-      <span class="text-muted">Stock depletion</span>
-      <span class="fw-bold {% if dep.urgency == 'critical' %}text-red{% else %}" style="color:var(--amber){% endif %}">
-        {{ dep.days_remaining }}d left
-      </span>
-    </div>
-    <div class="depletion-bar">
-      <div class="depletion-fill stock-{{ dep.urgency }}"
-           style="width:{{ [dep.days_remaining / 30 * 100, 100]|min }}%"></div>
-    </div>
-    <div class="fs-sm text-muted">Depletes {{ dep.depletion_date }}</div>
-  </div>
-  {% endif %}
-</div>
+</section>
 {% endfor %}
-</div>
+
+{% for key, config in horizon_sections.items() %}
+<section class="analysis-section" id="analysis-{{ key }}">
+  <div class="forecast-group-head">
+    <div>
+      <h3 class="text-navy fw-bold mb-1">{{ config['label'] }}</h3>
+      <p>Only brands with enough data for this horizon are shown here. Cards stay in alphabetical order and link back to the main forecast card.</p>
+    </div>
+    <span class="badge badge-blue">{{ config['items']|length }} ready</span>
+  </div>
+  {% if config['items'] %}
+  <div class="analysis-grid">
+    {% for item in config['items'] %}
+    {% set fc = item.forecast %}
+    {% set hz = item.horizon %}
+    <article class="analysis-card {{ 'growing' if fc.growth_label == 'Growing' else ('declining' if fc.growth_label == 'Declining' else 'stable') }}" id="analysis-{{ key }}-{{ item.anchor }}">
+      <h4>{{ item.brand }}</h4>
+      <div class="analysis-meta">
+        <span>{{ fc.growth_label }}</span>
+        <span>{{ fc.confidence_band }}</span>
+        <span>{{ fc.data_points }} months history</span>
+      </div>
+      <div class="analysis-stat-list">
+        <div class="analysis-stat"><span>{{ config['label'] }} Forecast</span><strong>₦{{ hz.forecast | money2 }}</strong></div>
+        <div class="analysis-stat"><span>Projected Change</span><strong>{{ '%+.1f'|format(hz.pct_change) }}%</strong></div>
+        <div class="analysis-stat"><span>Forecast Range</span><strong>₦{{ hz.low | money2 }} to ₦{{ hz.high | money2 }}</strong></div>
+        <div class="analysis-stat"><span>Model Fit</span><strong>{{ (hz.r_squared * 100)|round(0) }}%</strong></div>
+        <div class="analysis-stat"><span>Readiness Score</span><strong>{{ fc.confidence_score }}/100</strong></div>
+      </div>
+      <div class="actions">
+        <a class="btn btn-outline btn-sm" href="#brand-{{ item.anchor }}">Back to Card</a>
+        <a class="btn btn-primary btn-sm" href="/brand/{{ item.brand }}?focus=forecast">Open Brand</a>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-analysis">No brands are ready for {{ config['label']|lower }} yet.</div>
+  {% endif %}
+</section>
+{% endfor %}
+
 {% endif %}
 {% endblock %}
 
@@ -217,31 +367,102 @@
 <script>
 const forecasts = {{ forecasts_json | safe }};
 if (Object.keys(forecasts).length > 0) {
-  const brands = Object.keys(forecasts).slice(0, 20);
-  const forecastVals = brands.map(b => forecasts[b].forecast);
-  const colors = brands.map(b => {
-    const lbl = forecasts[b].growth_label;
-    return lbl === 'Growing' ? '#1E8449' : lbl === 'Declining' ? '#E8192C' : '#2E86C1';
-  });
-  new Chart(document.getElementById('portfolioForecastChart'), {
+  const brands = Object.keys(forecasts);
+  const chartCanvas = document.getElementById('portfolioForecastChart');
+  const titleEl = document.getElementById('forecastChartTitle');
+  const helperEl = document.getElementById('forecastChartHelper');
+  const horizonLabels = {
+    '1m': 'Next-Month Forecast Chart',
+    '3m': '3-Month Forecast Chart',
+    '6m': '6-Month Forecast Chart',
+    '12m': '1-Year Forecast Chart',
+  };
+  let activeHorizon = '1m';
+
+  function anchorForBrand(brand) {
+    return String(brand || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'brand';
+  }
+
+  function targetForBrand(brand, horizonKey) {
+    const info = forecasts[brand] || {};
+    const anchor = anchorForBrand(brand);
+    if (horizonKey !== '1m' && info.horizons && info.horizons[horizonKey] && info.horizons[horizonKey].eligible) {
+      return `analysis-${horizonKey}-${anchor}`;
+    }
+    return `brand-${anchor}`;
+  }
+
+  function colorsForHorizon(horizonKey) {
+    return brands.map((brand) => {
+      const label = forecasts[brand].growth_label;
+      const ready = horizonKey === '1m' || forecasts[brand].horizons?.[horizonKey]?.eligible;
+      if (!ready) return 'rgba(122,132,158,0.28)';
+      return label === 'Growing' ? '#1E8449' : label === 'Declining' ? '#E8192C' : '#2E86C1';
+    });
+  }
+
+  function valuesForHorizon(horizonKey) {
+    return brands.map((brand) => {
+      if (horizonKey === '1m') return forecasts[brand].forecast || 0;
+      const hz = forecasts[brand].horizons?.[horizonKey];
+      return hz?.eligible ? hz.forecast : 0;
+    });
+  }
+
+  function helperText(horizonKey) {
+    if (horizonKey === '1m') {
+      return "Click a bar to jump to that brand's forecast card.";
+    }
+    return "Click a colored bar to jump to the matching analysis card. Gray bars are not ready for that horizon yet.";
+  }
+
+  const chart = new Chart(chartCanvas, {
     type: 'bar',
     data: {
       labels: brands,
       datasets: [{
         label: 'Forecast Revenue (₦)',
-        data: forecastVals,
-        backgroundColor: colors,
+        data: valuesForHorizon(activeHorizon),
+        backgroundColor: colorsForHorizon(activeHorizon),
         borderRadius: 6,
       }]
     },
     options: {
       responsive: true,
+      onClick: (event, elements) => {
+        const hit = elements?.[0];
+        if (!hit) return;
+        const brand = brands[hit.index];
+        const targetId = targetForBrand(brand, activeHorizon);
+        const target = document.getElementById(targetId);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          target.classList.add('ring-focus');
+          setTimeout(() => target.classList.remove('ring-focus'), 1400);
+        }
+      },
       plugins: { legend: { display: false } },
       scales: {
-        y: { ticks: { callback: v => '₦' + (v/1000000).toFixed(1) + 'M' } },
+        y: { ticks: { callback: (v) => '₦' + (v / 1000000).toFixed(1) + 'M' } },
         x: { ticks: { maxRotation: 45, font: { size: 10 } } }
       }
     }
+  });
+
+  function setHorizon(horizonKey) {
+    activeHorizon = horizonKey;
+    chart.data.datasets[0].data = valuesForHorizon(horizonKey);
+    chart.data.datasets[0].backgroundColor = colorsForHorizon(horizonKey);
+    chart.update();
+    titleEl.textContent = horizonLabels[horizonKey] || horizonLabels['1m'];
+    helperEl.textContent = helperText(horizonKey);
+    document.querySelectorAll('.chart-toggle').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.horizon === horizonKey);
+    });
+  }
+
+  document.querySelectorAll('.chart-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => setHorizon(btn.dataset.horizon));
   });
 }
 </script>

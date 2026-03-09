@@ -135,6 +135,98 @@
     #hamburger span { display:block; width:20px; height:2px; background:currentColor; margin:4px 0; border-radius:2px; transition:all .2s; }
     #sidebar-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:99; }
 
+    .copilot-toggle {
+      position:fixed; right:24px; bottom:24px; z-index:118;
+      display:inline-flex; align-items:center; gap:10px; padding:12px 16px; border-radius:999px;
+      border:1.5px solid rgba(27,43,94,.12); background:linear-gradient(135deg,#ffffff 0%,#f6f8fd 100%);
+      color:var(--navy); font-size:13px; font-weight:800; cursor:pointer; box-shadow:0 16px 36px rgba(27,43,94,.18);
+    }
+    .copilot-toggle:hover { border-color:rgba(27,43,94,.25); transform:translateY(-1px); }
+    .copilot-toggle .count {
+      min-width:20px; padding:2px 6px; border-radius:999px; background:rgba(232,25,44,.12); color:var(--red);
+      font-size:10px; font-weight:800; text-align:center;
+    }
+    .copilot-drawer {
+      position:fixed; top:0; right:0; width:min(420px, 100vw); height:100vh; background:#fff;
+      border-left:1px solid rgba(27,43,94,.08); box-shadow:-16px 0 40px rgba(27,43,94,.14);
+      z-index:120; display:flex; flex-direction:column; transform:translateX(100%); transition:transform .22s ease;
+    }
+    .copilot-drawer.open { transform:translateX(0); }
+    .copilot-overlay {
+      position:fixed; inset:0; background:rgba(14,21,48,.24); z-index:119; opacity:0; pointer-events:none;
+      transition:opacity .2s ease;
+    }
+    .copilot-overlay.open { opacity:1; pointer-events:auto; }
+    .copilot-head {
+      padding:18px 20px 14px; border-bottom:1px solid rgba(27,43,94,.08);
+      background:linear-gradient(135deg,#1B2B5E 0%,#22366f 100%); color:#fff;
+    }
+    .copilot-head-top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+    .copilot-head h3 { font-size:17px; font-weight:800; }
+    .copilot-head p { font-size:12px; opacity:.82; margin-top:5px; line-height:1.55; }
+    .copilot-head .close-btn {
+      border:none; background:rgba(255,255,255,.12); color:#fff; width:34px; height:34px; border-radius:10px; cursor:pointer;
+      font-size:18px;
+    }
+    .copilot-status {
+      display:grid; grid-template-columns:repeat(3,1fr); gap:10px; padding:14px 16px; border-bottom:1px solid rgba(27,43,94,.08);
+      background:#f7f9fe;
+    }
+    .copilot-status .stat {
+      background:#fff; border:1px solid rgba(27,43,94,.08); border-radius:12px; padding:10px 12px;
+    }
+    .copilot-status .label { font-size:10px; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); font-weight:700; }
+    .copilot-status .value { font-size:18px; font-weight:800; color:var(--navy); margin-top:4px; }
+    .copilot-body { flex:1; display:flex; flex-direction:column; min-height:0; }
+    .copilot-prompts { display:flex; flex-wrap:wrap; gap:8px; padding:14px 16px 0; }
+    .copilot-prompt {
+      border:none; background:#eef3ff; color:var(--navy); border-radius:999px; padding:8px 12px; cursor:pointer;
+      font-size:11px; font-weight:700;
+    }
+    .copilot-messages { flex:1; overflow:auto; padding:14px 16px 8px; display:flex; flex-direction:column; gap:10px; background:#fbfcff; }
+    .copilot-message {
+      max-width:92%; border-radius:14px; padding:12px 14px; line-height:1.65; font-size:13px; white-space:pre-wrap;
+      box-shadow:0 4px 14px rgba(27,43,94,.06);
+    }
+    .copilot-message.user { align-self:flex-end; background:linear-gradient(135deg,#1b2b5e 0%,#254184 100%); color:#fff; }
+    .copilot-message.assistant { align-self:flex-start; background:#fff; border:1px solid rgba(27,43,94,.08); color:var(--text); }
+    .copilot-message.system { align-self:center; background:#eef3ff; color:var(--navy); font-size:12px; font-weight:700; }
+    .copilot-message .meta { display:block; margin-top:8px; font-size:10px; opacity:.6; text-transform:uppercase; letter-spacing:.7px; }
+    .copilot-actions {
+      padding:10px 16px 0; border-top:1px solid rgba(27,43,94,.06); background:#fff;
+    }
+    .copilot-actions h4 { font-size:11px; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); margin-bottom:10px; }
+    .copilot-action-card {
+      border:1px solid rgba(27,43,94,.08); border-radius:12px; padding:12px; margin-bottom:10px; background:#fff;
+    }
+    .copilot-action-card strong { color:var(--navy); display:block; margin-bottom:4px; }
+    .copilot-action-card p { font-size:12px; color:var(--text); line-height:1.55; }
+    .copilot-action-meta { display:flex; align-items:center; gap:8px; margin-top:8px; font-size:11px; color:var(--muted); }
+    .copilot-action-buttons { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+    .copilot-action-buttons button,
+    .copilot-action-buttons a {
+      display:inline-flex; align-items:center; justify-content:center; padding:7px 11px; border-radius:9px; text-decoration:none;
+      font-size:11px; font-weight:700; cursor:pointer; border:none;
+    }
+    .copilot-action-buttons .approve { background:rgba(30,132,73,.12); color:var(--green); }
+    .copilot-action-buttons .reject { background:rgba(232,25,44,.1); color:var(--red); }
+    .copilot-action-buttons .open { background:#eef3ff; color:var(--navy); }
+    .copilot-compose {
+      padding:14px 16px 16px; border-top:1px solid rgba(27,43,94,.08); background:#fff;
+    }
+    .copilot-compose textarea {
+      width:100%; min-height:92px; max-height:160px; resize:vertical; border:1.5px solid rgba(27,43,94,.12);
+      border-radius:12px; padding:12px 14px; font:inherit; color:var(--text); background:#fbfcff;
+    }
+    .copilot-compose textarea:focus { outline:none; border-color:var(--navy); background:#fff; }
+    .copilot-compose-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:10px; }
+    .copilot-compose-note { font-size:11px; color:var(--muted); line-height:1.5; }
+    .copilot-send {
+      border:none; background:var(--red); color:#fff; padding:10px 15px; border-radius:11px; font-size:12px; font-weight:800; cursor:pointer;
+      box-shadow:0 8px 18px rgba(232,25,44,.18);
+    }
+    .copilot-send[disabled] { opacity:.6; cursor:wait; }
+
     @media(max-width:900px) {
       .sidebar { display:none; position:fixed; z-index:100; }
       .sidebar.open { display:flex; }
@@ -142,15 +234,19 @@
       #sidebar-overlay.open { display:block; }
       .main-wrap { margin-left:0; }
       .grid-3,.grid-4 { grid-template-columns:1fr 1fr; }
+      .copilot-status { grid-template-columns:1fr 1fr; }
+      .copilot-toggle { right:18px; bottom:18px; }
     }
     @media(max-width:600px) {
       .grid-2,.grid-3,.grid-4 { grid-template-columns:1fr; }
       .content { padding:16px; }
+      .copilot-status { grid-template-columns:1fr; }
+      .copilot-toggle { right:14px; bottom:14px; padding:11px 14px; }
     }
   </style>
   {% block head %}{% endblock %}
 </head>
-<body>
+<body data-copilot-context="{{ copilot_context|tojson|forceescape }}">
 
 <!-- SIDEBAR -->
 <aside class="sidebar">
@@ -184,7 +280,7 @@
       <span class="nav-icon">🧠</span> Copilot
     </a>
     <a href="/activity-intelligence" class="nav-link {% if request.endpoint=='activity_intelligence' %}active{% endif %}">
-      <span class="nav-icon">📝</span> Activity Intelligence
+      <span class="nav-icon">📝</span> Activity
     </a>
     <a href="/leaderboard" class="nav-link {% if request.endpoint=='leaderboard' %}active{% endif %}">
       <span class="nav-icon">🏆</span> Leaderboard
@@ -250,6 +346,10 @@
     <h2>{% block page_title %}Dashboard{% endblock %}</h2>
     <div class="topbar-actions">
       {% block topbar_actions %}{% endblock %}
+      <button id="copilot-open-btn" class="copilot-toggle" type="button" aria-label="Open chat">
+        <span>Open Chat</span>
+        <span id="copilot-toggle-count" class="count">0</span>
+      </button>
       <a href="/alerts" class="notif-bell" title="Alerts">
         🔔
         {% if alert_count > 0 %}<span class="notif-count">{{ alert_count if alert_count < 999 else '999+' }}</span>{% endif %}
@@ -260,6 +360,54 @@
     {% block content %}{% endblock %}
   </div>
 </div>
+
+<div id="copilot-overlay" class="copilot-overlay"></div>
+<aside id="copilot-drawer" class="copilot-drawer" aria-hidden="true">
+  <div class="copilot-head">
+    <div class="copilot-head-top">
+      <div>
+        <h3>DALA Chat</h3>
+        <p id="copilot-welcome">Open the chat to review updates, check what needs attention, and move quickly.</p>
+      </div>
+      <button id="copilot-close-btn" class="close-btn" type="button" aria-label="Close assistant">×</button>
+    </div>
+  </div>
+  <div class="copilot-status">
+    <div class="stat">
+      <div class="label">Page</div>
+      <div id="copilot-page-label" class="value">Workspace</div>
+    </div>
+    <div class="stat">
+      <div class="label">Report</div>
+      <div id="copilot-report-label" class="value">Latest</div>
+    </div>
+    <div class="stat">
+      <div class="label">Pending</div>
+      <div id="copilot-pending-total" class="value">0</div>
+    </div>
+    <div class="stat">
+      <div class="label">State</div>
+      <div id="copilot-execution-state" class="value">Ready</div>
+    </div>
+  </div>
+  <div class="copilot-body">
+    <div id="copilot-prompts" class="copilot-prompts"></div>
+    <div id="copilot-messages" class="copilot-messages">
+      <div class="copilot-message system">Assistant ready. Ask about brands, stores, activity, forecasts, or next actions.</div>
+    </div>
+    <div class="copilot-actions">
+      <h4>Suggested Actions</h4>
+      <div id="copilot-actions-list"></div>
+    </div>
+    <div class="copilot-compose">
+      <textarea id="copilot-drawer-question" placeholder="Ask what changed, what needs attention, or what action to take next."></textarea>
+      <div class="copilot-compose-row">
+        <div class="copilot-compose-note" id="copilot-compose-note">The assistant uses the current page context automatically.</div>
+        <button id="copilot-send-btn" class="copilot-send" type="button">Send</button>
+      </div>
+    </div>
+  </div>
+</aside>
 
 {% block scripts %}{% endblock %}
 
@@ -276,6 +424,357 @@ function closeSidebar() {
 }
 // Close sidebar on nav link click (mobile)
 document.querySelectorAll('.nav-link').forEach(l => l.addEventListener('click', closeSidebar));
+</script>
+
+<script>
+(function () {
+  const storageOpenKey = 'dalaCopilotDrawerOpen';
+  const storageMessagesKey = 'dalaCopilotMessages';
+  const body = document.body;
+  const drawer = document.getElementById('copilot-drawer');
+  const overlay = document.getElementById('copilot-overlay');
+  const openBtn = document.getElementById('copilot-open-btn');
+  const closeBtn = document.getElementById('copilot-close-btn');
+  const sendBtn = document.getElementById('copilot-send-btn');
+  const questionEl = document.getElementById('copilot-drawer-question');
+  const messagesEl = document.getElementById('copilot-messages');
+  const promptsEl = document.getElementById('copilot-prompts');
+  const actionsEl = document.getElementById('copilot-actions-list');
+  const welcomeEl = document.getElementById('copilot-welcome');
+  const pageLabelEl = document.getElementById('copilot-page-label');
+  const reportLabelEl = document.getElementById('copilot-report-label');
+  const pendingEl = document.getElementById('copilot-pending-total');
+  const executionStateEl = document.getElementById('copilot-execution-state');
+  const toggleCountEl = document.getElementById('copilot-toggle-count');
+  const composeNoteEl = document.getElementById('copilot-compose-note');
+
+  let pageContext = {};
+  let currentState = null;
+  let messages = [];
+
+  function parseContext() {
+    try {
+      return JSON.parse(body.dataset.copilotContext || '{}');
+    } catch (err) {
+      return {};
+    }
+  }
+
+  function escapeHtml(text) {
+    return String(text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function prettyText(text) {
+    return escapeHtml(text).replace(/\n/g, '<br>');
+  }
+
+  function loadMessages() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(storageMessagesKey) || '[]');
+      return Array.isArray(parsed) ? parsed.slice(-24) : [];
+    } catch (err) {
+      return [];
+    }
+  }
+
+  function persistMessages() {
+    localStorage.setItem(storageMessagesKey, JSON.stringify(messages.slice(-24)));
+  }
+
+  function addMessage(role, text, meta) {
+    messages.push({ role, text, meta, ts: new Date().toISOString() });
+    messages = messages.slice(-24);
+    persistMessages();
+    renderMessages();
+  }
+
+  function renderMessages() {
+    if (!messages.length) {
+      messagesEl.innerHTML = '<div class="copilot-message system">Assistant ready. Ask about brands, stores, activity, forecasts, or next actions.</div>';
+      return;
+    }
+    messagesEl.innerHTML = messages.map((msg) => `
+      <div class="copilot-message ${escapeHtml(msg.role)}">
+        ${prettyText(msg.text)}
+        ${msg.meta ? `<span class="meta">${escapeHtml(msg.meta)}</span>` : ''}
+      </div>
+    `).join('');
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function renderPrompts(prompts) {
+    promptsEl.innerHTML = (prompts || []).map((prompt) => `
+      <button type="button" class="copilot-prompt" data-prompt="${escapeHtml(prompt)}">${escapeHtml(prompt)}</button>
+    `).join('');
+    promptsEl.querySelectorAll('[data-prompt]').forEach((btn) => {
+      btn.addEventListener('click', () => askQuestion(btn.dataset.prompt));
+    });
+  }
+
+  function renderActions(actions) {
+    if (!actions || !actions.length) {
+      actionsEl.innerHTML = '<p class="text-muted fs-sm">No pending actions linked to this context right now.</p>';
+      return;
+    }
+    const buildOpenLink = (action) => {
+      if (action.link) return action.link;
+      if (action.kind === 'open_report' && action.report_id) return `/dashboard?report_id=${encodeURIComponent(action.report_id)}`;
+      if (action.kind === 'open_brand' && action.brand_name) {
+        const suffix = action.report_id ? `?report_id=${encodeURIComponent(action.report_id)}` : '';
+        return `/brand/${encodeURIComponent(action.brand_name)}${suffix}`;
+      }
+      if (action.kind === 'open_page') {
+        const pageMap = {
+          forecasting: '/forecasting',
+          activity_intelligence: '/activity-intelligence',
+          history: '/history',
+          catalog: '/catalog',
+          copilot: '/copilot',
+        };
+        return pageMap[action.page] || '/copilot';
+      }
+      return '';
+    };
+    actionsEl.innerHTML = actions.map((action) => `
+      <div class="copilot-action-card" data-action-id="${action.id}">
+        <strong>${escapeHtml(action.title || action.label || 'Suggested action')}</strong>
+        <p>${prettyText(action.reason || action.description || 'No reason provided.')}</p>
+        <div class="copilot-action-meta">
+          <span class="badge ${action.priority === 'high' || action.priority === 'critical' ? 'badge-red' : 'badge-amber'}">${escapeHtml(action.priority || 'medium')}</span>
+          <span>${escapeHtml(action.agent_type || action.verb || 'Copilot')}</span>
+          <span>${escapeHtml(action.subject_key || action.brand_name || '')}</span>
+        </div>
+        <div class="copilot-action-buttons">
+          ${buildOpenLink(action) ? `<a class="open" href="${escapeHtml(buildOpenLink(action))}">Open</a>` : ''}
+          ${action.id ? `<button class="approve" type="button" data-verb="approve" data-action-id="${action.id}">Approve</button>` : ''}
+          ${action.id ? `<button class="reject" type="button" data-verb="reject" data-action-id="${action.id}">Reject</button>` : ''}
+          ${!action.id ? `<button class="approve" type="button" data-run-tool="${escapeHtml(action.kind || '')}" data-run-payload="${escapeHtml(JSON.stringify(action))}">${escapeHtml(action.verb || 'Run')}</button>` : ''}
+        </div>
+      </div>
+    `).join('');
+    actionsEl.querySelectorAll('button[data-action-id]').forEach((btn) => {
+      btn.addEventListener('click', () => updateAction(btn.dataset.actionId, btn.dataset.verb));
+    });
+    actionsEl.querySelectorAll('button[data-run-tool]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          const payload = JSON.parse(btn.dataset.runPayload || '{}');
+          await executeTool(btn.dataset.runTool, payload);
+        } catch (err) {
+          addMessage('system', 'Suggested action could not be run.');
+        }
+      });
+    });
+  }
+
+  function updateComposeNote(state) {
+    if (state?.brand_snapshot) {
+      composeNoteEl.textContent = `${state.brand_snapshot.brand_name}: ₦${Number(state.brand_snapshot.revenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across ${state.brand_snapshot.stores || 0} stores.`;
+      return;
+    }
+    if (state?.store_snapshot) {
+      composeNoteEl.textContent = `${state.store_snapshot.retailer_name || pageContext.retailer_code}: ${state.store_snapshot.visit_count || 0} visits, ${state.store_snapshot.issue_count || 0} issues.`;
+      return;
+    }
+    composeNoteEl.textContent = 'The assistant uses the current page context automatically.';
+  }
+
+  function applyState(state, options) {
+    currentState = state || {};
+    welcomeEl.textContent = state.welcome || 'Connected to reports, forecasts, activity, alerts, and memory.';
+    pageLabelEl.textContent = state.context?.page_label || 'Workspace';
+    reportLabelEl.textContent = state.report?.month_label || state.context?.report_label || 'Latest';
+    pendingEl.textContent = String(state.pending_total || 0);
+    executionStateEl.textContent = String(state.execution_state || state.execution_result?.state || 'Ready');
+    toggleCountEl.textContent = String(state.pending_total || 0);
+    renderPrompts(state.prompts || []);
+    renderActions(state.suggested_actions || state.actions || []);
+    updateComposeNote(state);
+    if (!options || !options.preserveMessages) {
+      renderMessages();
+    }
+  }
+
+  function buildContextQuery() {
+    const params = new URLSearchParams();
+    Object.entries(pageContext || {}).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') {
+        params.set(key, value);
+      }
+    });
+    return params.toString();
+  }
+
+  async function refreshState(options) {
+    const query = buildContextQuery();
+    const res = await fetch(`/api/copilot/state${query ? `?${query}` : ''}`, { headers: { 'X-Requested-With': 'fetch' } });
+    const data = await res.json();
+    if (!data.success) return;
+    applyState(data, options || {});
+  }
+
+  async function updateAction(actionId, verb) {
+    const res = await fetch(`/api/agent-actions/${actionId}/${verb}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    if (!data.success) {
+      addMessage('system', data.error || 'Action update failed.');
+      return;
+    }
+    addMessage('system', `Action ${verb === 'approve' ? 'approved' : 'rejected'}: ${data.action?.title || actionId}`);
+    await refreshState({ preserveMessages: true });
+  }
+
+  async function executeTool(toolName, argumentsPayload) {
+    const res = await fetch('/api/copilot/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tool_name: toolName,
+        arguments: argumentsPayload || {},
+        page_context: pageContext,
+      })
+    });
+    const data = await res.json();
+    if (!data.success) {
+      addMessage('system', data.error || 'Tool execution failed.');
+      return;
+    }
+    const execution = data.execution_result || {};
+    if (execution.artifacts && execution.artifacts.length) {
+      const urlArtifact = execution.artifacts.find((artifact) => artifact.type === 'url');
+      if (urlArtifact?.value) {
+        window.location.href = urlArtifact.value;
+        return;
+      }
+    }
+    addMessage('assistant', execution.message || 'Tool executed.', execution.state || 'completed');
+    applyState(data, { preserveMessages: true });
+  }
+
+  async function askQuestion(question) {
+    const prompt = String(question || questionEl.value || '').trim();
+    if (!prompt) return;
+    questionEl.value = '';
+    addMessage('user', prompt, pageContext.page_label || 'Current context');
+    sendBtn.disabled = true;
+    addMessage('assistant', 'Thinking through the latest context...', 'thinking');
+    try {
+      const res = await fetch('/api/copilot/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: prompt,
+          page_context: pageContext,
+        })
+      });
+      const data = await res.json();
+      messages = messages.filter((msg) => !(msg.meta === 'thinking' && msg.text === 'Thinking through the latest context...'));
+      if (!data.success) {
+        addMessage('system', data.error || 'Query failed.');
+        renderMessages();
+        return;
+      }
+      addMessage('assistant', data.answer, data.execution_state || (data.used_gemini ? 'planning' : 'completed'));
+      applyState(data, { preserveMessages: true });
+    } catch (err) {
+      messages = messages.filter((msg) => !(msg.meta === 'thinking' && msg.text === 'Thinking through the latest context...'));
+      addMessage('system', 'Query failed. Please try again.');
+      renderMessages();
+    } finally {
+      sendBtn.disabled = false;
+    }
+  }
+
+  function openDrawer() {
+    drawer.classList.add('open');
+    overlay.classList.add('open');
+    drawer.setAttribute('aria-hidden', 'false');
+    localStorage.setItem(storageOpenKey, '1');
+  }
+
+  function closeDrawer() {
+    drawer.classList.remove('open');
+    overlay.classList.remove('open');
+    drawer.setAttribute('aria-hidden', 'true');
+    localStorage.setItem(storageOpenKey, '0');
+  }
+
+  function scheduleProgressiveRefresh() {
+    [500, 2000, 6000].forEach((delay) => {
+      window.setTimeout(() => refreshState({ preserveMessages: true }), delay);
+    });
+  }
+
+  pageContext = parseContext();
+  messages = loadMessages();
+  renderMessages();
+  refreshState({ preserveMessages: true });
+
+  if (localStorage.getItem(storageOpenKey) === '1') {
+    openDrawer();
+  }
+
+  openBtn?.addEventListener('click', openDrawer);
+  closeBtn?.addEventListener('click', closeDrawer);
+  overlay?.addEventListener('click', closeDrawer);
+  sendBtn?.addEventListener('click', () => askQuestion());
+  questionEl?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      askQuestion();
+    }
+  });
+
+  const nativeFetch = window.fetch.bind(window);
+  const refreshPatterns = [
+    '/api/activity/import',
+    '/api/catalog/',
+    '/api/set_target',
+    '/api/save_alert_rule',
+    '/api/toggle_alert_rule',
+    '/api/delete_alert_rule',
+    '/api/acknowledge',
+    '/api/update_contact',
+    '/api/agent-actions/',
+    '/api/db_import',
+    '/api/db_import_sheet',
+    '/api/database/report/',
+    '/api/drive-sync/',
+    '/api/generate_async'
+  ];
+
+  window.fetch = async function (input, init) {
+    const response = await nativeFetch(input, init);
+    try {
+      const url = typeof input === 'string' ? input : (input?.url || '');
+      const method = String((init && init.method) || input?.method || 'GET').toUpperCase();
+      if (method !== 'GET' && response.ok && refreshPatterns.some((pattern) => url.includes(pattern))) {
+        scheduleProgressiveRefresh();
+      }
+    } catch (err) {
+      // ignore assistant refresh errors
+    }
+    return response;
+  };
+
+  window.DalaCopilot = {
+    open: openDrawer,
+    close: closeDrawer,
+    refresh: refreshState,
+    ask: askQuestion,
+    updateAction,
+    getContext: () => ({ ...pageContext }),
+  };
+})();
 </script>
 
 <!-- Page loading bar — fires instantly on any nav or link click -->

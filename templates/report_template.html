@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>{{ brand_name }} — DALA Sales Report</title>
+  <title>{{ brand_name }} - DALA Sales Report</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
@@ -539,6 +539,126 @@
       font-weight: 700;
     }
 
+    .gmv-band {
+      align-items: stretch;
+      gap: 12px;
+    }
+
+    .gmv-lead {
+      min-width: 138px;
+      padding: 6px 0;
+    }
+
+    .gmv-chart-block {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .gmv-chart-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .gmv-chart-title {
+      font-size: 9pt;
+      font-weight: 800;
+      color: #1B2B5E;
+      line-height: 1.1;
+    }
+
+    .gmv-chart-sub {
+      font-size: 5.3pt;
+      color: #7A849E;
+      line-height: 1.5;
+      margin-top: 3px;
+    }
+
+    .gmv-legend {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .gmv-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      font-size: 4.8pt;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+      background: #F4F6FA;
+      color: #4A5775;
+    }
+
+    .gmv-chip::before {
+      content: '';
+      width: 10px;
+      height: 0;
+      border-top: 2px solid currentColor;
+      display: inline-block;
+    }
+
+    .gmv-chip.actual {
+      background: rgba(232,25,44,0.10);
+      color: #E8192C;
+    }
+
+    .gmv-chip.forecast {
+      background: rgba(46,134,193,0.12);
+      color: #2E86C1;
+    }
+
+    .gmv-chip.forecast::before {
+      border-top-style: dashed;
+    }
+
+    .gmv-chip.range {
+      background: rgba(27,43,94,0.10);
+      color: #1B2B5E;
+    }
+
+    .gmv-chip.range::before {
+      border-top-style: solid;
+      opacity: 0.55;
+    }
+
+    .gmv-side-stats {
+      width: 128px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .gmv-mini {
+      padding: 9px 10px;
+      border-radius: 12px;
+      background: linear-gradient(180deg, #fafcff 0%, #edf2fb 100%);
+      border: 1px solid #d9e1f0;
+    }
+
+    .gmv-mini-value {
+      font-size: 10.5pt;
+      font-weight: 800;
+      color: #1B2B5E;
+      line-height: 1.1;
+      margin-top: 3px;
+    }
+
+    .gmv-mini-sub {
+      font-size: 4.8pt;
+      color: #7A849E;
+      line-height: 1.45;
+      margin-top: 4px;
+    }
+
     .store-summary-card {
       margin: 0 14px 8px;
       background: #fff;
@@ -945,68 +1065,48 @@
   <!-- ── Tagline ─────────────────────────────────────────────────────────── -->
   <div class="tagline-bar">BOOSTING REVENUE AND ENHANCING BRAND VALUE</div>
 
-  <!-- ── Growth Outlook ──────────────────────────────────────────────────── -->
-  <div class="scorecard-band">
-    <div style="min-width:150px;">
-      <div class="score-kicker">Growth Outlook</div>
-      <div style="font-size:14pt;font-weight:800;color:#1B2B5E;line-height:1.1;">{{ growth_outlook.anchor_label if growth_outlook and growth_outlook.available else month_label }}</div>
-      <div style="font-size:6pt;color:#8793AA;margin-top:4px;line-height:1.5;">
-        Monthly trend vs the previous 1, 3, and 6 months.
-      </div>
+  {% if gmv_window and gmv_window.available %}
+  <div class="scorecard-band gmv-band">
+    <div class="gmv-lead">
+      <div class="score-kicker">GMV Window</div>
+      <div class="sc-total-num" style="font-size:16pt;">{{ gmv_window.current_gmv_display }}</div>
+      <div class="score-denom">{{ gmv_window.anchor_label }}</div>
+      <div class="score-share-kicker">{{ gmv_window.relationship_months }} months with DALA</div>
     </div>
 
     <div class="sc-divider"></div>
 
-    <div style="flex:1;">
-      <table style="width:100%;border-collapse:collapse;font-size:6.2pt;">
-        <thead>
-          <tr style="text-transform:uppercase;color:#7A849E;letter-spacing:0.4px;font-size:5.2pt;">
-            <th style="text-align:left;padding-bottom:5px;">Metric</th>
-            <th style="text-align:center;padding-bottom:5px;">1M</th>
-            <th style="text-align:center;padding-bottom:5px;">3M</th>
-            <th style="text-align:center;padding-bottom:5px;">6M</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% set metrics = [
-            ('Supermarket Growth', growth_outlook.metrics.supermarket_growth if growth_outlook else {}),
-            ('Avg Revenue / Supermarket', growth_outlook.metrics.avg_revenue_per_store_growth if growth_outlook else {}),
-          ] %}
-          {% for label, row in metrics %}
-          <tr>
-            <td style="padding:7px 0;border-top:1px solid #E1E6F0;font-weight:700;color:#1B2B5E;">{{ label }}</td>
-            {% for key in ['1m', '3m', '6m'] %}
-            {% set item = row.get(key, {}) %}
-            <td style="padding:7px 4px;border-top:1px solid #E1E6F0;text-align:center;">
-              {% if item.eligible %}
-                <div style="font-weight:800;color:{% if item.direction == 'Growing' %}#1E8449{% elif item.direction == 'Declining' %}#E8192C{% else %}#1B2B5E{% endif %};">
-                  {{ '%+.1f'|format(item.change_pct) }}%
-                </div>
-                <div style="font-size:5.2pt;color:#7A849E;">{{ item.direction }}</div>
-              {% else %}
-                <span style="color:#9AA3B3;">N/A</span>
-              {% endif %}
-            </td>
-            {% endfor %}
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="gmv-chart-block">
+      <div class="gmv-chart-head">
+        <div>
+          <div class="gmv-chart-title">Gross Merchandise Value</div>
+          <div class="gmv-chart-sub">{{ gmv_window.window_note }}</div>
+        </div>
+        <div class="gmv-legend">
+          <span class="gmv-chip actual">Actual</span>
+          <span class="gmv-chip forecast">Forecast</span>
+          <span class="gmv-chip range">Range</span>
+        </div>
+      </div>
+      {{ gmv_chart_svg | safe }}
     </div>
 
     <div class="sc-divider"></div>
 
-    <div class="sc-total-block">
-      <div class="score-kicker">Store Coverage</div>
-      <div class="score-line">
-        <div class="sc-total-num">{{ num_stores }}</div>
-        <div class="score-denom">stores</div>
+    <div class="gmv-side-stats">
+      <div class="gmv-mini">
+        <div class="score-kicker">Recent Average</div>
+        <div class="gmv-mini-value">{{ gmv_window.history_average_display }}</div>
+        <div class="gmv-mini-sub">Average monthly GMV over the visible actual months.</div>
       </div>
-      <div class="score-share-kicker">Avg Rev / Store</div>
-      <div style="font-size:11pt;font-weight:800;color:#1B2B5E;line-height:1;">₦{{ "{:,.0f}".format(kpis.avg_revenue_per_store or 0) }}</div>
+      <div class="gmv-mini">
+        <div class="score-kicker">Next 6 Months</div>
+        <div class="gmv-mini-value">{{ gmv_window.forward_total_display }}</div>
+        <div class="gmv-mini-sub">Expected range {{ gmv_window.forward_range_display }}</div>
+      </div>
     </div>
-
   </div>
+  {% endif %}
 
   <!-- ── Recommendations ─────────────────────────────────────────────────── -->
   <div class="content-area" style="padding-top:10px;flex:0 0 auto;overflow:visible;">
@@ -1115,10 +1215,10 @@
     </div>
     {% endif %}
 
-    <!-- Supplied by Brand -->
+    <!-- Inventory Supplied by Brand -->
     {% if supply_table %}
     <div class="data-table-card">
-      <div class="dtc-header">Supplied by Brand</div>
+      <div class="dtc-header">Inventory Supplied by Brand</div>
       <table class="dtc-table">
         <thead>
           <tr><th>SKU</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Value</th></tr>

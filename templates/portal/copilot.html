@@ -1,16 +1,32 @@
 {% extends "portal/base.html" %}
-{% block title %}Copilot — DALA Analytics{% endblock %}
-{% block page_title %}Admin Copilot{% endblock %}
+{% block title %}Copilot Command Center{% endblock %}
+{% block page_title %}Copilot Command Center{% endblock %}
 
 {% block topbar_actions %}
 <a href="/agent-actions" class="btn btn-outline btn-sm">Review Agent Actions</a>
+<a href="/import" class="btn btn-primary btn-sm">Open Import</a>
 {% endblock %}
 
 {% block head %}
 <style>
-  .copilot-grid { display:grid; grid-template-columns:1.25fr .75fr; gap:20px; }
-  .copilot-answer { min-height:180px; white-space:pre-wrap; line-height:1.7; }
-  @media(max-width:900px){ .copilot-grid { grid-template-columns:1fr; } }
+  .cc-grid { display:grid; grid-template-columns:1.15fr .85fr; gap:20px; }
+  .cc-stack { display:grid; gap:20px; }
+  .cc-panel h3 { color:var(--navy); font-weight:800; margin-bottom:10px; }
+  .cc-panel p { color:var(--muted); font-size:13px; line-height:1.6; }
+  .cc-answer { min-height:180px; white-space:pre-wrap; line-height:1.7; background:#fbfcff; border:1px solid rgba(27,43,94,.08); border-radius:16px; padding:16px; }
+  .cc-status-line { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+  .cc-list { display:grid; gap:10px; margin-top:14px; }
+  .cc-item { border:1px solid rgba(27,43,94,.08); border-radius:14px; padding:14px; background:#fff; }
+  .cc-item h4 { color:var(--navy); margin-bottom:6px; }
+  .cc-item-meta { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; font-size:12px; color:var(--muted); }
+  .cc-item-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .cc-inline-form { display:grid; gap:10px; margin-top:12px; }
+  .cc-inline-form .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .cc-empty { color:var(--muted); font-size:13px; }
+  .cc-steps { display:grid; gap:8px; margin-top:14px; }
+  .cc-step { border-radius:12px; padding:10px 12px; background:#f5f7fb; font-size:13px; display:flex; justify-content:space-between; gap:10px; }
+  .cc-import-row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:12px; }
+  @media(max-width:980px){ .cc-grid { grid-template-columns:1fr; } .cc-inline-form .grid-2 { grid-template-columns:1fr; } }
 </style>
 {% endblock %}
 
@@ -19,12 +35,12 @@
   <div class="kpi-card blue">
     <div class="kpi-label">Pending Actions</div>
     <div class="kpi-value">{{ pending_actions|length }}</div>
-    <div class="kpi-sub">Approval-first queue</div>
+    <div class="kpi-sub">Operational queue</div>
   </div>
   <div class="kpi-card red">
     <div class="kpi-label">Activity Issues</div>
     <div class="kpi-value">{{ activity_summary.totals.issues or 0 }}</div>
-    <div class="kpi-sub">From latest linked activity</div>
+    <div class="kpi-sub">Linked to latest context</div>
   </div>
   <div class="kpi-card green">
     <div class="kpi-label">Visits</div>
@@ -33,61 +49,412 @@
   </div>
 </div>
 
-<div class="copilot-grid">
-  <div class="card">
-    <h3 class="text-navy fw-bold mb-2">Ask Copilot</h3>
-    <p class="text-muted fs-sm mb-2">Examples: "What needs attention this week?" or "Summarize Zayith with field issues."</p>
-    <div class="form-group">
-      <label class="form-label">Question</label>
-      <textarea id="copilotQuestion" class="form-control" rows="4" placeholder="Ask about brands, risks, activity, targets, or forecasts."></textarea>
+<div class="cc-grid">
+  <div class="cc-stack">
+    <div class="card cc-panel">
+      <h3>Chat</h3>
+      <p>Use the planner-executor flow to understand the request, resolve context, choose tools, execute, and summarize.</p>
+      <div class="form-group">
+        <label class="form-label">Question</label>
+        <textarea id="ccQuestion" class="form-control" rows="4" placeholder="Ask what changed, what to run next, or which brand needs attention."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Optional Brand Context</label>
+        <input id="ccBrand" class="form-control" type="text" placeholder="e.g. Zayith">
+      </div>
+      <div class="cc-import-row">
+        <button id="ccAskBtn" class="btn btn-primary" type="button">Run Query</button>
+        <span id="ccExecutionState" class="badge badge-blue">ready</span>
+      </div>
+      <div id="ccAnswer" class="cc-answer mt-2 text-muted">Your answer will appear here.</div>
+      <div id="ccStatusLine" class="cc-status-line"></div>
+      <div id="ccSteps" class="cc-steps"></div>
+      <div id="ccSuggestedActions" class="cc-list"></div>
     </div>
-    <div class="form-group">
-      <label class="form-label">Optional Brand Context</label>
-      <input id="copilotBrand" class="form-control" type="text" placeholder="e.g. Zayith">
+
+    <div class="card cc-panel">
+      <h3>Actions</h3>
+      <p>Pending actions stay separate from query-specific suggestions so the operator queue is always visible.</p>
+      <div id="ccPendingActions" class="cc-list">
+        {% for action in pending_actions[:12] %}
+        <div class="cc-item" data-action-id="{{ action.id }}">
+          <h4>{{ action.title }}</h4>
+          <div>{{ action.reason or 'No reason provided.' }}</div>
+          <div class="cc-item-meta">
+            <span>{{ action.agent_type }}</span>
+            <span>{{ action.subject_key }}</span>
+            <span>{{ action.priority }}</span>
+          </div>
+          <div class="cc-item-actions">
+            <button class="btn btn-green btn-sm" type="button" onclick="window.CopilotCommandCenter.updateAction({{ action.id }}, 'approve')">Approve</button>
+            <button class="btn btn-outline btn-sm" type="button" onclick="window.CopilotCommandCenter.updateAction({{ action.id }}, 'reject')">Reject</button>
+          </div>
+        </div>
+        {% else %}
+        <div class="cc-empty">No pending actions yet.</div>
+        {% endfor %}
+      </div>
     </div>
-    <button id="copilotAskBtn" class="btn btn-primary">Ask Copilot</button>
-    <div id="copilotAnswer" class="copilot-answer mt-2 text-muted">Your answer will appear here.</div>
   </div>
 
-  <div class="card">
-    <div class="flex items-center justify-between mb-2">
-      <h3 class="text-navy fw-bold">Pending Actions</h3>
-      <span class="badge badge-blue">{{ pending_actions|length }}</span>
+  <div class="cc-stack">
+    <div class="card cc-panel">
+      <h3>Memory</h3>
+      <p>Session, operational, and workspace memories are searchable and pin-able for transparency.</p>
+      <div id="ccMemoryList" class="cc-list"><div class="cc-empty">Loading memory…</div></div>
     </div>
-    {% for action in pending_actions[:10] %}
-    <div style="padding:12px 0;border-bottom:1px solid var(--gray);">
-      <div class="flex items-center justify-between">
-        <strong>{{ action.title }}</strong>
-        <span class="badge {% if action.priority == 'high' or action.priority == 'critical' %}badge-red{% else %}badge-amber{% endif %}">{{ action.priority }}</span>
+
+    <div class="card cc-panel">
+      <h3>Connectors</h3>
+      <p>Run Drive, Sheets, Email, WhatsApp, and webhook actions from one place.</p>
+      <div id="ccConnectorList" class="cc-list"><div class="cc-empty">Loading connectors…</div></div>
+    </div>
+
+    <div class="card cc-panel">
+      <h3>Schedules</h3>
+      <p>Assistant jobs reuse the existing schedule model and support create, pause, resume, and run-now.</p>
+      <div class="cc-inline-form">
+        <input id="ccScheduleLabel" class="form-control" type="text" placeholder="Label">
+        <div class="grid-2">
+          <select id="ccScheduleConnector" class="form-control">
+            <option value="">Assistant job</option>
+            <option value="drive">Drive</option>
+            <option value="sheets">Sheets</option>
+            <option value="email">Email</option>
+            <option value="whatsapp">WhatsApp</option>
+            <option value="webhook">Webhook</option>
+          </select>
+          <select id="ccScheduleCadence" class="form-control">
+            <option value="manual">Manual</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </div>
+        <button id="ccCreateScheduleBtn" class="btn btn-outline" type="button">Create Schedule</button>
       </div>
-      <div class="fs-sm text-muted mt-1">{{ action.agent_type }} · {{ action.subject_key }}</div>
-      {% if action.reason %}<div class="fs-sm mt-1">{{ action.reason }}</div>{% endif %}
+      <div id="ccScheduleList" class="cc-list"><div class="cc-empty">Loading schedules…</div></div>
     </div>
-    {% else %}
-    <p class="text-muted fs-sm">No pending actions yet.</p>
-    {% endfor %}
+
+    <div class="card cc-panel">
+      <h3>Imports</h3>
+      <p>Upload an activity file here or jump into the full import workflow.</p>
+      <div class="cc-import-row">
+        <input id="ccImportFile" type="file" class="form-control" accept=".xlsx,.xls,.csv">
+        <button id="ccImportBtn" class="btn btn-primary" type="button">Upload Activity</button>
+        <a href="/import" class="btn btn-outline">Open Full Import</a>
+      </div>
+      <div id="ccImportStatus" class="text-muted fs-sm mt-2">No import running.</div>
+    </div>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-document.getElementById('copilotAskBtn')?.addEventListener('click', async () => {
-  const answerEl = document.getElementById('copilotAnswer');
-  const question = document.getElementById('copilotQuestion').value.trim();
-  const brandName = document.getElementById('copilotBrand').value.trim();
-  if (!question) {
-    answerEl.textContent = 'Please enter a question first.';
-    return;
+(function () {
+  const questionEl = document.getElementById('ccQuestion');
+  const brandEl = document.getElementById('ccBrand');
+  const answerEl = document.getElementById('ccAnswer');
+  const askBtn = document.getElementById('ccAskBtn');
+  const stateEl = document.getElementById('ccExecutionState');
+  const stepsEl = document.getElementById('ccSteps');
+  const statusLineEl = document.getElementById('ccStatusLine');
+  const suggestedActionsEl = document.getElementById('ccSuggestedActions');
+  const memoryListEl = document.getElementById('ccMemoryList');
+  const connectorListEl = document.getElementById('ccConnectorList');
+  const scheduleListEl = document.getElementById('ccScheduleList');
+  const importFileEl = document.getElementById('ccImportFile');
+  const importBtn = document.getElementById('ccImportBtn');
+  const importStatusEl = document.getElementById('ccImportStatus');
+
+  function badgeClass(state) {
+    if (['failed', 'error'].includes(String(state || '').toLowerCase())) return 'badge-red';
+    if (['waiting', 'planning', 'executing', 'thinking', 'job_running'].includes(String(state || '').toLowerCase())) return 'badge-amber';
+    return 'badge-blue';
   }
-  answerEl.textContent = 'Thinking...';
-  const res = await fetch('/api/copilot/query', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, brand_name: brandName })
-  });
-  const data = await res.json();
-  answerEl.textContent = data.success ? data.answer : (data.error || 'Query failed.');
-});
+
+  function escapeHtml(text) {
+    return String(text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function renderSteps(steps) {
+    if (!steps?.length) {
+      stepsEl.innerHTML = '';
+      return;
+    }
+    stepsEl.innerHTML = steps.map((step) => `
+      <div class="cc-step">
+        <span>${escapeHtml(step.step)}</span>
+        <span class="badge ${badgeClass(step.status)}">${escapeHtml(step.status)}</span>
+      </div>
+    `).join('');
+  }
+
+  function renderStatusLine(data) {
+    const refs = data.memory_refs || [];
+    const jobs = data.next_jobs || [];
+    const states = [
+      `Memory refs: ${refs.length}`,
+      `Next jobs: ${jobs.length}`,
+      `Planner tools: ${(data.planner_tools || []).join(', ') || 'none'}`
+    ];
+    statusLineEl.innerHTML = states.map((item) => `<span class="badge badge-blue">${escapeHtml(item)}</span>`).join('');
+  }
+
+  function renderSuggestedActions(actions) {
+    if (!actions?.length) {
+      suggestedActionsEl.innerHTML = '<div class="cc-empty">No query-specific actions yet.</div>';
+      return;
+    }
+    suggestedActionsEl.innerHTML = actions.map((action) => `
+      <div class="cc-item">
+        <h4>${escapeHtml(action.label || action.title || 'Suggested action')}</h4>
+        <div>${escapeHtml(action.description || action.reason || 'Run or open this next.')}</div>
+        <div class="cc-item-meta">
+          <span>${escapeHtml(action.kind || 'action')}</span>
+          <span>Outcome score: ${Number(action.outcome_score || 0).toFixed(1)}</span>
+        </div>
+        <div class="cc-item-actions">
+          <button class="btn btn-outline btn-sm" type="button" data-run-action='${escapeHtml(JSON.stringify(action))}'>${escapeHtml(action.verb || 'Run')}</button>
+        </div>
+      </div>
+    `).join('');
+    suggestedActionsEl.querySelectorAll('[data-run-action]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const action = JSON.parse(btn.dataset.runAction || '{}');
+        await runTool(action.kind, action);
+      });
+    });
+  }
+
+  function renderMemory(items) {
+    if (!items?.length) {
+      memoryListEl.innerHTML = '<div class="cc-empty">No memory items found.</div>';
+      return;
+    }
+    memoryListEl.innerHTML = items.map((item) => `
+      <div class="cc-item">
+        <h4>${escapeHtml(item.memory_kind || 'memory')}</h4>
+        <div>${escapeHtml((item.memory_text || '').slice(0, 180))}</div>
+        <div class="cc-item-meta">
+          <span>${escapeHtml(item.subject_type || item.scope_type || 'scope')}</span>
+          <span>${escapeHtml(item.subject_key || item.scope_key || '')}</span>
+          <span>${escapeHtml(item.memory_layer || 'session')}</span>
+        </div>
+        <div class="cc-item-actions">
+          <button class="btn btn-outline btn-sm" type="button" data-pin-memory="${item.id}">${item.pinned ? 'Unpin' : 'Pin'}</button>
+        </div>
+      </div>
+    `).join('');
+    memoryListEl.querySelectorAll('[data-pin-memory]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const memoryId = Number(btn.dataset.pinMemory || 0);
+        await fetch('/api/copilot/memory/pin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ memory_id: memoryId, pinned: btn.textContent === 'Pin' })
+        });
+        await loadMemory();
+      });
+    });
+  }
+
+  function renderConnectors(items) {
+    if (!items?.length) {
+      connectorListEl.innerHTML = '<div class="cc-empty">No connectors available.</div>';
+      return;
+    }
+    connectorListEl.innerHTML = items.map((item) => `
+      <div class="cc-item">
+        <h4>${escapeHtml(item.label)}</h4>
+        <div>${escapeHtml(item.status)}</div>
+        <div class="cc-item-meta">
+          <span>${item.available ? 'configured' : 'not configured'}</span>
+          <span>${escapeHtml((item.actions || []).join(', '))}</span>
+        </div>
+        <div class="cc-item-actions">
+          <button class="btn btn-outline btn-sm" type="button" data-run-connector="${escapeHtml(item.connector)}">Run</button>
+        </div>
+      </div>
+    `).join('');
+    connectorListEl.querySelectorAll('[data-run-connector]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await runConnector(btn.dataset.runConnector);
+      });
+    });
+  }
+
+  function renderSchedules(items) {
+    if (!items?.length) {
+      scheduleListEl.innerHTML = '<div class="cc-empty">No schedules created yet.</div>';
+      return;
+    }
+    scheduleListEl.innerHTML = items.map((item) => `
+      <div class="cc-item">
+        <h4>${escapeHtml(item.label || item.job_type || 'Schedule')}</h4>
+        <div>${escapeHtml(item.cadence || 'manual')}</div>
+        <div class="cc-item-meta">
+          <span>${escapeHtml(item.status || 'active')}</span>
+          <span>${escapeHtml(item.connector || item.target || '')}</span>
+        </div>
+        <div class="cc-item-actions">
+          <button class="btn btn-outline btn-sm" type="button" data-run-schedule="${item.id}">Run Now</button>
+          <button class="btn btn-outline btn-sm" type="button" data-toggle-schedule="${item.id}" data-toggle-mode="${item.status === 'paused' ? 'resume' : 'pause'}">${item.status === 'paused' ? 'Resume' : 'Pause'}</button>
+        </div>
+      </div>
+    `).join('');
+    scheduleListEl.querySelectorAll('[data-run-schedule]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await fetch(`/api/copilot/schedules/${btn.dataset.runSchedule}/run-now`, { method: 'POST' });
+        await loadSchedules();
+      });
+    });
+    scheduleListEl.querySelectorAll('[data-toggle-schedule]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await fetch(`/api/copilot/schedules/${btn.dataset.toggleSchedule}/${btn.dataset.toggleMode}`, { method: 'POST' });
+        await loadSchedules();
+      });
+    });
+  }
+
+  async function loadMemory() {
+    const brand = brandEl.value.trim();
+    const query = new URLSearchParams({ limit: '8' });
+    if (brand) {
+      query.set('subject_type', 'brand');
+      query.set('subject_key', brand);
+    }
+    const res = await fetch(`/api/copilot/memory?${query.toString()}`);
+    const data = await res.json();
+    renderMemory(data.items || []);
+  }
+
+  async function loadConnectors() {
+    const res = await fetch('/api/copilot/connectors');
+    const data = await res.json();
+    renderConnectors(data.execution_result?.data?.connectors || []);
+  }
+
+  async function loadSchedules() {
+    const res = await fetch('/api/copilot/schedules?status=all&limit=8');
+    const data = await res.json();
+    renderSchedules(data.items || []);
+  }
+
+  async function runConnector(connector) {
+    const res = await fetch(`/api/copilot/connectors/${connector}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    answerEl.textContent = data.execution_result?.message || 'Connector executed.';
+    stateEl.textContent = data.execution_result?.state || 'completed';
+    stateEl.className = `badge ${badgeClass(data.execution_result?.state)}`;
+    await loadSchedules();
+    await loadMemory();
+  }
+
+  async function runTool(toolName, argumentsPayload) {
+    const res = await fetch('/api/copilot/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool_name: toolName, arguments: argumentsPayload || {} })
+    });
+    const data = await res.json();
+    answerEl.textContent = data.execution_result?.message || 'Tool executed.';
+    stateEl.textContent = data.execution_result?.state || 'completed';
+    stateEl.className = `badge ${badgeClass(data.execution_result?.state)}`;
+    renderStatusLine(data);
+    await loadMemory();
+    await loadSchedules();
+  }
+
+  async function ask() {
+    const question = questionEl.value.trim();
+    if (!question) return;
+    askBtn.disabled = true;
+    answerEl.textContent = 'Thinking through the latest context...';
+    stateEl.textContent = 'thinking';
+    stateEl.className = `badge ${badgeClass('thinking')}`;
+    const res = await fetch('/api/copilot/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question,
+        brand_name: brandEl.value.trim(),
+      })
+    });
+    const data = await res.json();
+    askBtn.disabled = false;
+    if (!data.success) {
+      answerEl.textContent = data.error || 'Query failed.';
+      stateEl.textContent = 'failed';
+      stateEl.className = `badge ${badgeClass('failed')}`;
+      return;
+    }
+    answerEl.textContent = data.answer || 'No answer generated.';
+    stateEl.textContent = data.execution_state || 'completed';
+    stateEl.className = `badge ${badgeClass(data.execution_state)}`;
+    renderSteps(data.planned_steps || []);
+    renderStatusLine(data);
+    renderSuggestedActions(data.suggested_actions || []);
+    await loadMemory();
+    await loadSchedules();
+  }
+
+  async function createSchedule() {
+    const label = document.getElementById('ccScheduleLabel').value.trim();
+    const connector = document.getElementById('ccScheduleConnector').value;
+    const cadence = document.getElementById('ccScheduleCadence').value;
+    await fetch('/api/copilot/schedules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        label: label || 'Copilot job',
+        connector: connector || null,
+        cadence,
+        job_type: connector ? 'connector' : 'assistant',
+        payload: { action: connector && ['drive', 'sheets'].includes(connector) ? 'check' : 'send' }
+      })
+    });
+    await loadSchedules();
+  }
+
+  async function uploadActivityImport() {
+    const file = importFileEl.files?.[0];
+    if (!file) {
+      importStatusEl.textContent = 'Choose a file first.';
+      return;
+    }
+    const form = new FormData();
+    form.append('file', file);
+    importStatusEl.textContent = 'Uploading activity file...';
+    const res = await fetch('/api/activity/import', { method: 'POST', body: form });
+    const data = await res.json();
+    importStatusEl.textContent = data.success ? `Import job started: ${data.job_id}` : (data.error || 'Import failed.');
+  }
+
+  askBtn?.addEventListener('click', ask);
+  document.getElementById('ccCreateScheduleBtn')?.addEventListener('click', createSchedule);
+  importBtn?.addEventListener('click', uploadActivityImport);
+
+  window.CopilotCommandCenter = {
+    updateAction: async (actionId, verb) => {
+      await fetch(`/api/agent-actions/${actionId}/${verb}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+      location.reload();
+    }
+  };
+
+  loadMemory();
+  loadConnectors();
+  loadSchedules();
+})();
 </script>
 {% endblock %}

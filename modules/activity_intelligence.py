@@ -290,7 +290,8 @@ def _photo_count(answer_type: str, answer: str) -> int:
     return 1 if str(answer_type or '').lower() == 'image' and str(answer or '').strip() else 0
 
 
-def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '', report_id: int = None) -> dict:
+def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
+                           report_id: int = None, progress_cb=None) -> dict:
     df = df.copy()
     if df.empty:
         return {
@@ -307,9 +308,14 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
     unmatched_brand_candidates = set()
     unmatched_sku_candidates = set()
 
-    for row in df.to_dict(orient='records'):
+    total_rows = max(len(df), 1)
+    for idx, row in enumerate(df.to_dict(orient='records'), start=1):
         clean = {k: (None if str(v).strip() in ('', 'nan', 'NaT') else str(v).strip()) for k, v in row.items()}
         events.append(clean)
+
+        if progress_cb and (idx == 1 or idx == total_rows or idx % 250 == 0):
+            progress = 22 + int((idx / total_rows) * 38)
+            progress_cb(progress, f"Reading activity rows {idx:,} of {total_rows:,}")
 
         survey_guess = _extract_brand_candidate_from_survey(clean.get('survey_name'))
         brand_rows = []
@@ -386,6 +392,9 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
                 'answer': clean.get('answer'),
             })
 
+    if progress_cb:
+        progress_cb(66, 'Building visit summary')
+
     visit_rows = []
     grouped = df.copy()
     grouped['visit_key'] = (
@@ -421,6 +430,9 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
             'photo_count': visit_photo_count,
         })
 
+    if progress_cb:
+        progress_cb(78, 'Checking brand and SKU matches')
+
     if ds:
         for brand_name in sorted(unmatched_brand_candidates):
             candidate = ds.find_brand_duplicate_candidate(brand_name)
@@ -450,6 +462,9 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
                 similarity_score=candidate['score'] if candidate else 0.0,
             )
 
+    if progress_cb:
+        progress_cb(88, 'Preparing summary')
+
     activity_dates = [d for d in df['activity_date'].dropna().tolist() if d]
     summary = {
         'row_count': int(len(df)),
@@ -469,4 +484,3 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
         'issues': issues,
         'brand_mentions': brand_mentions,
     }
-
