@@ -79,6 +79,7 @@
           {% endif %}
         </td>
         <td style="display:flex;gap:4px;">
+          <a href="{{ url_for('trends', scope='brand', brand=b.brand_name) }}" title="Trends" class="btn btn-outline btn-sm">Trends</a>
           <a href="{{ url_for('api_report_pdf', report_id=report.id, brand_name=b.brand_name) }}" title="PDF" class="btn btn-primary btn-sm">PDF</a>
           <a href="{{ url_for('api_report_html', report_id=report.id, brand_name=b.brand_name) }}" target="_blank" title="HTML" class="btn btn-navy btn-sm">HTML</a>
         </td>

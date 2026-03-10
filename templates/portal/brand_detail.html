@@ -3,6 +3,7 @@
 {% block page_title %}{{ brand_name }}{% endblock %}
 
 {% block topbar_actions %}
+<a href="{{ url_for('trends', scope='brand', brand=brand_name) }}" class="btn btn-outline btn-sm">Open Trends</a>
 {% if report %}
 <a href="{{ url_for('api_report_pdf', report_id=report.id, brand_name=brand_name) }}" class="btn btn-primary btn-sm">⬇ Download PDF</a>
 <a href="{{ url_for('api_report_html', report_id=report.id, brand_name=brand_name) }}" target="_blank" class="btn btn-outline btn-sm">Open Interactive</a>
