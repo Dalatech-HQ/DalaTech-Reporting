@@ -18,7 +18,7 @@ from datetime import datetime
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from playwright.sync_api import sync_playwright
 
-from .kpi import generate_narrative, calculate_perf_score
+from .kpi import generate_narrative, calculate_perf_score, build_reorder_trend
 from .predictor import monthly_growth_outlook
 from .gmv import render_gmv_window_svg
 from .charts_html import (
@@ -569,6 +569,7 @@ def render_pdf_report_html(brand_name: str, kpis: dict,
     revenue_display = f'\u20a6{kpis["total_revenue"]:,.2f}'
     qty_display     = f'{kpis["total_qty"]:,.2f}'
     num_stores      = int(kpis.get('num_stores') or kpis.get('store_count') or 0)
+    reorder_trend   = kpis.get('reorder_trend') or build_reorder_trend(kpis=kpis)
 
     # Total closing stock — prefer direct scalar key, fall back to summing the DataFrame
     total_stock_val = float(
@@ -616,6 +617,7 @@ def render_pdf_report_html(brand_name: str, kpis: dict,
         closing_stock_table=closing_stock_table,
         pickup_table=pickup_table,
         supply_table=supply_table,
+        reorder_trend=reorder_trend,
         growth_outlook=growth_outlook,
         gmv_window=gmv_window,
         gmv_chart_svg=gmv_chart_svg,

@@ -38,7 +38,7 @@ from flask import (
 _JOBS = {}   # kept for legacy compatibility only — new code uses ds.get_job()
 
 from modules.ingestion        import load_and_clean, filter_by_date, split_by_brand
-from modules.kpi              import calculate_kpis, calculate_perf_score, generate_narrative
+from modules.kpi              import calculate_kpis, calculate_perf_score, generate_narrative, build_reorder_trend
 from modules.pdf_generator_html import generate_pdf_html
 from modules.pdf_generator      import generate_pdf as generate_pdf_reportlab
 from modules.pdf_generator_html import render_pdf_report_html, render_pdf_bytes, prepare_interactive_html_for_pdf
@@ -137,6 +137,33 @@ def _brand_report_context(brand_name: str, cutoff_date: str | None = None) -> di
         'growth_outlook': forecast_bundle.get('growth_outlook'),
         'gmv_window': build_gmv_window(history, cutoff_date=cutoff_date),
     }
+
+
+def _attach_reorder_trend(brand_name: str, kpis: dict | None,
+                          report_type: str | None = None,
+                          cutoff_date: str | None = None) -> dict | None:
+    """Attach a comparable-period reorder trend payload to the KPI dict."""
+    if kpis is None:
+        return None
+
+    def _filter_history(rows):
+        if not cutoff_date:
+            return rows
+        cutoff = str(cutoff_date)[:10]
+        return [
+            row for row in rows
+            if not row.get('start_date') or str(row.get('start_date'))[:10] <= cutoff
+        ]
+
+    history = _filter_history(ds.get_brand_history(brand_name, limit=8, report_type=report_type))
+    if len(history) < 2 and report_type:
+        history = _filter_history(ds.get_brand_history(brand_name, limit=8))
+
+    kpis['reorder_trend'] = build_reorder_trend(
+        history_rows=list(reversed(history)),
+        kpis=kpis,
+    )
+    return kpis
 
 
 def _compute_and_save_churn(report_id: int):
@@ -931,6 +958,14 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
             check_and_save_alerts(report_id, b, k, portfolio_avg_revenue, history[1:], ds)
         run_portfolio_alerts(report_id, ds.get_all_brand_kpis(report_id), ds)
         _compute_and_save_churn(report_id)
+
+        for b in brands:
+            _attach_reorder_trend(
+                brand_name=b,
+                kpis=all_kpis[b],
+                report_type=report_type or report_meta.get('report_type'),
+                cutoff_date=end_date,
+            )
 
         # ── Pre-generate AI narratives (batch, before PDFs so they embed in them) ─
         ai_narratives = {}
@@ -2193,7 +2228,7 @@ def _reconstruct_kpis_from_db(report_id: int, brand_name: str) -> dict:
         weekly_rev_pct = [0, 0, 0, 0]
         weekly_qty_pct = [0, 0, 0, 0]
 
-    return {
+    kpis = {
         # Scalars
         'total_revenue':         bk.get('total_revenue', 0),
         'gmv':                   bk.get('total_revenue', 0),
@@ -2237,6 +2272,12 @@ def _reconstruct_kpis_from_db(report_id: int, brand_name: str) -> dict:
         'pickup_summary':        pickup_df,
         'supply_summary':        supply_df,
     }
+    return _attach_reorder_trend(
+        brand_name=brand_name,
+        kpis=kpis,
+        report_type=bk.get('report_type'),
+        cutoff_date=bk.get('end_date'),
+    )
 
 
 def _build_brand_report_pdf_bytes(report_id: int, brand_name: str,

@@ -48,6 +48,8 @@ service_account*.json
 *.log
 *.tmp
 tmp/dala_data.brand_master_backup_*.db
+tmp/pdfs/
+tmp/report_previews/
 test_output*.txt
 ps_install_log.txt
 webapp_screenshot.png

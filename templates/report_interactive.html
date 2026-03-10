@@ -460,6 +460,249 @@
     .reorder-val.total  { color: var(--navy); }
     .reorder-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; margin-top: 2px; }
 
+    .reorder-momentum {
+      background:
+        radial-gradient(circle at top right, rgba(46,134,193,.14), transparent 38%),
+        linear-gradient(145deg, #FFFFFF 0%, #F7FAFD 100%);
+      border: 1px solid rgba(27,43,94,.08);
+      overflow: hidden;
+    }
+
+    .reorder-momentum-shell {
+      display: grid;
+      grid-template-columns: 1.15fr 1.85fr;
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .reorder-hero {
+      padding-right: 8px;
+      border-right: 1px solid rgba(27,43,94,.08);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .reorder-kicker {
+      font-size: 10px;
+      letter-spacing: .9px;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .reorder-headline {
+      font-size: 24px;
+      line-height: 1.1;
+      font-weight: 800;
+      color: var(--navy);
+      max-width: 320px;
+    }
+
+    .reorder-copy {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.65;
+      max-width: 360px;
+    }
+
+    .reorder-status {
+      align-self: flex-start;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .2px;
+    }
+
+    .reorder-status::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 0 4px rgba(255,255,255,.85);
+    }
+
+    .reorder-status.improving { background: rgba(30,132,73,.12); color: var(--green); }
+    .reorder-status.declining { background: rgba(232,25,44,.10); color: var(--red); }
+    .reorder-status.stable { background: rgba(46,134,193,.12); color: var(--blue); }
+    .reorder-status.awaiting { background: rgba(27,43,94,.08); color: var(--navy); }
+
+    .reorder-stat-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .reorder-stat {
+      background: rgba(255,255,255,.88);
+      border: 1px solid rgba(27,43,94,.08);
+      border-radius: 14px;
+      padding: 12px 14px;
+      box-shadow: 0 10px 24px rgba(27,43,94,.05);
+    }
+
+    .reorder-stat-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 7px;
+    }
+
+    .reorder-stat-value {
+      font-size: 22px;
+      line-height: 1;
+      font-weight: 800;
+      color: var(--navy);
+    }
+
+    .reorder-stat-value.up { color: var(--green); }
+    .reorder-stat-value.down { color: var(--red); }
+    .reorder-stat-value.neutral { color: var(--blue); }
+
+    .reorder-stat-sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 6px;
+      line-height: 1.45;
+    }
+
+    .reorder-chart-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .reorder-chart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .reorder-chart-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--navy);
+    }
+
+    .reorder-chart-sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+
+    .reorder-chart-note {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      font-weight: 700;
+      white-space: nowrap;
+      margin-top: 2px;
+    }
+
+    .reorder-bars {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+      gap: 12px;
+      align-items: end;
+      min-height: 220px;
+      padding: 16px 10px 6px;
+      border-radius: 18px;
+      background:
+        linear-gradient(180deg, rgba(27,43,94,.03) 0%, rgba(27,43,94,0) 35%),
+        repeating-linear-gradient(
+          to top,
+          rgba(27,43,94,.05) 0,
+          rgba(27,43,94,.05) 1px,
+          transparent 1px,
+          transparent 46px
+        );
+      border: 1px solid rgba(27,43,94,.08);
+    }
+
+    .reorder-bar-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .reorder-bar-value {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--navy);
+      min-height: 16px;
+    }
+
+    .reorder-bar-shell {
+      width: 100%;
+      max-width: 54px;
+      height: 132px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(27,43,94,.08), rgba(27,43,94,.02));
+      padding: 6px;
+      display: flex;
+      align-items: end;
+      justify-content: center;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.8);
+    }
+
+    .reorder-bar-fill {
+      width: 100%;
+      border-radius: 14px;
+      background: linear-gradient(180deg, #2E86C1 0%, #1B2B5E 100%);
+      box-shadow: 0 12px 20px rgba(27,43,94,.18);
+    }
+
+    .reorder-bar-fill.improving {
+      background: linear-gradient(180deg, #43C27A 0%, #1E8449 100%);
+    }
+
+    .reorder-bar-fill.declining {
+      background: linear-gradient(180deg, #F46B79 0%, #E8192C 100%);
+    }
+
+    .reorder-bar-fill.awaiting {
+      background: linear-gradient(180deg, #8EA0C4 0%, #55698E 100%);
+    }
+
+    .reorder-bar-meta {
+      font-size: 10px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .reorder-bar-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--navy);
+      text-align: center;
+      line-height: 1.2;
+    }
+
+    .reorder-band-foot {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .reorder-band-foot strong { color: var(--navy); }
+
     /* ── HEATMAP SECTION ─────────────────────────────────────────────────────── */
     .heatmap-section { margin-bottom: 14px; }
 
@@ -580,6 +823,11 @@
       .two-col   { grid-template-columns: 1fr; }
       .detail-grid { grid-template-columns: 1fr; }
       .score-bars { grid-template-columns: repeat(2, 1fr); }
+      .reorder-momentum-shell { grid-template-columns: 1fr; }
+      .reorder-hero { border-right: 0; padding-right: 0; padding-bottom: 4px; }
+      .reorder-stat-grid { grid-template-columns: 1fr; }
+      .reorder-bars { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .reorder-band-foot { flex-direction: column; align-items: flex-start; }
     }
   </style>
 </head>
@@ -870,6 +1118,67 @@
           <div class="reorder-lbl">Total Stores Stocked</div>
         </div>
       </div>
+
+      {% if reorder_trend and reorder_trend.available %}
+      <div class="card reorder-momentum">
+        <div class="card-title">
+          Reorder Momentum
+          <span class="card-title-sub">{{ reorder_trend.cadence_label }} reorder trend</span>
+        </div>
+        <div class="reorder-momentum-shell">
+          <div class="reorder-hero">
+            <div>
+              <div class="reorder-kicker">Customer Loyalty Signal</div>
+              <div class="reorder-headline">{{ reorder_trend.headline }}</div>
+            </div>
+            <div class="reorder-copy">{{ reorder_trend.summary }}</div>
+            <div class="reorder-status {{ reorder_trend.status_class }}">{{ reorder_trend.status_label }}</div>
+            <div class="reorder-stat-grid">
+              <div class="reorder-stat">
+                <div class="reorder-stat-label">Current Repeat</div>
+                <div class="reorder-stat-value">{{ reorder_trend.latest_repeat_pct_display }}</div>
+                <div class="reorder-stat-sub">{{ reorder_trend.latest_mix_display }}</div>
+              </div>
+              <div class="reorder-stat">
+                <div class="reorder-stat-label">Period Shift</div>
+                <div class="reorder-stat-value {{ reorder_trend.delta_class }}">{{ reorder_trend.delta_display }}</div>
+                <div class="reorder-stat-sub">Compared with the prior comparable period.</div>
+              </div>
+              <div class="reorder-stat">
+                <div class="reorder-stat-label">Best Period</div>
+                <div class="reorder-stat-value">{{ reorder_trend.best_repeat_pct_display }}</div>
+                <div class="reorder-stat-sub">{{ reorder_trend.best_label }} · {{ reorder_trend.best_mix_display }}</div>
+              </div>
+            </div>
+          </div>
+          <div class="reorder-chart-wrap">
+            <div class="reorder-chart-head">
+              <div>
+                <div class="reorder-chart-title">Repeat rate across recent periods</div>
+                <div class="reorder-chart-sub">Each column shows the share of tracked stores that reordered. The store mix under each bar keeps the context visible.</div>
+              </div>
+              <div class="reorder-chart-note">{{ reorder_trend.note }}</div>
+            </div>
+            <div class="reorder-bars">
+              {% for point in reorder_trend.points %}
+              <div class="reorder-bar-col">
+                <div class="reorder-bar-value">{{ point.repeat_pct_display }}</div>
+                <div class="reorder-bar-shell">
+                  <div class="reorder-bar-fill {{ reorder_trend.status_class }}" style="height: {{ point.visual_height_pct }}%;"></div>
+                </div>
+                <div class="reorder-bar-meta">{{ point.store_mix_display }}</div>
+                <div class="reorder-bar-label">{{ point.short_label }}</div>
+              </div>
+              {% endfor %}
+            </div>
+            <div class="reorder-band-foot">
+              <span>Average repeat rate: <strong>{{ reorder_trend.average_repeat_pct_display }}</strong></span>
+              <span>Latest tracked mix: <strong>{{ reorder_trend.latest_mix_display }}</strong></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
 
       {% if gmv_window and gmv_window.available %}
       <div class="card gmv-card">

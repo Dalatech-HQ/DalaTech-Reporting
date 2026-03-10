@@ -659,6 +659,236 @@
       margin-top: 4px;
     }
 
+    .reorder-band {
+      margin: 0 14px 8px;
+      background: linear-gradient(145deg, #ffffff 0%, #f7fafd 100%);
+      border: 1px solid #DDE2EE;
+      border-radius: 6px;
+      padding: 9px 12px;
+      display: flex;
+      align-items: stretch;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .reorder-lead {
+      width: 160px;
+      flex-shrink: 0;
+    }
+
+    .reorder-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border-radius: 999px;
+      padding: 3px 7px;
+      font-size: 5pt;
+      font-weight: 800;
+      letter-spacing: 0.25px;
+      margin-top: 7px;
+    }
+
+    .reorder-badge::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .reorder-badge.improving { background: rgba(26,122,74,0.12); color: #1A7A4A; }
+    .reorder-badge.declining { background: rgba(232,25,44,0.10); color: #E8192C; }
+    .reorder-badge.stable { background: rgba(27,43,94,0.10); color: #1B2B5E; }
+    .reorder-badge.awaiting { background: rgba(111,128,160,0.16); color: #55698E; }
+
+    .reorder-title {
+      font-size: 11pt;
+      font-weight: 800;
+      color: #1B2B5E;
+      line-height: 1.1;
+      margin-top: 4px;
+    }
+
+    .reorder-copy {
+      font-size: 5.2pt;
+      color: #6F7B92;
+      line-height: 1.55;
+      margin-top: 6px;
+    }
+
+    .reorder-metrics {
+      width: 156px;
+      flex-shrink: 0;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 7px;
+    }
+
+    .reorder-metric {
+      border-radius: 8px;
+      padding: 7px 8px;
+      background: #FFFFFF;
+      border: 1px solid #E4E9F3;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+    }
+
+    .reorder-metric-label {
+      font-size: 4.6pt;
+      text-transform: uppercase;
+      letter-spacing: 0.55px;
+      color: #7F8AA3;
+      font-weight: 800;
+    }
+
+    .reorder-metric-value {
+      font-size: 9.8pt;
+      font-weight: 800;
+      color: #1B2B5E;
+      line-height: 1.1;
+      margin-top: 3px;
+    }
+
+    .reorder-metric-value.up { color: #1A7A4A; }
+    .reorder-metric-value.down { color: #E8192C; }
+    .reorder-metric-value.neutral { color: #1B2B5E; }
+
+    .reorder-metric-sub {
+      font-size: 4.7pt;
+      color: #7A849E;
+      line-height: 1.45;
+      margin-top: 3px;
+    }
+
+    .reorder-chart {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .reorder-chart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .reorder-chart-title {
+      font-size: 6pt;
+      font-weight: 800;
+      color: #1B2B5E;
+      text-transform: uppercase;
+      letter-spacing: 0.55px;
+    }
+
+    .reorder-chart-sub {
+      font-size: 4.8pt;
+      color: #7A849E;
+      margin-top: 3px;
+      line-height: 1.45;
+    }
+
+    .reorder-chart-note {
+      font-size: 4.7pt;
+      color: #7F8AA3;
+      text-transform: uppercase;
+      letter-spacing: 0.45px;
+      font-weight: 700;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .reorder-points {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 7px;
+      align-items: end;
+      min-height: 110px;
+      padding: 10px 8px 4px;
+      border: 1px solid #E5EAF4;
+      border-radius: 10px;
+      background:
+        linear-gradient(180deg, rgba(27,43,94,0.03) 0%, rgba(27,43,94,0) 34%),
+        repeating-linear-gradient(
+          to top,
+          rgba(27,43,94,0.05) 0,
+          rgba(27,43,94,0.05) 1px,
+          transparent 1px,
+          transparent 22px
+        );
+    }
+
+    .reorder-point {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .reorder-point-value {
+      font-size: 4.9pt;
+      font-weight: 800;
+      color: #1B2B5E;
+      min-height: 9px;
+    }
+
+    .reorder-point-shell {
+      width: 100%;
+      max-width: 26px;
+      height: 62px;
+      border-radius: 10px;
+      padding: 3px;
+      background: linear-gradient(180deg, rgba(27,43,94,0.08), rgba(27,43,94,0.02));
+      display: flex;
+      align-items: end;
+      justify-content: center;
+    }
+
+    .reorder-point-fill {
+      width: 100%;
+      border-radius: 8px;
+      background: linear-gradient(180deg, #2E86C1 0%, #1B2B5E 100%);
+    }
+
+    .reorder-point-fill.improving {
+      background: linear-gradient(180deg, #45C07A 0%, #1A7A4A 100%);
+    }
+
+    .reorder-point-fill.declining {
+      background: linear-gradient(180deg, #F46B79 0%, #E8192C 100%);
+    }
+
+    .reorder-point-fill.awaiting {
+      background: linear-gradient(180deg, #98A8C6 0%, #55698E 100%);
+    }
+
+    .reorder-point-mix {
+      font-size: 4.6pt;
+      color: #7A849E;
+      font-weight: 700;
+    }
+
+    .reorder-point-label {
+      font-size: 4.8pt;
+      color: #1B2B5E;
+      font-weight: 800;
+      text-align: center;
+      line-height: 1.15;
+    }
+
+    .reorder-foot {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 4.8pt;
+      color: #7A849E;
+      line-height: 1.4;
+    }
+
+    .reorder-foot strong { color: #1B2B5E; }
+
     .store-summary-card {
       margin: 0 14px 8px;
       background: #fff;
@@ -1115,6 +1345,65 @@
       <ul>{% for b in narrative_sections.recommendations %}<li>{{ b }}</li>{% endfor %}</ul>
     </div>
   </div>
+
+  {% if reorder_trend and reorder_trend.available %}
+  <div class="reorder-band">
+    <div class="reorder-lead">
+      <div class="score-kicker">Reorder Momentum</div>
+      <div class="reorder-title">{{ reorder_trend.headline }}</div>
+      <div class="reorder-copy">{{ reorder_trend.summary }}</div>
+      <div class="reorder-badge {{ reorder_trend.status_class }}">{{ reorder_trend.status_label }}</div>
+    </div>
+
+    <div class="sc-divider"></div>
+
+    <div class="reorder-metrics">
+      <div class="reorder-metric">
+        <div class="reorder-metric-label">Current Repeat</div>
+        <div class="reorder-metric-value">{{ reorder_trend.latest_repeat_pct_display }}</div>
+        <div class="reorder-metric-sub">{{ reorder_trend.latest_mix_display }}</div>
+      </div>
+      <div class="reorder-metric">
+        <div class="reorder-metric-label">Period Shift</div>
+        <div class="reorder-metric-value {{ reorder_trend.delta_class }}">{{ reorder_trend.delta_display }}</div>
+        <div class="reorder-metric-sub">Movement versus the prior comparable period.</div>
+      </div>
+      <div class="reorder-metric">
+        <div class="reorder-metric-label">Best Period</div>
+        <div class="reorder-metric-value">{{ reorder_trend.best_repeat_pct_display }}</div>
+        <div class="reorder-metric-sub">{{ reorder_trend.best_label }} · {{ reorder_trend.best_mix_display }}</div>
+      </div>
+    </div>
+
+    <div class="sc-divider"></div>
+
+    <div class="reorder-chart">
+      <div class="reorder-chart-head">
+        <div>
+          <div class="reorder-chart-title">{{ reorder_trend.cadence_label }} repeat rate</div>
+          <div class="reorder-chart-sub">A compact view of how strongly outlets are returning to reorder over recent comparable periods.</div>
+        </div>
+        <div class="reorder-chart-note">{{ reorder_trend.note }}</div>
+      </div>
+      <div class="reorder-points">
+        {% for point in reorder_trend.points %}
+        <div class="reorder-point">
+          <div class="reorder-point-value">{{ point.repeat_pct_display }}</div>
+          <div class="reorder-point-shell">
+            <div class="reorder-point-fill {{ reorder_trend.status_class }}" style="height: {{ point.visual_height_pct }}%;"></div>
+          </div>
+          <div class="reorder-point-mix">{{ point.store_mix_display }}</div>
+          <div class="reorder-point-label">{{ point.short_label }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="reorder-foot">
+        <span>Average repeat rate: <strong>{{ reorder_trend.average_repeat_pct_display }}</strong></span>
+        <span>Latest mix: <strong>{{ reorder_trend.latest_mix_display }}</strong></span>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   {% if store_summary and store_summary.total_active > 5 %}
   <div class="store-summary-card">

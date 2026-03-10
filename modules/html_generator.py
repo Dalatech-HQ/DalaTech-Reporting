@@ -13,7 +13,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from .kpi import generate_narrative, calculate_perf_score
+from .kpi import generate_narrative, calculate_perf_score, build_reorder_trend
 from .predictor import monthly_growth_outlook
 from .gmv import render_gmv_window_svg
 
@@ -500,6 +500,7 @@ def render_html_report(brand_name: str, kpis: dict,
     perf = calculate_perf_score(kpis, portfolio_avg_revenue)
     growth_outlook = growth_outlook or monthly_growth_outlook([])
     gmv_chart_svg = render_gmv_window_svg(gmv_window) if gmv_window else ''
+    reorder_trend = kpis.get('reorder_trend') or build_reorder_trend(kpis=kpis)
 
     # ── Portfolio share ───────────────────────────────────────────────────────
     portfolio_share = None
@@ -597,6 +598,7 @@ def render_html_report(brand_name: str, kpis: dict,
         chart_heatmap=chart_heatmap,
         chart_stock=chart_stock,
         chart_reorder=chart_reorder,
+        reorder_trend=reorder_trend,
         growth_outlook=growth_outlook,
         gmv_window=gmv_window,
         gmv_chart_svg=gmv_chart_svg,

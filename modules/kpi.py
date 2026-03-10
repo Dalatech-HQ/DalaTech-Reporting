@@ -260,6 +260,251 @@ def calculate_kpis(brand_df):
     }
 
 
+def build_reorder_trend(history_rows=None, kpis=None, max_points: int = 6):
+    """
+    Build a presentation-ready reorder trend summary from historical brand KPI rows.
+
+    The trend is based on stored repeat/single store metrics across prior reports.
+    When history is unavailable, it falls back to the current KPI snapshot so
+    report renders remain stable.
+    """
+    history_rows = history_rows or []
+
+    def _to_int(value):
+        try:
+            return int(round(float(value or 0)))
+        except Exception:
+            return 0
+
+    def _to_float(value):
+        try:
+            return float(value or 0)
+        except Exception:
+            return 0.0
+
+    def _ts(value):
+        if value in (None, ''):
+            return None
+        try:
+            stamp = pd.Timestamp(value)
+            return None if pd.isna(stamp) else stamp
+        except Exception:
+            return None
+
+    def _label_parts(row, idx):
+        report_type = str(row.get('report_type') or '').strip().lower()
+        month_label = str(row.get('month_label') or '').strip()
+        start = _ts(row.get('start_date'))
+        end = _ts(row.get('end_date'))
+
+        if report_type == 'weekly':
+            if start is not None:
+                return (
+                    f"Week of {start.strftime('%d %b %Y')}",
+                    start.strftime('%d %b'),
+                )
+        elif report_type == 'biweekly':
+            if start is not None and end is not None:
+                return (
+                    f"{start.strftime('%d %b')} - {end.strftime('%d %b %Y')}",
+                    f"{start.strftime('%d %b')}",
+                )
+        elif report_type == 'monthly':
+            if start is not None:
+                return (
+                    month_label or start.strftime('%b %Y'),
+                    start.strftime('%b %y'),
+                )
+        elif report_type == 'quarterly':
+            if start is not None:
+                quarter = ((start.month - 1) // 3) + 1
+                return (
+                    month_label or f"Q{quarter} {start.year}",
+                    f"Q{quarter} {str(start.year)[-2:]}",
+                )
+        elif report_type == 'yearly':
+            if start is not None:
+                return (
+                    month_label or start.strftime('%Y'),
+                    start.strftime('%Y'),
+                )
+
+        if month_label:
+            short = month_label if len(month_label) <= 10 else month_label[:10].rstrip()
+            return month_label, short
+        if start is not None and end is not None:
+            if start.date() == end.date():
+                return start.strftime('%d %b %Y'), start.strftime('%d %b')
+            return (
+                f"{start.strftime('%d %b')} - {end.strftime('%d %b %Y')}",
+                start.strftime('%d %b'),
+            )
+        return f"Period {idx + 1}", f"P{idx + 1}"
+
+    rows = [dict(row) for row in history_rows if row]
+    if not rows and kpis:
+        rows = [{
+            'month_label': 'Current Period',
+            'report_type': 'current',
+            'repeat_stores': _to_int(kpis.get('repeat_stores')),
+            'single_stores': _to_int(kpis.get('single_stores')),
+            'repeat_pct': _to_float(kpis.get('repeat_pct')),
+            'num_stores': _to_int(kpis.get('num_stores')),
+        }]
+
+    rows.sort(
+        key=lambda row: (
+            _ts(row.get('start_date')) or pd.Timestamp.min,
+            _ts(row.get('end_date')) or pd.Timestamp.min,
+            str(row.get('month_label') or ''),
+        )
+    )
+    if max_points and len(rows) > max_points:
+        rows = rows[-max_points:]
+
+    points = []
+    for idx, row in enumerate(rows):
+        repeat_stores = _to_int(row.get('repeat_stores'))
+        single_stores = _to_int(row.get('single_stores'))
+        total_stores = max(repeat_stores + single_stores, _to_int(row.get('num_stores')))
+        repeat_pct = _to_float(row.get('repeat_pct'))
+        if total_stores > 0 and repeat_pct <= 0:
+            repeat_pct = round(repeat_stores / total_stores * 100, 1)
+
+        full_label, short_label = _label_parts(row, idx)
+        is_active = total_stores > 0
+        points.append({
+            'full_label': full_label,
+            'short_label': short_label,
+            'repeat_stores': repeat_stores,
+            'single_stores': single_stores,
+            'total_stores': total_stores,
+            'repeat_pct': round(repeat_pct, 1),
+            'repeat_pct_display': f"{round(repeat_pct, 1):.1f}%",
+            'store_mix_display': f"{repeat_stores}/{total_stores}" if total_stores else '0/0',
+            'visual_height_pct': 0 if not is_active else round(min(100.0, max(12.0, repeat_pct)), 1),
+        })
+
+    if not points:
+        return {
+            'available': False,
+            'status': 'awaiting',
+            'status_label': 'Awaiting History',
+            'status_class': 'awaiting',
+            'headline': 'No reorder trend available yet',
+            'summary': 'There is not enough historical reorder data to build a trend.',
+            'points': [],
+            'latest_repeat_pct': 0.0,
+            'latest_repeat_pct_display': '0.0%',
+            'latest_mix_display': '0/0',
+            'average_repeat_pct': 0.0,
+            'average_repeat_pct_display': '0.0%',
+            'delta_pct': 0.0,
+            'delta_display': 'Waiting',
+            'delta_class': 'neutral',
+            'best_label': 'N/A',
+            'best_repeat_pct': 0.0,
+            'best_repeat_pct_display': '0.0%',
+            'best_mix_display': '0/0',
+            'cadence_label': 'Recent',
+            'history_count': 0,
+            'note': 'Trend becomes available after the next comparable period is captured.',
+        }
+
+    latest = points[-1]
+    previous = points[-2] if len(points) > 1 else None
+    best = max(points, key=lambda point: (point['repeat_pct'], point['repeat_stores'], point['full_label']))
+    average_repeat_pct = round(sum(point['repeat_pct'] for point in points) / len(points), 1)
+    delta_pct = round(latest['repeat_pct'] - previous['repeat_pct'], 1) if previous else 0.0
+
+    if previous is None:
+        status = 'awaiting'
+        status_label = 'Awaiting History'
+        status_class = 'awaiting'
+        delta_display = 'Waiting'
+        delta_class = 'neutral'
+        summary = (
+            f"{latest['repeat_stores']} of {latest['total_stores']} tracked stores reordered in "
+            f"{latest['full_label']}. One more comparable period will unlock a direction signal."
+        )
+    elif delta_pct >= 2:
+        status = 'improving'
+        status_label = 'Improving'
+        status_class = 'improving'
+        delta_display = f"+{delta_pct:.1f} pts"
+        delta_class = 'up'
+        summary = (
+            f"Repeat purchase strengthened from {previous['repeat_pct_display']} in "
+            f"{previous['short_label']} to {latest['repeat_pct_display']} in {latest['short_label']}."
+        )
+    elif delta_pct <= -2:
+        status = 'declining'
+        status_label = 'Cooling'
+        status_class = 'declining'
+        delta_display = f"{delta_pct:.1f} pts"
+        delta_class = 'down'
+        summary = (
+            f"Repeat purchase softened from {previous['repeat_pct_display']} in "
+            f"{previous['short_label']} to {latest['repeat_pct_display']} in {latest['short_label']}."
+        )
+    else:
+        status = 'stable'
+        status_label = 'Stable'
+        status_class = 'stable'
+        delta_display = f"{delta_pct:+.1f} pts"
+        delta_class = 'neutral'
+        summary = (
+            f"Repeat purchase is holding steady around {latest['repeat_pct_display']}, "
+            f"with only a small shift versus {previous['short_label']}."
+        )
+
+    cadence_map = {
+        'weekly': 'Weekly',
+        'biweekly': 'Biweekly',
+        'monthly': 'Monthly',
+        'quarterly': 'Quarterly',
+        'yearly': 'Annual',
+        'current': 'Current',
+    }
+    cadence_type = next(
+        (
+            str(row.get('report_type') or '').strip().lower()
+            for row in reversed(rows)
+            if str(row.get('report_type') or '').strip()
+        ),
+        '',
+    )
+    cadence_label = cadence_map.get(cadence_type, 'Recent')
+
+    return {
+        'available': True,
+        'status': status,
+        'status_label': status_label,
+        'status_class': status_class,
+        'headline': f"{latest['repeat_pct_display']} repeat rate in {latest['short_label']}",
+        'summary': summary,
+        'points': points,
+        'latest_repeat_pct': latest['repeat_pct'],
+        'latest_repeat_pct_display': latest['repeat_pct_display'],
+        'latest_mix_display': f"{latest['repeat_stores']} repeat / {latest['single_stores']} single",
+        'average_repeat_pct': average_repeat_pct,
+        'average_repeat_pct_display': f"{average_repeat_pct:.1f}%",
+        'delta_pct': delta_pct,
+        'delta_display': delta_display,
+        'delta_class': delta_class,
+        'best_label': best['short_label'],
+        'best_repeat_pct': best['repeat_pct'],
+        'best_repeat_pct_display': best['repeat_pct_display'],
+        'best_mix_display': f"{best['repeat_stores']} repeat / {best['single_stores']} single",
+        'cadence_label': cadence_label,
+        'history_count': len(points),
+        'note': (
+            f"Based on {len(points)} {cadence_label.lower()} period"
+            f"{'' if len(points) == 1 else 's'} ending at {latest['full_label']}."
+        ),
+    }
+
+
 def generate_narrative(brand_name, kpis, start_date, end_date):
     """
     Generate a deterministic business summary for report exports.
