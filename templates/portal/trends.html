@@ -44,6 +44,11 @@
   .kpi-sparkline {
     height: 40px; margin-top: 12px;
   }
+  .kpi-sparkline canvas {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+  }
   .mom-badge {
     display: inline-flex; align-items: center; gap: 4px;
     padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 700;
@@ -69,7 +74,64 @@
   .chart-container {
     min-height: 250px;
   }
-  
+  .chart-canvas {
+    width: 100% !important;
+    height: 250px !important;
+    display: block;
+  }
+  .reorder-card {
+    background:
+      radial-gradient(circle at top right, rgba(46,134,193,.12), transparent 35%),
+      linear-gradient(180deg, rgba(27,43,94,.02), rgba(27,43,94,0)),
+      var(--white);
+    border: 1px solid rgba(27,43,94,.08);
+  }
+  .reorder-hero {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+    margin-bottom: 18px;
+  }
+  .reorder-kicker {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--muted); font-weight: 700; margin-bottom: 8px;
+  }
+  .reorder-headline {
+    font-size: 28px; font-weight: 800; color: var(--navy); line-height: 1.05;
+    margin-bottom: 8px;
+  }
+  .reorder-summary {
+    font-size: 14px; line-height: 1.7; color: var(--text); max-width: 760px;
+  }
+  .reorder-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    border-radius: 999px; padding: 10px 14px; font-size: 12px; font-weight: 800;
+    white-space: nowrap;
+  }
+  .reorder-pill.improving { background: rgba(30,132,73,.12); color: var(--green); }
+  .reorder-pill.declining { background: rgba(232,25,44,.12); color: var(--red); }
+  .reorder-pill.stable { background: rgba(46,134,193,.12); color: var(--blue); }
+  .reorder-pill.awaiting { background: rgba(122,132,158,.16); color: var(--muted); }
+  .reorder-meta-grid {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px;
+    margin-bottom: 18px;
+  }
+  .reorder-stat {
+    background: rgba(242,245,251,.9); border-radius: 14px; padding: 14px 16px;
+    border: 1px solid rgba(27,43,94,.06);
+  }
+  .reorder-stat-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--muted); font-weight: 700; margin-bottom: 7px;
+  }
+  .reorder-stat-value {
+    font-size: 20px; font-weight: 800; color: var(--navy); margin-bottom: 6px;
+  }
+  .reorder-stat-note {
+    font-size: 12px; color: var(--muted); line-height: 1.5;
+  }
+  .reorder-footer {
+    margin-top: 14px; font-size: 12px; color: var(--muted); line-height: 1.6;
+  }
+
   /* MAP STYLES */
   #mapContainer {
     height: 400px; border-radius: 8px; overflow: hidden;
@@ -150,6 +212,26 @@
   .store-visits {
     color: var(--muted); font-size: 11px;
   }
+
+  @media (max-width: 1200px) {
+    .kpi-row,
+    .insights-grid,
+    .reorder-meta-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (max-width: 900px) {
+    .chart-grid,
+    .kpi-row,
+    .insights-grid,
+    .reorder-meta-grid {
+      grid-template-columns: 1fr;
+    }
+    .reorder-hero {
+      flex-direction: column;
+    }
+  }
 </style>
 {% endblock %}
 
@@ -192,11 +274,13 @@
       <span class="mom-badge mom-positive">▲ {{ metrics.revenue_mom }}% MoM</span>
       {% elif metrics.revenue_mom < 0 %}
       <span class="mom-badge mom-negative">▼ {{ metrics.revenue_mom|abs }}% MoM</span>
-      {% else %}
+    {% else %}
       <span class="mom-badge mom-neutral">→ 0% MoM</span>
       {% endif %}
     {% endif %}
-    <div class="kpi-sparkline" id="revenueSparkline"></div>
+    <div class="kpi-sparkline">
+      <canvas id="revenueSparkline"></canvas>
+    </div>
   </div>
   
   <div class="kpi-card-large">
@@ -207,11 +291,13 @@
       <span class="mom-badge mom-positive">▲ {{ metrics.qty_mom }}% MoM</span>
       {% elif metrics.qty_mom < 0 %}
       <span class="mom-badge mom-negative">▼ {{ metrics.qty_mom|abs }}% MoM</span>
-      {% else %}
+    {% else %}
       <span class="mom-badge mom-neutral">→ 0% MoM</span>
       {% endif %}
     {% endif %}
-    <div class="kpi-sparkline" id="qtySparkline"></div>
+    <div class="kpi-sparkline">
+      <canvas id="qtySparkline"></canvas>
+    </div>
   </div>
   
   <div class="kpi-card-large">
@@ -242,12 +328,16 @@
 <div class="chart-grid">
   <div class="chart-card">
     <div class="chart-title">🏪 Top Selling Supermarkets by Value</div>
-    <div class="chart-container" id="topStoresChart"></div>
+    <div class="chart-container">
+      <canvas class="chart-canvas" id="topStoresChart"></canvas>
+    </div>
   </div>
   
   <div class="chart-card">
     <div class="chart-title">📦 Top Selling Products by Value</div>
-    <div class="chart-container" id="topProductsChart"></div>
+    <div class="chart-container">
+      <canvas class="chart-canvas" id="topProductsChart"></canvas>
+    </div>
   </div>
 </div>
 
@@ -255,7 +345,9 @@
 <div class="chart-grid">
   <div class="chart-card">
     <div class="chart-title">📈 Sales Trend Over Time</div>
-    <div class="chart-container" id="salesTrendChart"></div>
+    <div class="chart-container">
+      <canvas class="chart-canvas" id="salesTrendChart"></canvas>
+    </div>
   </div>
   
   <div class="chart-card">
@@ -291,6 +383,53 @@
       </div>
     </div>
     {% endif %}
+  </div>
+</div>
+
+<!-- REORDER MOMENTUM -->
+<div class="chart-card reorder-card" style="margin-bottom:24px;">
+  <div class="chart-title">🔁 Reorder Momentum</div>
+  <div class="reorder-hero">
+    <div>
+      <div class="reorder-kicker">Portfolio Repeat Purchase Trend</div>
+      <div class="reorder-headline" id="reorderHeadline">
+        {{ metrics.repeat_rate }}% repeat rate in {{ metrics.month_label }}
+      </div>
+      <div class="reorder-summary" id="reorderSummary">
+        Tracking how many stores come back to buy again month after month, so we can see whether portfolio loyalty is strengthening, holding steady, or cooling.
+      </div>
+    </div>
+    <div class="reorder-pill awaiting" id="reorderStatusPill">Awaiting Trend</div>
+  </div>
+
+  <div class="reorder-meta-grid">
+    <div class="reorder-stat">
+      <div class="reorder-stat-label">Current Mix</div>
+      <div class="reorder-stat-value" id="reorderCurrentMix">{{ metrics.repeat_stores }} repeat</div>
+      <div class="reorder-stat-note">Out of {{ metrics.unique_stores }} active stores this month.</div>
+    </div>
+    <div class="reorder-stat">
+      <div class="reorder-stat-label">Month-on-Month Shift</div>
+      <div class="reorder-stat-value" id="reorderDeltaValue">Waiting</div>
+      <div class="reorder-stat-note" id="reorderDeltaNote">We need at least two periods to measure movement.</div>
+    </div>
+    <div class="reorder-stat">
+      <div class="reorder-stat-label">Best Month</div>
+      <div class="reorder-stat-value" id="reorderBestMonth">{{ metrics.month_label }}</div>
+      <div class="reorder-stat-note" id="reorderBestNote">{{ metrics.repeat_rate }}% repeat rate</div>
+    </div>
+    <div class="reorder-stat">
+      <div class="reorder-stat-label">Average Repeat Rate</div>
+      <div class="reorder-stat-value" id="reorderAverage">{{ metrics.repeat_rate }}%</div>
+      <div class="reorder-stat-note" id="reorderAverageNote">Across the visible trend history.</div>
+    </div>
+  </div>
+
+  <div class="chart-container">
+    <canvas class="chart-canvas" id="reorderTrendChart"></canvas>
+  </div>
+  <div class="reorder-footer" id="reorderFooter">
+    The reorder trend becomes more decisive as more comparable months are captured.
   </div>
 </div>
 
@@ -361,6 +500,93 @@ const historicalData = {{ historical_json|safe }};
 const mapData = {{ map_data_json|safe }};
 const colorPrimary = '{{ color_scheme.primary }}';
 const colorSecondary = '{{ color_scheme.secondary }}';
+const chartGridColor = 'rgba(27,43,94,0.08)';
+
+function formatCurrencyShort(value) {
+  if (value >= 1000000) {
+    return '₦' + (value / 1000000).toFixed(1) + 'M';
+  }
+  if (value >= 1000) {
+    return '₦' + (value / 1000).toFixed(0) + 'K';
+  }
+  return '₦' + Number(value || 0).toLocaleString();
+}
+
+function buildReorderTrendSummary() {
+  const validPoints = historicalData.filter(point => Number(point.unique_stores || 0) > 0);
+  if (!validPoints.length) {
+    return null;
+  }
+
+  const enriched = validPoints.map(point => {
+    const repeatRate = Number(point.repeat_rate || 0);
+    const repeatStores = Number(point.repeat_stores || 0);
+    const totalStores = Number(point.unique_stores || 0);
+    const singleStores = Math.max(0, totalStores - repeatStores);
+    return {
+      label: point.month_label,
+      revenue: Number(point.total_revenue || 0),
+      qty: Number(point.total_qty || 0),
+      repeatRate: Number(repeatRate.toFixed(1)),
+      repeatStores,
+      singleStores,
+      totalStores,
+    };
+  });
+
+  const latest = enriched[enriched.length - 1];
+  const previous = enriched.length > 1 ? enriched[enriched.length - 2] : null;
+  const best = enriched.reduce((winner, point) => {
+    if (!winner) {
+      return point;
+    }
+    if (point.repeatRate !== winner.repeatRate) {
+      return point.repeatRate > winner.repeatRate ? point : winner;
+    }
+    return point.repeatStores > winner.repeatStores ? point : winner;
+  }, null);
+
+  const averageRepeatRate = enriched.reduce((sum, point) => sum + point.repeatRate, 0) / enriched.length;
+  const delta = previous ? Number((latest.repeatRate - previous.repeatRate).toFixed(1)) : 0;
+
+  let status = 'awaiting';
+  let statusLabel = 'Awaiting Trend';
+  let deltaNote = 'We need at least two periods to measure movement.';
+  let summary = `Repeat purchase is currently ${latest.repeatRate.toFixed(1)}%, with ${latest.repeatStores} stores reordering in ${latest.label}.`;
+
+  if (previous) {
+    if (delta >= 2) {
+      status = 'improving';
+      statusLabel = 'Improving';
+      deltaNote = `Up from ${previous.repeatRate.toFixed(1)}% in ${previous.label}.`;
+      summary = `Repeat purchase strengthened from ${previous.repeatRate.toFixed(1)}% in ${previous.label} to ${latest.repeatRate.toFixed(1)}% in ${latest.label}, meaning more stores are coming back to buy again.`;
+    } else if (delta <= -2) {
+      status = 'declining';
+      statusLabel = 'Cooling';
+      deltaNote = `Down from ${previous.repeatRate.toFixed(1)}% in ${previous.label}.`;
+      summary = `Repeat purchase cooled from ${previous.repeatRate.toFixed(1)}% in ${previous.label} to ${latest.repeatRate.toFixed(1)}% in ${latest.label}, which signals a retention dip worth watching.`;
+    } else {
+      status = 'stable';
+      statusLabel = 'Stable';
+      deltaNote = `Near ${previous.repeatRate.toFixed(1)}% in ${previous.label}.`;
+      summary = `Repeat purchase is holding steady around ${latest.repeatRate.toFixed(1)}%, with only a modest shift versus ${previous.label}.`;
+    }
+  }
+
+  return {
+    points: enriched,
+    latest,
+    previous,
+    best,
+    averageRepeatRate: Number(averageRepeatRate.toFixed(1)),
+    delta,
+    deltaDisplay: previous ? `${delta > 0 ? '+' : ''}${delta.toFixed(1)} pts` : 'Waiting',
+    deltaNote,
+    status,
+    statusLabel,
+    summary,
+  };
+}
 
 function loadMonthData() {
   const selected = document.getElementById('monthSelect').value;
@@ -447,6 +673,8 @@ function initMap() {
 
 // Initialize charts when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
+  const reorderTrend = buildReorderTrendSummary();
+
   // Revenue Sparkline
   const revCtx = document.getElementById('revenueSparkline');
   if (revCtx && historicalData.length > 0) {
@@ -504,6 +732,152 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   }
+
+  if (reorderTrend) {
+    const reorderHeadline = document.getElementById('reorderHeadline');
+    const reorderSummary = document.getElementById('reorderSummary');
+    const reorderStatusPill = document.getElementById('reorderStatusPill');
+    const reorderCurrentMix = document.getElementById('reorderCurrentMix');
+    const reorderDeltaValue = document.getElementById('reorderDeltaValue');
+    const reorderDeltaNote = document.getElementById('reorderDeltaNote');
+    const reorderBestMonth = document.getElementById('reorderBestMonth');
+    const reorderBestNote = document.getElementById('reorderBestNote');
+    const reorderAverage = document.getElementById('reorderAverage');
+    const reorderAverageNote = document.getElementById('reorderAverageNote');
+    const reorderFooter = document.getElementById('reorderFooter');
+
+    reorderHeadline.textContent = `${reorderTrend.latest.repeatRate.toFixed(1)}% repeat rate in ${reorderTrend.latest.label}`;
+    reorderSummary.textContent = reorderTrend.summary;
+    reorderStatusPill.textContent = reorderTrend.statusLabel;
+    reorderStatusPill.className = `reorder-pill ${reorderTrend.status}`;
+    reorderCurrentMix.textContent = `${reorderTrend.latest.repeatStores} repeat / ${reorderTrend.latest.singleStores} single`;
+    reorderDeltaValue.textContent = reorderTrend.deltaDisplay;
+    reorderDeltaNote.textContent = reorderTrend.deltaNote;
+    reorderBestMonth.textContent = reorderTrend.best.label;
+    reorderBestNote.textContent = `${reorderTrend.best.repeatRate.toFixed(1)}% repeat rate with ${reorderTrend.best.repeatStores} reordering stores.`;
+    reorderAverage.textContent = `${reorderTrend.averageRepeatRate.toFixed(1)}%`;
+    reorderAverageNote.textContent = `Across ${reorderTrend.points.length} visible months in the trend view.`;
+    reorderFooter.textContent = `Read this as a loyalty trend: repeat stores are compared against single-order stores across ${reorderTrend.points.length} monthly checkpoints.`;
+
+    const reorderCtx = document.getElementById('reorderTrendChart');
+    if (reorderCtx) {
+      new Chart(reorderCtx, {
+        type: 'bar',
+        data: {
+          labels: reorderTrend.points.map(point => point.label),
+          datasets: [
+            {
+              label: 'Repeat Stores',
+              data: reorderTrend.points.map(point => point.repeatStores),
+              backgroundColor: 'rgba(30,132,73,0.88)',
+              borderRadius: 10,
+              borderSkipped: false,
+              stack: 'stores',
+            },
+            {
+              label: 'Single-Order Stores',
+              data: reorderTrend.points.map(point => point.singleStores),
+              backgroundColor: 'rgba(122,132,158,0.45)',
+              borderRadius: 10,
+              borderSkipped: false,
+              stack: 'stores',
+            },
+            {
+              type: 'line',
+              label: 'Repeat Rate',
+              data: reorderTrend.points.map(point => point.repeatRate),
+              borderColor: colorPrimary,
+              backgroundColor: colorPrimary,
+              pointBackgroundColor: '#fff',
+              pointBorderColor: colorPrimary,
+              pointBorderWidth: 3,
+              pointRadius: 4,
+              pointHoverRadius: 5,
+              borderWidth: 3,
+              tension: 0.32,
+              yAxisID: 'y1',
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                boxWidth: 14,
+                usePointStyle: true,
+                color: '#1A1A2E',
+                font: { size: 11, weight: '600' }
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.dataset.label || '';
+                  if (label === 'Repeat Rate') {
+                    return `${label}: ${context.parsed.y.toFixed(1)}%`;
+                  }
+                  return `${label}: ${context.parsed.y} stores`;
+                },
+                afterBody: function(items) {
+                  const point = reorderTrend.points[items[0].dataIndex];
+                  return [
+                    `Total active stores: ${point.totalStores}`,
+                    `Revenue: ${formatCurrencyShort(point.revenue)}`
+                  ];
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              stacked: true,
+              grid: { display: false },
+              ticks: { color: '#7A849E', font: { size: 11, weight: '600' } }
+            },
+            y: {
+              stacked: true,
+              beginAtZero: true,
+              grid: { color: chartGridColor },
+              ticks: {
+                precision: 0,
+                color: '#7A849E',
+                font: { size: 11 }
+              },
+              title: {
+                display: true,
+                text: 'Store Count',
+                color: '#7A849E',
+                font: { size: 11, weight: '700' }
+              }
+            },
+            y1: {
+              position: 'right',
+              beginAtZero: true,
+              suggestedMax: 100,
+              grid: { drawOnChartArea: false },
+              ticks: {
+                callback: function(value) {
+                  return value + '%';
+                },
+                color: '#7A849E',
+                font: { size: 11 }
+              },
+              title: {
+                display: true,
+                text: 'Repeat Rate',
+                color: '#7A849E',
+                font: { size: 11, weight: '700' }
+              }
+            }
+          }
+        }
+      });
+    }
+  }
   
   // Top Stores Chart
   const storesCtx = document.getElementById('topStoresChart');
@@ -526,11 +900,18 @@ document.addEventListener('DOMContentLoaded', function() {
         indexAxis: 'y',
         plugins: { legend: { display: false } },
         scales: {
+          y: {
+            grid: { display: false },
+            ticks: { color: '#1A1A2E', font: { size: 11, weight: '600' } }
+          },
           x: { 
+            grid: { color: chartGridColor },
             ticks: { 
               callback: function(value) {
                 return '₦' + (value/1000000).toFixed(1) + 'M';
-              }
+              },
+              color: '#7A849E',
+              font: { size: 11 }
             }
           }
         }
@@ -559,11 +940,18 @@ document.addEventListener('DOMContentLoaded', function() {
         indexAxis: 'y',
         plugins: { legend: { display: false } },
         scales: {
+          y: {
+            grid: { display: false },
+            ticks: { color: '#1A1A2E', font: { size: 11, weight: '600' } }
+          },
           x: { 
+            grid: { color: chartGridColor },
             ticks: { 
               callback: function(value) {
                 return '₦' + (value/1000000).toFixed(1) + 'M';
-              }
+              },
+              color: '#7A849E',
+              font: { size: 11 }
             }
           }
         }
@@ -602,21 +990,32 @@ document.addEventListener('DOMContentLoaded', function() {
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         scales: {
+          x: {
+            grid: { display: false },
+            ticks: { color: '#7A849E', font: { size: 11, weight: '600' } }
+          },
           y: {
             type: 'linear',
             display: true,
             position: 'left',
+            grid: { color: chartGridColor },
             ticks: {
               callback: function(value) {
                 return '₦' + (value/1000000).toFixed(0) + 'M';
-              }
+              },
+              color: '#7A849E',
+              font: { size: 11 }
             }
           },
           y1: {
             type: 'linear',
             display: true,
             position: 'right',
-            grid: { drawOnChartArea: false }
+            grid: { drawOnChartArea: false },
+            ticks: {
+              color: '#7A849E',
+              font: { size: 11 }
+            }
           }
         }
       }
