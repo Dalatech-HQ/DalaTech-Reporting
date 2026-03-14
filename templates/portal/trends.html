@@ -1356,16 +1356,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
   const mapContainer = document.getElementById('mapContainer');
   if (mapContainer && mapApiUrl) {
-    if ('IntersectionObserver' in window) {
-      const observer = new IntersectionObserver((entries) => {
-        if (entries.some(entry => entry.isIntersecting)) {
-          observer.disconnect();
-          loadRepeatStoreMap();
-        }
-      }, { rootMargin: '120px 0px' });
-      observer.observe(mapContainer);
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(() => loadRepeatStoreMap(), { timeout: 1200 });
     } else {
-      loadRepeatStoreMap();
+      window.setTimeout(() => loadRepeatStoreMap(), 150);
     }
   }
 });
