@@ -528,15 +528,15 @@
 </div>
 {% endif %}
 
-<!-- AI Action Recommendations -->
+<!-- Recommended Actions -->
 {% if report %}
 <div class="card" style="margin-bottom:20px;" id="recCard">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-    <h4 style="color:var(--navy);">AI Recommended Actions</h4>
+    <h4 style="color:var(--navy);">Recommended Actions</h4>
     <button class="btn btn-outline btn-sm" onclick="loadRecommendations(true)">Generate</button>
   </div>
   <div id="recContent" style="font-size:13px;line-height:1.8;color:var(--text);">
-    <span class="text-muted fs-sm">Click Generate to get AI action recommendations for this brand.</span>
+    <span class="text-muted fs-sm">Generate or refresh recommended actions for this brand.</span>
   </div>
 </div>
 {% endif %}
@@ -557,37 +557,60 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
+let chartJsPromise = null;
+
+function ensureChartJs() {
+  if (window.Chart) return Promise.resolve(window.Chart);
+  if (chartJsPromise) return chartJsPromise;
+  chartJsPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+    script.onload = () => resolve(window.Chart);
+    script.onerror = () => reject(new Error('Unable to load charts right now.'));
+    document.head.appendChild(script);
+  });
+  return chartJsPromise;
+}
+
 {% if history|length > 1 %}
 const histData = {{ hist_oldest | tojson }};
-const labels = histData.map(h => h.month_label);
-const values = histData.map(h => h.total_revenue);
-const ctx = document.getElementById('historyChart').getContext('2d');
-new Chart(ctx, {
-  type: 'line',
-  data: {
-    labels,
-    datasets: [{
-      label: 'Revenue (₦)',
-      data: values,
-      borderColor: '#E8192C',
-      backgroundColor: 'rgba(232,25,44,0.08)',
-      fill: true,
-      tension: 0.4,
-      pointBackgroundColor: '#E8192C',
-      pointRadius: 4,
-    }]
-  },
-  options: {
-    responsive: true,
-    plugins: { legend: { display: false } },
-    scales: {
-      y: { ticks: { callback: v => '₦' + (v/1000).toFixed(0) + 'K' }, grid: { color: '#EEF0F5' } },
-      x: { grid: { display: false } }
+let historyChartReady = false;
+
+async function initHistoryChart() {
+  if (historyChartReady) return;
+  const canvas = document.getElementById('historyChart');
+  if (!canvas) return;
+  historyChartReady = true;
+  await ensureChartJs();
+  const labels = histData.map(h => h.month_label);
+  const values = histData.map(h => h.total_revenue);
+  const ctx = canvas.getContext('2d');
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Revenue (₦)',
+        data: values,
+        borderColor: '#E8192C',
+        backgroundColor: 'rgba(232,25,44,0.08)',
+        fill: true,
+        tension: 0.4,
+        pointBackgroundColor: '#E8192C',
+        pointRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { ticks: { callback: v => '₦' + (v/1000).toFixed(0) + 'K' }, grid: { color: '#EEF0F5' } },
+        x: { grid: { display: false } }
+      }
     }
-  }
-});
+  });
+}
 {% endif %}
 
 function copyToken() {
@@ -614,22 +637,43 @@ async function regenToken(brand) {
 async function loadRecommendations(regen = false) {
   const el = document.getElementById('recContent');
   if (!el) return;
-  el.innerHTML = '<span class="text-muted fs-sm">Generating recommendations...</span>';
+  el.innerHTML = '<span class="text-muted fs-sm">' + (regen ? 'Generating recommended actions...' : 'Loading recommended actions...') + '</span>';
   try {
     const url = '/api/recommendations/{{ brand_name }}' + (regen ? '?regenerate=1' : '');
     const res = await fetch(url, regen ? {method:'POST'} : {});
     const data = await res.json();
     if (data.success && data.recommendations) {
-      el.innerHTML = data.recommendations.replace(/\n/g, '<br>');
+      const sourceNote = data.source === 'fallback'
+        ? '<div class="text-muted fs-sm" style="margin-top:8px;">Showing the built-in fallback actions while live AI is unavailable.</div>'
+        : '';
+      el.innerHTML = data.recommendations.replace(/\n/g, '<br>') + sourceNote;
+    } else if (data.success && data.needs_generation) {
+      el.innerHTML = '<span class="text-muted fs-sm">Generate recommended actions for this brand when you want a fresh plan.</span>';
     } else {
-      el.innerHTML = '<span style="color:var(--red);">' + (data.error || 'Failed to generate recommendations.') + '</span>';
+      el.innerHTML = '<span class="text-muted fs-sm">' + (data.error || 'Recommended actions are temporarily unavailable. Try again shortly.') + '</span>';
     }
   } catch(e) {
-    el.innerHTML = '<span style="color:var(--red);">Failed to load recommendations.</span>';
+    el.innerHTML = '<span class="text-muted fs-sm">Recommended actions are temporarily unavailable. Try again shortly.</span>';
   }
 }
-// Auto-load cached recommendations on page load
-loadRecommendations(false);
+
+function watchRecommendations() {
+  const card = document.getElementById('recCard');
+  if (!card) return;
+  if (!('IntersectionObserver' in window)) {
+    loadRecommendations(false);
+    return;
+  }
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        loadRecommendations(false);
+        observer.disconnect();
+      }
+    });
+  }, { rootMargin: '120px 0px' });
+  observer.observe(card);
+}
 
 async function runCoachAction(item) {
   if (!item || !item.api_path) return;
@@ -681,5 +725,24 @@ if (focusMode && focusMode !== 'overview' && sectionTargets[focusMode]) {
     window.setTimeout(() => target.classList.remove('is-focused'), 2600);
   });
 }
+
+watchRecommendations();
+
+{% if history|length > 1 %}
+const historyCanvas = document.getElementById('historyChart');
+if (historyCanvas && 'IntersectionObserver' in window) {
+  const historyObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        initHistoryChart();
+        historyObserver.disconnect();
+      }
+    });
+  }, { rootMargin: '160px 0px' });
+  historyObserver.observe(historyCanvas);
+} else {
+  initHistoryChart();
+}
+{% endif %}
 </script>
 {% endblock %}

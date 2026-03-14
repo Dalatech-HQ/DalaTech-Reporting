@@ -3,7 +3,6 @@
 {% block page_title %}Retailer Intelligence{% endblock %}
 
 {% block head %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   .retailer-page {
     display: flex;
@@ -315,11 +314,7 @@
   <p class="text-muted">{{ error }}</p>
 </div>
 {% else %}
-{% set total_revenue = retailer_rows|sum(attribute='total_revenue') %}
-{% set avg_repeat = (retailer_rows|sum(attribute='repeat_rate') / (retailer_rows|length or 1)) if retailer_rows else 0 %}
-{% set avg_brands = (retailer_rows|sum(attribute='active_brands') / (retailer_rows|length or 1)) if retailer_rows else 0 %}
-{% set avg_health = (retailer_rows|sum(attribute='health_score') / (retailer_rows|length or 1)) if retailer_rows else 0 %}
-{% set top_retailer = retailer_rows[0] if retailer_rows else none %}
+{% set top_retailer = summary.top_retailer %}
 
 <div class="retailer-page">
   <section class="retailer-hero">
@@ -332,7 +327,7 @@
       </p>
       <div class="retailer-hero-stats">
         <div class="retailer-hero-stat">
-          <strong>{{ retailer_rows|length }}</strong>
+          <strong>{{ summary.retailer_count }}</strong>
           <span>Retailers tracked in {{ period_label }}</span>
         </div>
         <div class="retailer-hero-stat">
@@ -344,7 +339,7 @@
           <span>Accelerating retailers</span>
         </div>
         <div class="retailer-hero-stat">
-          <strong>{{ "{:,.1f}".format(avg_health) }}</strong>
+          <strong>{{ "{:,.1f}".format(summary.avg_health) }}</strong>
           <span>Average operating score</span>
         </div>
       </div>
@@ -386,22 +381,22 @@
   <section class="retailer-kpis">
     <div class="kpi-card blue">
       <div class="kpi-label">Retailer Revenue</div>
-      <div class="kpi-value-sm">₦{{ "{:,.2f}".format(total_revenue) }}</div>
+      <div class="kpi-value-sm">₦{{ "{:,.2f}".format(summary.total_revenue) }}</div>
       <div class="kpi-sub">Combined sales value in the visible retailer set</div>
     </div>
     <div class="kpi-card green">
       <div class="kpi-label">Average Brand Mix</div>
-      <div class="kpi-value-sm">{{ "{:,.1f}".format(avg_brands) }}</div>
+      <div class="kpi-value-sm">{{ "{:,.1f}".format(summary.avg_brands) }}</div>
       <div class="kpi-sub">Active brands per retailer in the selected period</div>
     </div>
     <div class="kpi-card amber">
       <div class="kpi-label">Average Repeat Depth</div>
-      <div class="kpi-value-sm">{{ "{:,.1f}".format(avg_repeat) }}%</div>
+      <div class="kpi-value-sm">{{ "{:,.1f}".format(summary.avg_repeat) }}%</div>
       <div class="kpi-sub">Brand-level repeat rate inside each retailer</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">Average Operating Score</div>
-      <div class="kpi-value-sm">{{ "{:,.1f}".format(avg_health) }}</div>
+      <div class="kpi-value-sm">{{ "{:,.1f}".format(summary.avg_health) }}</div>
       <div class="kpi-sub">Composite score from momentum, repeat depth, mix, and transactions</div>
     </div>
   </section>
@@ -485,6 +480,9 @@
         <h4 class="text-navy fw-bold mb-1">Retailer Ranking</h4>
         <p class="retailer-ranking-note">The table below is the operator view for the selected period. It combines revenue movement, repeat depth, active mix, and retailer score so you can move from ranking to action quickly.</p>
       </div>
+      {% if full_row_count > retailer_rows|length %}
+      <button class="btn btn-outline btn-sm" type="button" id="loadRetailerRowsBtn">Load Full Ranking</button>
+      {% endif %}
     </div>
     <div class="retailer-table-wrap">
       <table class="data-table" id="retailerTable">
@@ -499,7 +497,7 @@
             <th>Actions</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="retailerTableBody">
           {% for row in retailer_rows %}
           <tr data-retailer="{{ (row.retailer_name ~ ' ' ~ row.location_label)|lower }}">
             <td>
@@ -571,7 +569,191 @@
 
 {% block scripts %}
 <script>
-const retailerRows = {{ retailer_rows|tojson if not error else '[]' }};
+const retailerChartRows = {{ chart_rows|tojson if not error else '[]' }};
+const retailerApiUrl = {{ clean_url_for('api_retailers', month=selected_month, report_id=report.id if report else None)|tojson if not error else '""' }};
+const retailerDetailBase = '/retailer/';
+const retailerReportBase = '/retailer/';
+const retailerReportPdfBase = '/api/retailers/';
+const retailerActivityBase = '/activity-intelligence';
+const retailerSharedParams = new URLSearchParams();
+{% if report %}
+retailerSharedParams.set('report_id', '{{ report.id }}');
+{% endif %}
+{% if selected_month %}
+retailerSharedParams.set('month', '{{ selected_month }}');
+{% endif %}
+let retailerFullRows = null;
+let retailerFetchPromise = null;
+let retailerChartsReady = false;
+let chartJsPromise = null;
+
+function ensureChartJs() {
+  if (window.Chart) return Promise.resolve(window.Chart);
+  if (chartJsPromise) return chartJsPromise;
+  chartJsPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+    script.onload = () => resolve(window.Chart);
+    script.onerror = () => reject(new Error('Unable to load charts right now.'));
+    document.head.appendChild(script);
+  });
+  return chartJsPromise;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildRetailerParams() {
+  const params = new URLSearchParams(retailerSharedParams.toString());
+  return params;
+}
+
+function retailerDetailUrl(retailerCode) {
+  const encoded = encodeURIComponent(retailerCode || '');
+  const params = buildRetailerParams();
+  const query = params.toString();
+  return `${retailerDetailBase}${encoded}${query ? '?' + query : ''}`;
+}
+
+function retailerReportUrl(retailerCode) {
+  const encoded = encodeURIComponent(retailerCode || '');
+  const params = buildRetailerParams();
+  const query = params.toString();
+  return `${retailerReportBase}${encoded}/report${query ? '?' + query : ''}`;
+}
+
+function retailerPdfUrl(retailerCode) {
+  const encoded = encodeURIComponent(retailerCode || '');
+  const params = buildRetailerParams();
+  const query = params.toString();
+  return `${retailerReportPdfBase}${encoded}/report_pdf${query ? '?' + query : ''}`;
+}
+
+function retailerActivityUrl(retailerCode) {
+  const params = buildRetailerParams();
+  params.set('store', retailerCode || '');
+  const query = params.toString();
+  return `${retailerActivityBase}${query ? '?' + query : ''}`;
+}
+
+function buildRetailerTags(row) {
+  const tags = [];
+  const revenueMom = Number(row.revenue_mom ?? 0);
+  if (row.revenue_mom !== null && row.revenue_mom !== undefined && revenueMom <= -12) {
+    tags.push({ label: 'At Risk', className: 'badge-red' });
+  } else if (row.revenue_mom !== null && row.revenue_mom !== undefined && revenueMom >= 15) {
+    tags.push({ label: 'Accelerating', className: 'badge-green' });
+  }
+  if (Number(row.repeat_rate || 0) < 30 && Number(row.active_brands || 0) >= 3) {
+    tags.push({ label: 'Weak Reorder', className: 'badge-amber' });
+  }
+  if (Number(row.active_brands || 0) <= 2) {
+    tags.push({ label: 'Narrow Mix', className: 'badge-muted' });
+  }
+  return tags.slice(0, 3);
+}
+
+function renderRetailerRow(row) {
+  const healthTone = row.health_tone || 'blue';
+  const revenueMom = row.revenue_mom;
+  const revenueNote = revenueMom !== null && revenueMom !== undefined
+    ? `<div class="fs-sm ${Number(revenueMom) >= 0 ? 'text-green' : 'text-red'}">${Number(revenueMom) >= 0 ? '+' : ''}${Number(revenueMom).toFixed(1)}% vs prior period</div>`
+    : '<div class="fs-sm text-muted">No prior comparison</div>';
+  const tags = buildRetailerTags(row).map((tag) => `<span class="badge ${tag.className}">${escapeHtml(tag.label)}</span>`).join('');
+  const healthScore = Number(row.health_score || 0);
+  const repeatRate = Number(row.repeat_rate || 0);
+  const sharePct = Number(row.portfolio_share_pct || 0);
+  const locationLabel = row.location_label || 'Location detail pending';
+  return `
+    <tr data-retailer="${escapeHtml(`${row.retailer_name || ''} ${locationLabel}`.toLowerCase())}">
+      <td>
+        <div class="fw-bold">${escapeHtml(row.retailer_name || 'Retailer')}</div>
+        <div class="retailer-location">${escapeHtml(locationLabel)}</div>
+        <div class="retailer-tag-row">
+          <span class="badge ${healthTone === 'green' ? 'badge-green' : healthTone === 'amber' ? 'badge-amber' : healthTone === 'red' ? 'badge-red' : 'badge-blue'}">${escapeHtml(row.health_band || 'Monitored')}</span>
+          ${tags}
+        </div>
+      </td>
+      <td style="min-width:180px;">
+        <div class="retailer-score">
+          <div class="retailer-score-row">
+            <strong>${healthScore.toFixed(1)}</strong>
+            <span class="text-muted fs-sm">${escapeHtml(row.health_band || 'Monitored')}</span>
+          </div>
+          <div class="retailer-score-track">
+            <div class="retailer-score-fill ${escapeHtml(healthTone)}" style="width:${healthScore}%;"></div>
+          </div>
+        </div>
+      </td>
+      <td>
+        <div class="fw-bold">₦${Number(row.total_revenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        ${revenueNote}
+      </td>
+      <td>
+        <div class="fw-bold">${Number(row.active_brands || 0)} brands</div>
+        <div class="fs-sm text-muted">${Number(row.unique_skus || 0)} SKUs · ${Number(row.transactions || 0)} transactions</div>
+      </td>
+      <td>
+        <div class="fw-bold">${repeatRate.toFixed(1)}%</div>
+        <div class="fs-sm text-muted">${Number(row.active_days || 0)} active days</div>
+      </td>
+      <td class="retailer-share">
+        <strong>${sharePct.toFixed(1)}%</strong>
+        <div class="retailer-score-track">
+          <div class="retailer-score-fill blue" style="width:${sharePct}%;"></div>
+        </div>
+      </td>
+      <td>
+        <div class="retailer-table-actions">
+          <a class="btn btn-outline btn-sm" href="${retailerDetailUrl(row.retailer_code)}">Open</a>
+          <a class="btn btn-outline btn-sm" href="${retailerActivityUrl(row.retailer_code)}">Activity</a>
+          <a class="btn btn-outline btn-sm" target="_blank" href="${retailerReportUrl(row.retailer_code)}">Report</a>
+          <a class="btn btn-primary btn-sm" href="${retailerPdfUrl(row.retailer_code)}">PDF</a>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+function renderRetailerTable(rows) {
+  const tbody = document.getElementById('retailerTableBody');
+  if (!tbody) return;
+  if (!rows.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7">
+          <div class="retailer-empty">No retailer rows match the current filter.</div>
+        </td>
+      </tr>
+    `;
+    return;
+  }
+  tbody.innerHTML = rows.map(renderRetailerRow).join('');
+}
+
+async function fetchAllRetailers() {
+  if (retailerFullRows) return retailerFullRows;
+  if (retailerFetchPromise) return retailerFetchPromise;
+  retailerFetchPromise = fetch(retailerApiUrl)
+    .then((res) => res.json())
+    .then((data) => {
+      if (!data.success) {
+        throw new Error(data.error || 'Unable to load retailers.');
+      }
+      retailerFullRows = data.rows || [];
+      return retailerFullRows;
+    })
+    .finally(() => {
+      retailerFetchPromise = null;
+    });
+  return retailerFetchPromise;
+}
 
 async function pollCoachJob(jobId) {
   const statusEl = document.getElementById('coachOpsStatus');
@@ -641,11 +823,45 @@ async function validateThresholds() {
   statusEl.textContent = `Validation complete · ${data.target_count || 0} entities · ${totalSignals} signals`;
 }
 
-document.getElementById('retailerSearch')?.addEventListener('input', (event) => {
+document.getElementById('retailerSearch')?.addEventListener('input', async (event) => {
   const term = (event.target.value || '').trim().toLowerCase();
-  document.querySelectorAll('#retailerTable tbody tr[data-retailer]').forEach((row) => {
-    row.style.display = row.dataset.retailer.includes(term) ? '' : 'none';
-  });
+  if (!term) {
+    if (retailerFullRows) {
+      renderRetailerTable(retailerFullRows);
+    } else {
+      document.querySelectorAll('#retailerTable tbody tr[data-retailer]').forEach((row) => {
+        row.style.display = '';
+      });
+    }
+    return;
+  }
+
+  try {
+    const rows = await fetchAllRetailers();
+    renderRetailerTable(rows.filter((row) => {
+      const haystack = `${row.retailer_name || ''} ${row.location_label || ''}`.toLowerCase();
+      return haystack.includes(term);
+    }));
+  } catch (error) {
+    const statusEl = document.getElementById('coachOpsStatus');
+    if (statusEl) statusEl.textContent = error.message || 'Unable to search retailers right now.';
+  }
+});
+
+document.getElementById('loadRetailerRowsBtn')?.addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = 'Loading...';
+  try {
+    const rows = await fetchAllRetailers();
+    renderRetailerTable(rows);
+    button.textContent = 'Full Ranking Loaded';
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = 'Load Full Ranking';
+    const statusEl = document.getElementById('coachOpsStatus');
+    if (statusEl) statusEl.textContent = error.message || 'Unable to load the full ranking right now.';
+  }
 });
 
 function compactCurrency(value) {
@@ -663,132 +879,151 @@ function retailerLabel(row) {
   return location ? `${primary} • ${location}` : primary;
 }
 
-const revenueCtx = document.getElementById('retailerRevenueChart');
-if (revenueCtx && retailerRows.length && window.Chart) {
-  const topRows = retailerRows
-    .slice(0, 6)
-    .reverse();
-  new Chart(revenueCtx, {
-    type: 'bar',
-    data: {
-      labels: topRows.map((row) => retailerLabel(row)),
-      datasets: [{
-        data: topRows.map((row) => row.total_revenue || 0),
-        borderRadius: 10,
-        maxBarThickness: 24,
-        backgroundColor: topRows.map((row, idx) => idx === topRows.length - 1 ? '#1B2B5E' : '#4B6CB7')
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      indexAxis: 'y',
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            title(items) {
-              const item = items?.[0];
-              return item ? topRows[item.dataIndex].retailer_name : '';
-            },
-            label(context) {
-              return 'Revenue: ₦' + Number(context.parsed.x || 0).toLocaleString();
+async function initRetailerCharts() {
+  if (retailerChartsReady || !retailerChartRows.length) return;
+  retailerChartsReady = true;
+  await ensureChartJs();
+
+  const revenueCtx = document.getElementById('retailerRevenueChart');
+  if (revenueCtx) {
+    const topRows = retailerChartRows.slice(0, 6).reverse();
+    new Chart(revenueCtx, {
+      type: 'bar',
+      data: {
+        labels: topRows.map((row) => retailerLabel(row)),
+        datasets: [{
+          data: topRows.map((row) => row.total_revenue || 0),
+          borderRadius: 10,
+          maxBarThickness: 24,
+          backgroundColor: topRows.map((row, idx) => idx === topRows.length - 1 ? '#1B2B5E' : '#4B6CB7')
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: 'y',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title(items) {
+                const item = items?.[0];
+                return item ? topRows[item.dataIndex].retailer_name : '';
+              },
+              label(context) {
+                return 'Revenue: ₦' + Number(context.parsed.x || 0).toLocaleString();
+              }
             }
           }
-        }
-      },
-      scales: {
-        x: {
-          ticks: {
-            color: '#7280A0',
-            callback: (value) => compactCurrency(value)
-          },
-          grid: { color: 'rgba(27,43,94,.08)' }
         },
-        y: {
-          ticks: { color: '#7280A0', font: { size: 11 } },
-          grid: { display: false }
+        scales: {
+          x: {
+            ticks: {
+              color: '#7280A0',
+              callback: (value) => compactCurrency(value)
+            },
+            grid: { color: 'rgba(27,43,94,.08)' }
+          },
+          y: {
+            ticks: { color: '#7280A0', font: { size: 11 } },
+            grid: { display: false }
+          }
         }
       }
-    }
-  });
+    });
+  }
+
+  const repeatCtx = document.getElementById('retailerRepeatChart');
+  if (repeatCtx) {
+    const topRows = retailerChartRows.slice(0, 10);
+    new Chart(repeatCtx, {
+      type: 'scatter',
+      data: {
+        datasets: [{
+          label: 'Retailers',
+          data: topRows.map((row) => ({
+            x: row.active_brands || 0,
+            y: row.repeat_rate || 0,
+            retailerName: row.retailer_name,
+            totalRevenue: row.total_revenue || 0,
+            locationLabel: row.location_label,
+            operatingScore: row.health_score || 0
+          })),
+          parsing: false,
+          showLine: false,
+          pointRadius(context) {
+            const revenue = context.raw?.totalRevenue || 0;
+            return Math.max(6, Math.min(12, 6 + (revenue / 800000)));
+          },
+          pointHoverRadius(context) {
+            const revenue = context.raw?.totalRevenue || 0;
+            return Math.max(8, Math.min(14, 8 + (revenue / 800000)));
+          },
+          pointBorderWidth: 2,
+          pointBorderColor: '#ffffff',
+          pointBackgroundColor(context) {
+            const score = context.raw?.operatingScore || 0;
+            if (score >= 85) return '#1E8449';
+            if (score >= 65) return '#C0922A';
+            return '#E8192C';
+          }
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title(items) {
+                const item = items?.[0];
+                return item?.raw?.retailerName || '';
+              },
+              label(context) {
+                const raw = context.raw || {};
+                return [
+                  'Repeat depth: ' + Number(raw.y || 0).toFixed(1) + '%',
+                  'Brand mix: ' + Number(raw.x || 0).toFixed(0) + ' brands',
+                  'Revenue: ₦' + Number(raw.totalRevenue || 0).toLocaleString(),
+                  raw.locationLabel || ''
+                ].filter(Boolean);
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            title: { display: true, text: 'Brand mix', color: '#7280A0' },
+            ticks: { color: '#7280A0', precision: 0 },
+            grid: { color: 'rgba(27,43,94,.08)' }
+          },
+          y: {
+            title: { display: true, text: 'Repeat depth (%)', color: '#7280A0' },
+            suggestedMin: 0,
+            suggestedMax: 100,
+            ticks: { color: '#7280A0', callback: (value) => Number(value || 0).toFixed(0) + '%' },
+            grid: { color: 'rgba(27,43,94,.08)' }
+          }
+        }
+      }
+    });
+  }
 }
 
-const repeatCtx = document.getElementById('retailerRepeatChart');
-if (repeatCtx && retailerRows.length && window.Chart) {
-  const topRows = retailerRows.slice(0, 10);
-  new Chart(repeatCtx, {
-    type: 'scatter',
-    data: {
-      datasets: [{
-        label: 'Retailers',
-        data: topRows.map((row) => ({
-          x: row.active_brands || 0,
-          y: row.repeat_rate || 0,
-          retailerName: row.retailer_name,
-          totalRevenue: row.total_revenue || 0,
-          locationLabel: row.location_label,
-          operatingScore: row.health_score || 0
-        })),
-        parsing: false,
-        showLine: false,
-        pointRadius(context) {
-          const revenue = context.raw?.totalRevenue || 0;
-          return Math.max(6, Math.min(12, 6 + (revenue / 800000)));
-        },
-        pointHoverRadius(context) {
-          const revenue = context.raw?.totalRevenue || 0;
-          return Math.max(8, Math.min(14, 8 + (revenue / 800000)));
-        },
-        pointBorderWidth: 2,
-        pointBorderColor: '#ffffff',
-        pointBackgroundColor(context) {
-          const score = context.raw?.operatingScore || 0;
-          if (score >= 85) return '#1E8449';
-          if (score >= 65) return '#C0922A';
-          return '#E8192C';
-        }
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            title(items) {
-              const item = items?.[0];
-              return item?.raw?.retailerName || '';
-            },
-            label(context) {
-              const raw = context.raw || {};
-              return [
-                'Repeat depth: ' + Number(raw.y || 0).toFixed(1) + '%',
-                'Brand mix: ' + Number(raw.x || 0).toFixed(0) + ' brands',
-                'Revenue: ₦' + Number(raw.totalRevenue || 0).toLocaleString(),
-                raw.locationLabel || ''
-              ].filter(Boolean);
-            }
-          }
-        }
-      },
-      scales: {
-        x: {
-          title: { display: true, text: 'Brand mix', color: '#7280A0' },
-          ticks: { color: '#7280A0', precision: 0 },
-          grid: { color: 'rgba(27,43,94,.08)' }
-        },
-        y: {
-          title: { display: true, text: 'Repeat depth (%)', color: '#7280A0' },
-          suggestedMin: 0,
-          suggestedMax: 100,
-          ticks: { color: '#7280A0', callback: (value) => Number(value || 0).toFixed(0) + '%' },
-          grid: { color: 'rgba(27,43,94,.08)' }
-        }
+const retailerChartGrid = document.querySelector('.retailer-chart-grid');
+if (retailerChartGrid && 'IntersectionObserver' in window) {
+  const chartObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        initRetailerCharts();
+        chartObserver.disconnect();
       }
-    }
-  });
+    });
+  }, { rootMargin: '160px 0px' });
+  chartObserver.observe(retailerChartGrid);
+} else {
+  initRetailerCharts();
 }
 </script>
 {% endblock %}

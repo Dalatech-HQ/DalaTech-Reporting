@@ -104,6 +104,48 @@ def _money_csv_2dp(value):
         return "0.00"
 
 
+def _decorate_retailer_rows(rows):
+    decorated = []
+    for raw in rows or []:
+        row = dict(raw)
+        tags = []
+        revenue_mom = row.get('revenue_mom')
+        if revenue_mom is not None and revenue_mom <= -12:
+            tags.append({'label': 'At Risk', 'class': 'badge-red'})
+        elif revenue_mom is not None and revenue_mom >= 15:
+            tags.append({'label': 'Accelerating', 'class': 'badge-green'})
+        if float(row.get('repeat_rate') or 0) < 30 and int(row.get('active_brands') or 0) >= 3:
+            tags.append({'label': 'Weak Reorder', 'class': 'badge-amber'})
+        if int(row.get('active_brands') or 0) <= 2:
+            tags.append({'label': 'Narrow Mix', 'class': 'badge-muted'})
+        row['tags'] = tags[:3]
+        decorated.append(row)
+    return decorated
+
+
+def _build_retailer_summary(rows):
+    rows = rows or []
+    total_revenue = sum(float(row.get('total_revenue') or 0) for row in rows)
+    row_count = len(rows)
+    return {
+        'retailer_count': row_count,
+        'total_revenue': total_revenue,
+        'avg_repeat': (
+            sum(float(row.get('repeat_rate') or 0) for row in rows) / row_count
+            if row_count else 0
+        ),
+        'avg_brands': (
+            sum(float(row.get('active_brands') or 0) for row in rows) / row_count
+            if row_count else 0
+        ),
+        'avg_health': (
+            sum(float(row.get('health_score') or 0) for row in rows) / row_count
+            if row_count else 0
+        ),
+        'top_retailer': rows[0] if rows else None,
+    }
+
+
 @app.template_filter('money2')
 def money2_filter(value):
     return _money_2dp(value)
@@ -1697,19 +1739,10 @@ def retailers():
         )
 
     dataset = build_retailer_index(ds, report_id=report_id, month_value=month_value)
-    retailer_rows = dataset.get('rows', [])
-    for row in retailer_rows:
-        tags = []
-        revenue_mom = row.get('revenue_mom')
-        if revenue_mom is not None and revenue_mom <= -12:
-            tags.append({'label': 'At Risk', 'class': 'badge-red'})
-        elif revenue_mom is not None and revenue_mom >= 15:
-            tags.append({'label': 'Accelerating', 'class': 'badge-green'})
-        if float(row.get('repeat_rate') or 0) < 30 and int(row.get('active_brands') or 0) >= 3:
-            tags.append({'label': 'Weak Reorder', 'class': 'badge-amber'})
-        if int(row.get('active_brands') or 0) <= 2:
-            tags.append({'label': 'Narrow Mix', 'class': 'badge-muted'})
-        row['tags'] = tags[:3]
+    retailer_rows = _decorate_retailer_rows(dataset.get('rows', []))
+    summary = _build_retailer_summary(retailer_rows)
+    chart_rows = retailer_rows[:10]
+    table_rows = retailer_rows[:40]
 
     featured = {
         'risk': [row for row in retailer_rows if (row.get('revenue_mom') or 0) <= -12][:5],
@@ -1723,7 +1756,10 @@ def retailers():
     return render_template(
         'portal/retailers.html',
         alert_count=alert_count,
-        retailer_rows=retailer_rows,
+        retailer_rows=table_rows,
+        chart_rows=chart_rows,
+        full_row_count=len(retailer_rows),
+        summary=summary,
         featured=featured,
         period_label=dataset.get('period_label'),
         period_start=dataset.get('period_start'),
@@ -3738,6 +3774,7 @@ def api_retailers():
     report_id = request.args.get('report_id', type=int)
     month_value = (request.args.get('month') or '').strip() or None
     dataset = build_retailer_index(ds, report_id=report_id, month_value=month_value)
+    dataset['rows'] = _decorate_retailer_rows(dataset.get('rows', []))
     return jsonify({'success': True, **dataset})
 
 
@@ -4283,12 +4320,9 @@ def api_narrative_brand(brand_name):
 @app.route('/api/recommendations/<path:brand_name>', methods=['GET', 'POST'])
 def api_recommendations(brand_name):
     """
-    GET: Return cached AI recommendations for a brand (stored alongside narrative in ai_narratives as '__rec__' suffix).
+    GET: Return cached recommendations for a brand.
     POST: Regenerate recommendations on demand.
     """
-    if not gemini_available():
-        return jsonify({'success': False, 'error': 'GEMINI_API_KEY not configured'}), 503
-
     report = ds.get_latest_report()
     if not report:
         return jsonify({'success': False, 'error': 'No report data'}), 404
@@ -4300,7 +4334,14 @@ def api_recommendations(brand_name):
     if not regen:
         cached = ds.get_narrative(report_id, cache_key)
         if cached:
-            return jsonify({'success': True, 'recommendations': cached, 'cached': True})
+            return jsonify({'success': True, 'recommendations': cached, 'cached': True, 'source': 'cache'})
+        return jsonify({
+            'success': True,
+            'recommendations': None,
+            'cached': False,
+            'needs_generation': True,
+            'source': 'pending',
+        })
 
     kpis = ds.get_brand_kpis_single(report_id, brand_name)
     if not kpis:
@@ -4312,12 +4353,16 @@ def api_recommendations(brand_name):
 
     try:
         from modules.narrative_ai import generate_recommendations
-        text = generate_recommendations(brand_name, kpis, churn_data, portfolio_avg)
+        text, source = generate_recommendations(brand_name, kpis, churn_data, portfolio_avg)
         if text:
             ds.save_narrative(report_id, cache_key, text)
-        return jsonify({'success': True, 'recommendations': text, 'cached': False})
+        return jsonify({'success': True, 'recommendations': text, 'cached': False, 'source': source})
     except Exception as exc:
-        return jsonify({'success': False, 'error': str(exc)}), 500
+        app.logger.exception('Recommendations generation failed for %s', brand_name)
+        return jsonify({
+            'success': False,
+            'error': 'Recommended actions are temporarily unavailable. Try again shortly.',
+        }), 503
 
 
 @app.route('/api/narrative/portfolio')

@@ -12,21 +12,73 @@ Usage:
 
 import os
 import json
+import logging
 
 # ── Gemini client (lazy init) ─────────────────────────────────────────────────
 
-_gemini_client = None
+logger = logging.getLogger(__name__)
 
-def _get_client():
-    global _gemini_client
-    if _gemini_client is None:
-        api_key = os.environ.get('GEMINI_API_KEY', '')
-        if not api_key:
-            raise RuntimeError("GEMINI_API_KEY not set in environment variables.")
+_gemini_clients = {}
+
+
+def _candidate_models():
+    configured = os.environ.get('GEMINI_MODEL', '').strip()
+    candidates = [
+        configured,
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-lite',
+        'gemini-1.5-flash',
+    ]
+    seen = set()
+    ordered = []
+    for item in candidates:
+        if item and item not in seen:
+            ordered.append(item)
+            seen.add(item)
+    return ordered
+
+
+def _get_client(model_name):
+    api_key = os.environ.get('GEMINI_API_KEY', '')
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY not set in environment variables.")
+    if model_name not in _gemini_clients:
         import google.generativeai as genai
         genai.configure(api_key=api_key)
-        _gemini_client = genai.GenerativeModel('gemini-1.5-flash')
-    return _gemini_client
+        _gemini_clients[model_name] = genai.GenerativeModel(model_name)
+    return _gemini_clients[model_name]
+
+
+def _extract_response_text(response):
+    text = getattr(response, 'text', None)
+    if text and str(text).strip():
+        return str(text).strip()
+    candidates = getattr(response, 'candidates', None) or []
+    for candidate in candidates:
+        content = getattr(candidate, 'content', None)
+        parts = getattr(content, 'parts', None) or []
+        for part in parts:
+            part_text = getattr(part, 'text', None)
+            if part_text and str(part_text).strip():
+                return str(part_text).strip()
+    return None
+
+
+def _generate_text(prompt, service_label):
+    failures = []
+    for model_name in _candidate_models():
+        try:
+            client = _get_client(model_name)
+            response = client.generate_content(prompt)
+            text = _extract_response_text(response)
+            if text:
+                return text, model_name
+            failures.append(f"{model_name}: empty response")
+        except Exception as exc:
+            failures.append(f"{model_name}: {exc}")
+            _gemini_clients.pop(model_name, None)
+            logger.warning("%s failed on model %s: %s", service_label, model_name, exc)
+    raise RuntimeError(f"{service_label} is temporarily unavailable.")
 
 
 def gemini_available():
@@ -152,12 +204,11 @@ def generate_brand_narrative(brand_name, kpis, history=None, portfolio_avg=None)
         return None, False
 
     try:
-        client = _get_client()
         prompt = _build_brand_prompt(brand_name, kpis, history, portfolio_avg)
-        response = client.generate_content(prompt)
-        return response.text.strip(), False
+        text, _ = _generate_text(prompt, f"Narrative generation for {brand_name}")
+        return text, False
     except Exception as exc:
-        raise RuntimeError(f"Gemini narrative failed for {brand_name}: {exc}") from exc
+        raise RuntimeError(f"Narrative generation is temporarily unavailable for {brand_name}.") from exc
 
 
 def generate_portfolio_narrative(all_kpis, report_meta=None):
@@ -171,12 +222,11 @@ def generate_portfolio_narrative(all_kpis, report_meta=None):
         return None
 
     try:
-        client = _get_client()
         prompt = _build_portfolio_prompt(all_kpis, report_meta or {})
-        response = client.generate_content(prompt)
-        return response.text.strip()
+        text, _ = _generate_text(prompt, "Portfolio narrative generation")
+        return text
     except Exception as exc:
-        raise RuntimeError(f"Gemini portfolio narrative failed: {exc}") from exc
+        raise RuntimeError("Portfolio narrative generation is temporarily unavailable.") from exc
 
 
 def generate_bulk_narratives(all_kpis, ds, report_id):
@@ -218,15 +268,64 @@ def generate_bulk_narratives(all_kpis, ds, report_id):
     return results
 
 
-def generate_recommendations(brand_name: str, kpis: dict, churn_data: list = None, portfolio_avg: float = None) -> str:
+def _build_fallback_recommendations(brand_name: str, kpis: dict, churn_data: list = None, portfolio_avg: float = None) -> str:
+    rev = float(kpis.get('total_revenue', 0) or 0)
+    stores = int(kpis.get('num_stores', 0) or 0)
+    repeat = float(kpis.get('repeat_pct', 0) or 0)
+    stock_d = float(kpis.get('stock_days_cover', 0) or 0)
+    grade = kpis.get('perf_grade', '-') or '-'
+    top_sku = kpis.get('top_sku_name', '')
+    top_store = kpis.get('top_store_name', '')
+    churned_count = len([c for c in (churn_data or []) if c.get('churn_type') == 'churned'])
+    actions = []
+
+    if repeat < 35 or churned_count > 0:
+        actions.append(
+            f"1. Rebuild repeat demand in the {stores} active stores by revisiting the last {max(churned_count, 3)} weak or churned outlets and securing a follow-up order before month-end."
+        )
+    else:
+        actions.append(
+            f"1. Protect momentum in {stores} active stores by locking in repeat orders from the strongest accounts before the next reporting window closes."
+        )
+
+    if stock_d and stock_d < 7:
+        actions.append(
+            f"2. Tighten replenishment immediately because stock cover is only {stock_d:.1f} days; prevent avoidable stockouts in top-selling stores while demand is still active."
+        )
+    elif top_store:
+        actions.append(
+            f"2. Double down on {top_store} and the surrounding cluster with the top-selling SKU mix to convert current sell-through into broader store coverage."
+        )
+    else:
+        actions.append(
+            "2. Use the current best-performing store cluster as the next expansion point and push the winning SKU mix into similar supermarkets this period."
+        )
+
+    if portfolio_avg and rev < portfolio_avg * 0.85:
+        actions.append(
+            f"3. Revenue is below the portfolio benchmark, so push a focused recovery plan around {top_sku or 'the lead SKU'} with weekly store-level follow-up and shelf checks."
+        )
+    elif grade in {'D', 'F'}:
+        actions.append(
+            f"3. The current grade is {grade}; run a short recovery sprint with tighter visit cadence, in-store visibility fixes, and explicit reorder targets for the sales team."
+        )
+    else:
+        actions.append(
+            f"3. Turn the current performance into share gain by expanding {top_sku or 'the strongest SKU'} into more retailers and defending reorder depth with the top accounts."
+        )
+
+    return "\n".join(actions[:3])
+
+
+def generate_recommendations(brand_name: str, kpis: dict, churn_data: list = None, portfolio_avg: float = None):
     """
     Generate 3 concrete action-oriented recommendations for a brand using Gemini.
 
     Returns:
-        str: Numbered action bullets, or None if Gemini not available.
+        tuple[str, str]: Numbered action bullets and the source used.
     """
     if not gemini_available():
-        return None
+        return _build_fallback_recommendations(brand_name, kpis, churn_data, portfolio_avg), 'fallback'
     try:
         rev = kpis.get('total_revenue', 0)
         stores = kpis.get('num_stores', 0)
@@ -254,8 +353,8 @@ Format as:
 
 Keep each to 1-2 sentences. Be direct and practical."""
 
-        client = _get_client()
-        response = client.generate_content(prompt)
-        return response.text.strip()
+        text, _ = _generate_text(prompt, f"Recommendations for {brand_name}")
+        return text, 'gemini'
     except Exception as exc:
-        raise RuntimeError(f"Gemini recommendations failed for {brand_name}: {exc}") from exc
+        logger.warning("Falling back to deterministic recommendations for %s: %s", brand_name, exc)
+        return _build_fallback_recommendations(brand_name, kpis, churn_data, portfolio_avg), 'fallback'
