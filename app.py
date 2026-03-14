@@ -1358,6 +1358,89 @@ def generation_status(job_id):
 
 # ── Trends / Forecasting Dashboard ────────────────────────────────────────────
 
+def _convert_json_native(obj):
+    if isinstance(obj, dict):
+        return {k: _convert_json_native(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_convert_json_native(item) for item in obj]
+    if isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    if isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
+    return obj
+
+
+_TRENDS_DF_CACHE = {
+    'mtime': None,
+    'df': None,
+}
+
+
+def _load_trends_dataframe():
+    hist_path = os.path.join(BASE_DIR, '2024to2026salesreport.xlsx')
+    if not os.path.exists(hist_path):
+        raise FileNotFoundError('Historical data not available')
+    current_mtime = os.path.getmtime(hist_path)
+    cached_df = _TRENDS_DF_CACHE.get('df')
+    if cached_df is not None and _TRENDS_DF_CACHE.get('mtime') == current_mtime:
+        return cached_df
+
+    df = pd.read_excel(hist_path)
+    df['Date'] = pd.to_datetime(df['Date'])
+    df['Brand Partner Canonical'] = (
+        df['Brand Partner']
+        .fillna('')
+        .astype(str)
+        .map(canonicalize_brand_name)
+    )
+    _TRENDS_DF_CACHE['mtime'] = current_mtime
+    _TRENDS_DF_CACHE['df'] = df
+    return df
+
+
+def _build_trends_map_payload(scoped_df, year, month, selected_store='', google_maps_key='', live_geocode=False, top_n=12):
+    from modules.geocoding import geocode_stores_batch
+
+    map_candidates = get_repeat_purchase_map_data(scoped_df, year, month, top_n=top_n)
+    if selected_store:
+        map_candidates = [row for row in map_candidates if row.get('store_name') == selected_store]
+
+    coords = {}
+    if map_candidates:
+        coords = geocode_stores_batch(
+            [row['store_name'] for row in map_candidates],
+            google_maps_key,
+            cache_only=not live_geocode,
+        )
+
+    mapped_rows = []
+    for row in map_candidates:
+        item = dict(row)
+        if item.get('store_name') in coords:
+            item['latitude'], item['longitude'] = coords[item['store_name']]
+        if item.get('latitude') and item.get('longitude'):
+            mapped_rows.append(item)
+
+    preview_rows = [
+        {
+            'store_name': str(row.get('store_name', '')),
+            'visit_count': int(row.get('visit_count') or 0),
+            'repeat_category': str(row.get('repeat_category') or ''),
+            'total_revenue': float(row.get('total_revenue') or 0),
+        }
+        for row in map_candidates[:6]
+    ]
+
+    return {
+        'candidates': map_candidates,
+        'mapped_rows': mapped_rows,
+        'preview_rows': preview_rows,
+        'candidate_count': len(map_candidates),
+        'mapped_count': len(mapped_rows),
+        'missing_count': max(0, len(map_candidates) - len(mapped_rows)),
+    }
+
+
 @app.route('/trends')
 def trends():
     """
@@ -1392,7 +1475,11 @@ def trends():
             top_products=[],
             top_products_json='[]',
             map_data=[],
-            map_data_json='[]',
+            map_preview_rows=[],
+            map_api_url='',
+            map_candidate_count=0,
+            map_mapped_count=0,
+            map_missing_count=0,
             scope=scope,
             scope_badge=scope_badge,
             scope_title=scope_title,
@@ -1412,27 +1499,16 @@ def trends():
             available_months=available_months or [],
             current_year=selected_year,
             current_month=selected_month,
-            google_maps_key=os.environ.get('GOOGLE_MAPS_API_KEY', ''),
             alert_count=ds.get_unacknowledged_count(),
         )
     
     # Load historical data
-    hist_path = os.path.join(BASE_DIR, '2024to2026salesreport.xlsx')
-    if not os.path.exists(hist_path):
-        return render_trends_error("Historical data not available")
-    
     try:
-        df = pd.read_excel(hist_path)
-        df['Date'] = pd.to_datetime(df['Date'])
+        df = _load_trends_dataframe()
+    except FileNotFoundError:
+        return render_trends_error("Historical data not available")
     except Exception as e:
         return render_trends_error(f"Error loading data: {e}")
-
-    df['Brand Partner Canonical'] = (
-        df['Brand Partner']
-        .fillna('')
-        .astype(str)
-        .map(canonicalize_brand_name)
-    )
 
     scope = (request.args.get('scope') or 'portfolio').strip().lower()
     if scope not in {'portfolio', 'brand'}:
@@ -1582,25 +1658,25 @@ def trends():
             for name, rev in product_revenue.items()
         ]
 
-    map_data = get_repeat_purchase_map_data(scoped_df, year, month, top_n=20)
-    if selected_store:
-        map_data = [row for row in map_data if row.get('store_name') == selected_store]
-    
-    # Try to geocode store locations if API key is available
     google_maps_key = os.environ.get('GOOGLE_MAPS_API_KEY', '')
-    if google_maps_key and map_data:
-        from modules.geocoding import geocode_stores_batch
-        try:
-            coords = geocode_stores_batch([m['store_name'] for m in map_data], google_maps_key)
-            for m in map_data:
-                if m['store_name'] in coords:
-                    m['latitude'] = coords[m['store_name']][0]
-                    m['longitude'] = coords[m['store_name']][1]
-        except Exception as e:
-                print(f"Geocoding error: {e}")
-    
-    # Filter to only stores with coordinates for the map
-    map_data_with_coords = [m for m in map_data if m.get('latitude') and m.get('longitude')]
+    map_context = _build_trends_map_payload(
+        scoped_df,
+        year,
+        month,
+        selected_store=selected_store,
+        google_maps_key=google_maps_key,
+        live_geocode=False,
+        top_n=20,
+    )
+    map_data = map_context['candidates']
+    map_preview_rows = map_context['preview_rows']
+    map_api_url = clean_url_for(
+        'api_trends_map',
+        scope=scope,
+        brand=selected_brand if scope == 'brand' else None,
+        month=f'{year:04d}-{month:02d}',
+        store=selected_store or None,
+    )
 
     detail_source = store_repeat_df.copy()
     if selected_store:
@@ -1653,21 +1729,9 @@ def trends():
         )
         detail_empty_message = 'No repeat-purchase store detail is available for this period.'
     
-    # Helper to convert numpy types to native Python types for JSON
-    def convert_to_native(obj):
-        if isinstance(obj, dict):
-            return {k: convert_to_native(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [convert_to_native(i) for i in obj]
-        elif isinstance(obj, (np.integer, np.int64, np.int32)):
-            return int(obj)
-        elif isinstance(obj, (np.floating, np.float64, np.float32)):
-            return float(obj)
-        return obj
-    
-    # Convert data for JSON serialization
-    historical_native = convert_to_native(historical)
-    map_data_native = convert_to_native(map_data_with_coords)
+    historical_native = _convert_json_native(historical)
+    top_stores_native = _convert_json_native(top_stores)
+    top_products_native = _convert_json_native(top_products)
     
     return render_template('portal/trends.html',
                            metrics=metrics,
@@ -1675,11 +1739,15 @@ def trends():
                            historical=historical,
                            historical_json=json.dumps(historical_native),
                             top_stores=top_stores,
-                            top_stores_json=json.dumps(top_stores),
+                            top_stores_json=json.dumps(top_stores_native),
                             top_products=top_products,
-                            top_products_json=json.dumps(top_products),
-                            map_data=map_data if not selected_store else map_data_with_coords or map_data,
-                            map_data_json=json.dumps(map_data_native),
+                            top_products_json=json.dumps(top_products_native),
+                            map_data=map_data,
+                            map_preview_rows=map_preview_rows,
+                            map_api_url=map_api_url,
+                            map_candidate_count=map_context['candidate_count'],
+                            map_mapped_count=map_context['mapped_count'],
+                            map_missing_count=map_context['missing_count'],
                             scope=scope,
                             scope_badge=scope_badge,
                             scope_title=scope_title,
@@ -1699,8 +1767,90 @@ def trends():
                             available_months=available_months,
                             current_year=year,
                             current_month=month,
-                            google_maps_key=google_maps_key,
                            alert_count=ds.get_unacknowledged_count())
+
+
+@app.route('/api/trends/map')
+def api_trends_map():
+    try:
+        df = _load_trends_dataframe()
+    except FileNotFoundError:
+        return jsonify({'success': False, 'message': 'Historical data not available', 'map_data': []}), 404
+    except Exception as exc:
+        return jsonify({'success': False, 'message': f'Error loading data: {exc}', 'map_data': []}), 500
+
+    scope = (request.args.get('scope') or 'portfolio').strip().lower()
+    if scope not in {'portfolio', 'brand'}:
+        scope = 'portfolio'
+
+    sales_catalog_df = df[df['Vch Type'] == 'Sales'].copy()
+    available_brands = sorted(
+        {
+            brand.strip()
+            for brand in sales_catalog_df['Brand Partner Canonical'].dropna().tolist()
+            if str(brand).strip()
+        }
+    )
+    selected_brand = (request.args.get('brand') or '').strip()
+    if scope == 'brand':
+        if selected_brand not in available_brands:
+            return jsonify({'success': False, 'message': 'Unknown brand for trends map', 'map_data': []}), 404
+        scoped_df = df[df['Brand Partner Canonical'] == selected_brand].copy()
+    else:
+        scoped_df = df.copy()
+        selected_brand = ''
+
+    scoped_sales_df = scoped_df[scoped_df['Vch Type'] == 'Sales'].copy()
+    if scoped_sales_df.empty:
+        return jsonify({'success': True, 'map_data': [], 'candidate_count': 0, 'mapped_count': 0, 'missing_count': 0})
+
+    scoped_sales_df['YearMonth'] = scoped_sales_df['Date'].dt.to_period('M')
+    available_ym = sorted(scoped_sales_df['YearMonth'].unique())
+    month_param = request.args.get('month', '')
+    selected_period = None
+    if month_param:
+        try:
+            req_year, req_month = map(int, month_param.split('-'))
+            selected_period = pd.Period(year=req_year, month=req_month, freq='M')
+        except Exception:
+            selected_period = None
+    if selected_period not in set(available_ym):
+        selected_period = available_ym[-1]
+    year, month = selected_period.year, selected_period.month
+
+    store_repeat_df = get_store_repeat_analysis(scoped_df, year, month)
+    available_stores = sorted(
+        {
+            str(store).strip()
+            for store in store_repeat_df.get('store_name', pd.Series(dtype=str)).dropna().tolist()
+            if str(store).strip()
+        }
+    )
+    selected_store = (request.args.get('store') or '').strip()
+    if selected_store not in available_stores:
+        selected_store = ''
+
+    map_context = _build_trends_map_payload(
+        scoped_df,
+        year,
+        month,
+        selected_store=selected_store,
+        google_maps_key=os.environ.get('GOOGLE_MAPS_API_KEY', ''),
+        live_geocode=True,
+        top_n=20,
+    )
+
+    return jsonify({
+        'success': True,
+        'scope': scope,
+        'brand': selected_brand,
+        'month': f'{year:04d}-{month:02d}',
+        'map_data': _convert_json_native(map_context['mapped_rows']),
+        'preview_rows': _convert_json_native(map_context['preview_rows']),
+        'candidate_count': map_context['candidate_count'],
+        'mapped_count': map_context['mapped_count'],
+        'missing_count': map_context['missing_count'],
+    })
 
 
 # ── How It Works (Public Documentation) ───────────────────────────────────────

@@ -38,6 +38,17 @@ def _save_cache(cache: Dict):
         json.dump(cache, f, indent=2)
 
 
+def get_cached_geocodes(store_names: List[str]) -> Dict[str, Tuple[float, float]]:
+    """Return cached coordinates only, without hitting the network."""
+    cache = _load_cache()
+    results: Dict[str, Tuple[float, float]] = {}
+    for store_name in store_names:
+        if store_name in cache:
+            loc = cache[store_name]
+            results[store_name] = (loc['lat'], loc['lng'])
+    return results
+
+
 def geocode_store(store_name: str, api_key: Optional[str] = None) -> Optional[Tuple[float, float]]:
     """
     Geocode a store name to lat/lng coordinates.
@@ -91,7 +102,7 @@ def geocode_store(store_name: str, api_key: Optional[str] = None) -> Optional[Tu
     return None
 
 
-def geocode_stores_batch(store_names: List[str], api_key: Optional[str] = None) -> Dict[str, Tuple[float, float]]:
+def geocode_stores_batch(store_names: List[str], api_key: Optional[str] = None, cache_only: bool = False) -> Dict[str, Tuple[float, float]]:
     """
     Geocode multiple stores with rate limiting.
     
@@ -100,13 +111,45 @@ def geocode_stores_batch(store_names: List[str], api_key: Optional[str] = None) 
     """
     results = {}
     key = api_key or os.environ.get('GOOGLE_MAPS_API_KEY')
-    
+    cache = _load_cache()
+    pending = []
+
     for store_name in store_names:
-        coords = geocode_store(store_name, key)
-        if coords:
-            results[store_name] = coords
-        # Rate limit: 50 requests per second (Google's limit)
+        if store_name in results:
+            continue
+        cached = cache.get(store_name)
+        if cached:
+            results[store_name] = (cached['lat'], cached['lng'])
+        else:
+            pending.append(store_name)
+
+    if cache_only or not key:
+        return results
+
+    updated = False
+    for store_name in pending:
+        search_query = f"{store_name}, Lagos, Nigeria"
+        url = "https://maps.googleapis.com/maps/api/geocode/json"
+        params = {
+            'address': search_query,
+            'key': key,
+            'region': 'ng',
+        }
+        try:
+            response = requests.get(url, params=params, timeout=10)
+            data = response.json()
+            if data.get('status') == 'OK' and data.get('results'):
+                location = data['results'][0]['geometry']['location']
+                lat, lng = location['lat'], location['lng']
+                results[store_name] = (lat, lng)
+                cache[store_name] = {'lat': lat, 'lng': lng, 'cached_at': datetime.now().isoformat()}
+                updated = True
+        except Exception as e:
+            print(f"Geocoding error for '{store_name}': {e}")
         time.sleep(0.02)
+
+    if updated:
+        _save_cache(cache)
     
     return results
 
