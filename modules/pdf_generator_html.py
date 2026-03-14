@@ -129,11 +129,13 @@ def _build_narrative_sections(brand_name: str, kpis: dict,
 
     report_type = _infer_report_type(start_date, end_date, report_type)
     is_closed_period = report_type in ('monthly', 'quarterly', 'yearly')
-    weeks_elapsed = max(1, (report_days + 6) // 7)
 
     next_month_num  = end_dt.month % 12 + 1
     next_month_name = _calendar.month_name[next_month_num]
     next_year = start_dt.year + 1
+    month_end_day = _calendar.monthrange(end_dt.year, end_dt.month)[1]
+    remaining_days_in_month = max(0, month_end_day - end_dt.day)
+    same_calendar_month = start_dt.year == end_dt.year and start_dt.month == end_dt.month
 
     if report_type == 'weekly':
         title = f'Week of {start_dt.strftime("%d %b %Y")} Sales Report For {brand_name}'
@@ -372,19 +374,33 @@ def _build_narrative_sections(brand_name: str, kpis: dict,
 
     else:
         rec_label = next_period_label
-        week_label = (
-            'Week 1' if weeks_elapsed == 1 else
-            f'Week {weeks_elapsed}'
-        )
-        remaining_weeks = max(1, 4 - weeks_elapsed)
+        if report_type == 'weekly':
+            period_run_label = 'this weekly run'
+            purchaser_label = 'this week'
+            pacing_prefix = f'At this weekly pace, {month_name} would close around'
+        elif report_type == 'biweekly':
+            period_run_label = 'this biweekly run'
+            purchaser_label = 'this reporting window'
+            pacing_prefix = f'At this current biweekly pace, {month_name} would close around'
+        else:
+            period_run_label = 'this reporting window'
+            purchaser_label = 'this period'
+            pacing_prefix = f'At this current run rate, {month_name} would close around'
+
+        if same_calendar_month and remaining_days_in_month > 0:
+            activation_window = f'through the rest of {month_name}'
+        elif same_calendar_month:
+            activation_window = f'before {month_name} closes'
+        else:
+            activation_window = 'through the rest of the current cycle'
 
         # Distribution push is almost always the top priority early in the month
         if store_count < 15:
             target = max(store_count * 3, store_count + 10)
             recs.append(
                 f'Distribution Drive: With only {store_count} store{"s" if store_count != 1 else ""} '
-                f'active after {week_label}, aggressively target at least {target} stores across the '
-                f'remaining {remaining_weeks} week{"s" if remaining_weeks != 1 else ""} of {month_name}.'
+                f'active in {period_run_label}, aggressively target at least {target} stores '
+                f'{activation_window}.'
             )
 
         # Urgent stock replenishment (more critical for early-month since sales will ramp)
@@ -401,8 +417,8 @@ def _build_narrative_sections(brand_name: str, kpis: dict,
         # Re-engage early stores for repeat orders
         if top_store_name:
             recs.append(
-                f'Account Development: Follow up with {top_store_name} and other {week_label} '
-                f'purchasers to secure repeat orders and gather intel on in-store demand.'
+                f'Account Development: Follow up with {top_store_name} and other purchasers from '
+                f'{purchaser_label} to secure repeat orders and gather intel on in-store demand.'
             )
 
         # Pacing awareness with projected monthly revenue
@@ -410,8 +426,8 @@ def _build_narrative_sections(brand_name: str, kpis: dict,
             daily_avg   = total_rev / trading_days
             projected   = daily_avg * 28
             recs.append(
-                f'Monthly Pacing: Current {week_label} revenue ({_full(total_rev)}) projects a '
-                f'{_short(projected)} monthly total. Accelerate store activation to close any '
+                f'Monthly Pacing: {pacing_prefix} {_short(projected)} if current revenue '
+                f'({_full(total_rev)}) holds. Accelerate store activation to close any '
                 f'gap against targets before month-end.'
             )
 
