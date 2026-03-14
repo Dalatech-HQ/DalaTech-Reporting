@@ -138,6 +138,10 @@
     border: 1px solid rgba(27, 43, 94, .08);
     box-shadow: 0 18px 40px rgba(18, 29, 68, .07);
   }
+  .retailer-chart-card {
+    display: flex;
+    flex-direction: column;
+  }
   .retailer-analytics-card h4 {
     margin-bottom: 4px;
     color: var(--navy);
@@ -147,6 +151,19 @@
     margin-bottom: 16px;
     color: var(--muted);
     font-size: 12px;
+  }
+  .retailer-chart-shell {
+    position: relative;
+    height: 320px;
+    min-height: 320px;
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(245, 248, 255, .78) 0%, rgba(255, 255, 255, .98) 100%);
+    border: 1px solid rgba(27, 43, 94, .06);
+    padding: 10px 12px 6px;
+  }
+  .retailer-chart-shell canvas {
+    width: 100% !important;
+    height: 100% !important;
   }
   .retailer-feature-list {
     display: flex;
@@ -393,12 +410,16 @@
     <div class="retailer-analytics-card">
       <h4>Revenue Leaders</h4>
       <p>The highest-value supermarkets in the current retailer view.</p>
-      <canvas id="retailerRevenueChart" height="220"></canvas>
+      <div class="retailer-chart-shell">
+        <canvas id="retailerRevenueChart"></canvas>
+      </div>
     </div>
-    <div class="retailer-analytics-card">
-      <h4>Repeat Depth vs Brand Mix</h4>
-      <p>Retailers with strong reorder behavior and broad assortment are the healthiest mix-expansion targets.</p>
-      <canvas id="retailerRepeatChart" height="220"></canvas>
+    <div class="retailer-analytics-card retailer-chart-card">
+      <h4>Assortment Opportunity Matrix</h4>
+      <p>High repeat depth and broader brand mix identify the cleanest expansion targets.</p>
+      <div class="retailer-chart-shell">
+        <canvas id="retailerRepeatChart"></canvas>
+      </div>
     </div>
   </section>
 
@@ -627,28 +648,66 @@ document.getElementById('retailerSearch')?.addEventListener('input', (event) => 
   });
 });
 
+function compactCurrency(value) {
+  const numeric = Number(value || 0);
+  if (numeric >= 1000000) return '₦' + (numeric / 1000000).toFixed(1) + 'M';
+  if (numeric >= 1000) return '₦' + (numeric / 1000).toFixed(0) + 'K';
+  return '₦' + numeric.toLocaleString();
+}
+
+function retailerLabel(row) {
+  const primary = row.chain_name || row.retailer_name || 'Retailer';
+  const location = row.location_label && row.location_label !== 'Location detail pending'
+    ? row.location_label
+    : '';
+  return location ? `${primary} • ${location}` : primary;
+}
+
 const revenueCtx = document.getElementById('retailerRevenueChart');
 if (revenueCtx && retailerRows.length && window.Chart) {
-  const topRows = retailerRows.slice(0, 8);
+  const topRows = retailerRows
+    .slice(0, 6)
+    .reverse();
   new Chart(revenueCtx, {
     type: 'bar',
     data: {
-      labels: topRows.map((row) => row.chain_name || row.retailer_name),
+      labels: topRows.map((row) => retailerLabel(row)),
       datasets: [{
         data: topRows.map((row) => row.total_revenue || 0),
         borderRadius: 10,
-        backgroundColor: topRows.map((row, idx) => idx === 0 ? '#1B2B5E' : '#4B6CB7')
+        maxBarThickness: 24,
+        backgroundColor: topRows.map((row, idx) => idx === topRows.length - 1 ? '#1B2B5E' : '#4B6CB7')
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title(items) {
+              const item = items?.[0];
+              return item ? topRows[item.dataIndex].retailer_name : '';
+            },
+            label(context) {
+              return 'Revenue: ₦' + Number(context.parsed.x || 0).toLocaleString();
+            }
+          }
+        }
+      },
       scales: {
-        x: { ticks: { color: '#7280A0' }, grid: { display: false } },
-        y: {
-          ticks: { color: '#7280A0', callback: (value) => '₦' + Number(value || 0).toLocaleString() },
+        x: {
+          ticks: {
+            color: '#7280A0',
+            callback: (value) => compactCurrency(value)
+          },
           grid: { color: 'rgba(27,43,94,.08)' }
+        },
+        y: {
+          ticks: { color: '#7280A0', font: { size: 11 } },
+          grid: { display: false }
         }
       }
     }
@@ -657,46 +716,75 @@ if (revenueCtx && retailerRows.length && window.Chart) {
 
 const repeatCtx = document.getElementById('retailerRepeatChart');
 if (repeatCtx && retailerRows.length && window.Chart) {
-  const topRows = retailerRows.slice(0, 8);
+  const topRows = retailerRows.slice(0, 10);
   new Chart(repeatCtx, {
-    type: 'line',
+    type: 'scatter',
     data: {
-      labels: topRows.map((row) => row.chain_name || row.retailer_name),
       datasets: [{
-        label: 'Repeat depth',
-        data: topRows.map((row) => row.repeat_rate || 0),
-        borderColor: '#1E8449',
-        backgroundColor: 'rgba(30,132,73,.12)',
-        borderWidth: 2,
-        pointRadius: 4,
-        tension: .28,
-        fill: true
-      }, {
-        label: 'Brand mix',
-        data: topRows.map((row) => row.active_brands || 0),
-        borderColor: '#C0922A',
-        backgroundColor: 'rgba(192,146,42,.08)',
-        borderWidth: 2,
-        pointRadius: 4,
-        tension: .24,
-        fill: false,
-        yAxisID: 'y1'
+        label: 'Retailers',
+        data: topRows.map((row) => ({
+          x: row.active_brands || 0,
+          y: row.repeat_rate || 0,
+          retailerName: row.retailer_name,
+          totalRevenue: row.total_revenue || 0,
+          locationLabel: row.location_label,
+          operatingScore: row.health_score || 0
+        })),
+        parsing: false,
+        showLine: false,
+        pointRadius(context) {
+          const revenue = context.raw?.totalRevenue || 0;
+          return Math.max(6, Math.min(12, 6 + (revenue / 800000)));
+        },
+        pointHoverRadius(context) {
+          const revenue = context.raw?.totalRevenue || 0;
+          return Math.max(8, Math.min(14, 8 + (revenue / 800000)));
+        },
+        pointBorderWidth: 2,
+        pointBorderColor: '#ffffff',
+        pointBackgroundColor(context) {
+          const score = context.raw?.operatingScore || 0;
+          if (score >= 85) return '#1E8449';
+          if (score >= 65) return '#C0922A';
+          return '#E8192C';
+        }
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: '#7280A0' } } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title(items) {
+              const item = items?.[0];
+              return item?.raw?.retailerName || '';
+            },
+            label(context) {
+              const raw = context.raw || {};
+              return [
+                'Repeat depth: ' + Number(raw.y || 0).toFixed(1) + '%',
+                'Brand mix: ' + Number(raw.x || 0).toFixed(0) + ' brands',
+                'Revenue: ₦' + Number(raw.totalRevenue || 0).toLocaleString(),
+                raw.locationLabel || ''
+              ].filter(Boolean);
+            }
+          }
+        }
+      },
       scales: {
-        x: { ticks: { color: '#7280A0' }, grid: { display: false } },
-        y: {
-          ticks: { color: '#7280A0', callback: (value) => Number(value || 0).toFixed(0) + '%' },
+        x: {
+          title: { display: true, text: 'Brand mix', color: '#7280A0' },
+          ticks: { color: '#7280A0', precision: 0 },
           grid: { color: 'rgba(27,43,94,.08)' }
         },
-        y1: {
-          position: 'right',
-          ticks: { color: '#7280A0' },
-          grid: { drawOnChartArea: false }
+        y: {
+          title: { display: true, text: 'Repeat depth (%)', color: '#7280A0' },
+          suggestedMin: 0,
+          suggestedMax: 100,
+          ticks: { color: '#7280A0', callback: (value) => Number(value || 0).toFixed(0) + '%' },
+          grid: { color: 'rgba(27,43,94,.08)' }
         }
       }
     }
