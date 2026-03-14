@@ -865,10 +865,21 @@ function renderDone(status) {
   const ok    = done.filter(b => !b.error).length;
   const errs  = done.filter(b =>  b.error).length;
   const artifactsDeferred = !!status.artifacts_deferred;
-  document.getElementById('doneSub').textContent =
+  const workbookBrands = Number(status.workbook_brand_count || 0);
+  const activeBrands = Number(status.active_brand_count || ok);
+  const persistedBrands = Number(status.persisted_brand_count || ok);
+  const zeroSales = Array.isArray(status.zero_sales_brands) ? status.zero_sales_brands : [];
+  const warnings = Array.isArray(status.import_warnings) ? status.import_warnings : [];
+  const summaryBits = [
     artifactsDeferred
-      ? `${ok} brands imported${errs > 0 ? ` · ${errs} issues` : ''} · Downloads render on demand`
-      : ok + ' brand reports generated' + (errs > 0 ? ` · ${errs} errors` : '') + ' · All data saved to history';
+      ? `${persistedBrands} brands imported${errs > 0 ? ` · ${errs} issues` : ''} · Downloads render on demand`
+      : `${persistedBrands} brand reports generated${errs > 0 ? ` · ${errs} errors` : ''} · All data saved to history`,
+  ];
+  if (workbookBrands) summaryBits.push(`${workbookBrands} workbook brands detected`);
+  if (activeBrands) summaryBits.push(`${activeBrands} active sales brands`);
+  if (zeroSales.length) summaryBits.push(`${zeroSales.length} zero-sales brand${zeroSales.length === 1 ? '' : 's'} skipped`);
+  if (warnings.length) summaryBits.push(warnings.join(' '));
+  document.getElementById('doneSub').textContent = summaryBits.join(' · ');
 
   const grid = document.getElementById('outputGrid');
   const rows = [

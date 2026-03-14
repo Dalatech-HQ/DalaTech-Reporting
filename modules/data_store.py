@@ -148,6 +148,22 @@ class DataStore:
                     generated_at    TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS report_import_audit (
+                    report_id              INTEGER PRIMARY KEY,
+                    workbook_brand_count   INTEGER DEFAULT 0,
+                    active_brand_count     INTEGER DEFAULT 0,
+                    selected_brand_count   INTEGER DEFAULT 0,
+                    persisted_brand_count  INTEGER DEFAULT 0,
+                    zero_sales_brands_json TEXT DEFAULT '[]',
+                    filtered_out_brands_json TEXT DEFAULT '[]',
+                    persisted_brands_json  TEXT DEFAULT '[]',
+                    missing_brands_json    TEXT DEFAULT '[]',
+                    warnings_json          TEXT DEFAULT '[]',
+                    created_at             TEXT NOT NULL,
+                    updated_at             TEXT NOT NULL,
+                    FOREIGN KEY (report_id) REFERENCES reports(id)
+                );
+
                 CREATE TABLE IF NOT EXISTS brand_kpis (
                     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
                     report_id            INTEGER NOT NULL,
@@ -896,22 +912,26 @@ class DataStore:
         """Delete all brand_kpis, daily_sales, alerts, and ai_narratives for a report.
         Used when re-generating the same date range to avoid duplicates."""
         with self._connect() as conn:
-            conn.execute("DELETE FROM alerts WHERE report_id=?", (report_id,))
-            conn.execute("DELETE FROM brand_kpis WHERE report_id=?", (report_id,))
-            conn.execute("DELETE FROM daily_sales WHERE report_id=?", (report_id,))
-            conn.execute("DELETE FROM brand_detail_json WHERE report_id=?", (report_id,))
-            try:
-                conn.execute("DELETE FROM brand_forecast_history WHERE report_id=?", (report_id,))
-            except Exception:
-                pass
-            try:
-                conn.execute("DELETE FROM store_churn WHERE report_id=?", (report_id,))
-            except Exception:
-                pass
-            try:
-                conn.execute("DELETE FROM ai_narratives WHERE report_id=?", (report_id,))
-            except Exception:
-                pass  # table may not exist on older DBs
+            self._clear_report_data_conn(conn, report_id)
+
+    def _clear_report_data_conn(self, conn, report_id):
+        conn.execute("DELETE FROM alerts WHERE report_id=?", (report_id,))
+        conn.execute("DELETE FROM brand_kpis WHERE report_id=?", (report_id,))
+        conn.execute("DELETE FROM daily_sales WHERE report_id=?", (report_id,))
+        conn.execute("DELETE FROM brand_detail_json WHERE report_id=?", (report_id,))
+        conn.execute("DELETE FROM report_import_audit WHERE report_id=?", (report_id,))
+        try:
+            conn.execute("DELETE FROM brand_forecast_history WHERE report_id=?", (report_id,))
+        except Exception:
+            pass
+        try:
+            conn.execute("DELETE FROM store_churn WHERE report_id=?", (report_id,))
+        except Exception:
+            pass
+        try:
+            conn.execute("DELETE FROM ai_narratives WHERE report_id=?", (report_id,))
+        except Exception:
+            pass  # table may not exist on older DBs
 
     def update_report(self, report_id, xls_filename, total_revenue, total_qty,
                       total_stores, brand_count, report_type=None, start_date=None, end_date=None):
@@ -920,24 +940,312 @@ class DataStore:
         rt = self._infer_report_type(start_date, end_date, report_type) if start_date and end_date else report_type
         month_label = self._build_month_label(start_date, end_date, rt) if start_date and end_date and rt else None
         with self._connect() as conn:
-            if rt and month_label:
-                conn.execute(
-                    """UPDATE reports SET
-                       xls_filename=?, total_revenue=?, total_qty=?, total_stores=?,
-                       brand_count=?, generated_at=?, report_type=?, month_label=?
-                       WHERE id=?""",
-                    (xls_filename, total_revenue, total_qty, total_stores,
-                     brand_count, now, rt, month_label, report_id)
+            self._update_report_conn(
+                conn,
+                report_id=report_id,
+                xls_filename=xls_filename,
+                total_revenue=total_revenue,
+                total_qty=total_qty,
+                total_stores=total_stores,
+                brand_count=brand_count,
+                report_type=report_type,
+                start_date=start_date,
+                end_date=end_date,
+                generated_at=now,
+            )
+
+    def _update_report_conn(self, conn, report_id, xls_filename, total_revenue, total_qty,
+                            total_stores, brand_count, report_type=None, start_date=None,
+                            end_date=None, generated_at=None):
+        now = generated_at or datetime.now().isoformat(timespec='seconds')
+        rt = self._infer_report_type(start_date, end_date, report_type) if start_date and end_date else report_type
+        month_label = self._build_month_label(start_date, end_date, rt) if start_date and end_date and rt else None
+        if rt and month_label:
+            conn.execute(
+                """UPDATE reports SET
+                   xls_filename=?, total_revenue=?, total_qty=?, total_stores=?,
+                   brand_count=?, generated_at=?, report_type=?, month_label=?
+                   WHERE id=?""",
+                (xls_filename, total_revenue, total_qty, total_stores,
+                 brand_count, now, rt, month_label, report_id)
+            )
+        else:
+            conn.execute(
+                """UPDATE reports SET
+                   xls_filename=?, total_revenue=?, total_qty=?, total_stores=?,
+                   brand_count=?, generated_at=?
+                   WHERE id=?""",
+                (xls_filename, total_revenue, total_qty, total_stores,
+                 brand_count, now, report_id)
+            )
+
+    def _save_brand_kpis_conn(self, conn, report_id, brand_name, kpis,
+                              perf_score_dict=None, portfolio_share_pct=0):
+        brand_name = self.normalize_brand_name(brand_name)
+        ps = perf_score_dict or {}
+        peak_date_str = None
+        if kpis.get('peak_date') is not None:
+            try:
+                peak_date_str = str(kpis['peak_date'])[:10]
+            except Exception:
+                pass
+        conn.execute(
+            """INSERT INTO brand_kpis
+               (report_id, brand_name, total_revenue, total_qty, num_stores,
+                unique_skus, trading_days, repeat_stores, single_stores, repeat_pct,
+                avg_revenue_per_store, closing_stock_total, stock_days_cover,
+                inv_health_status, perf_grade, perf_score, perf_revenue_score,
+                perf_loyalty_score, perf_reach_score, perf_activity_score,
+                portfolio_share_pct, wow_rev_change, wow_qty_change,
+                peak_date, peak_revenue, top_store_name, top_store_revenue)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                report_id, brand_name,
+                kpis.get('total_revenue', 0), kpis.get('total_qty', 0),
+                kpis.get('num_stores', 0), kpis.get('unique_skus', 0),
+                kpis.get('trading_days', 0), kpis.get('repeat_stores', 0),
+                kpis.get('single_stores', 0), kpis.get('repeat_pct', 0),
+                kpis.get('avg_revenue_per_store', 0),
+                kpis.get('total_closing_stock', 0), kpis.get('stock_days_cover', 0),
+                kpis.get('inv_health_status', ''), ps.get('grade', ''),
+                ps.get('total', 0), ps.get('revenue_score', 0),
+                ps.get('loyalty_score', 0), ps.get('reach_score', 0),
+                ps.get('activity_score', 0), portfolio_share_pct,
+                kpis.get('wow_rev_change', 0), kpis.get('wow_qty_change', 0),
+                peak_date_str, kpis.get('peak_revenue', 0),
+                kpis.get('top_store_name', ''), kpis.get('top_store_revenue', 0),
+            )
+        )
+
+    def _save_daily_sales_conn(self, conn, report_id, brand_name, daily_sales_df):
+        brand_name = self.normalize_brand_name(brand_name)
+        rows = []
+        for _, row in daily_sales_df.iterrows():
+            rows.append((
+                report_id, brand_name,
+                str(row['Date'])[:10],
+                float(row['Revenue']),
+                float(row['Quantity']),
+            ))
+        if rows:
+            conn.executemany(
+                "INSERT INTO daily_sales (report_id, brand_name, date, revenue, qty) VALUES (?,?,?,?,?)",
+                rows
+            )
+
+    def _save_brand_detail_json_conn(self, conn, report_id, brand_name, kpis):
+        brand_name = self.normalize_brand_name(brand_name)
+
+        def _df_json(df):
+            if df is None or (hasattr(df, 'empty') and df.empty):
+                return '[]'
+            try:
+                return df.to_json(orient='records')
+            except Exception:
+                return '[]'
+
+        conn.execute(
+            """INSERT OR REPLACE INTO brand_detail_json
+               (report_id, brand_name, top_stores_json, product_value_json,
+                product_qty_json, closing_stock_json, pickup_json, supply_json,
+                reorder_json, heatmap_json)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (
+                report_id, brand_name,
+                _df_json(kpis.get('top_stores')),
+                _df_json(kpis.get('product_value')),
+                _df_json(kpis.get('product_qty')),
+                _df_json(kpis.get('closing_stock')),
+                _df_json(kpis.get('pickup_summary')),
+                _df_json(kpis.get('supply_summary')),
+                _df_json(kpis.get('reorder_analysis')),
+                _df_json(kpis.get('store_heatmap_df')),
+            )
+        )
+
+    def save_report_import_audit(self, report_id, workbook_brand_count=0, active_brand_count=0,
+                                 selected_brand_count=0, persisted_brand_count=0,
+                                 zero_sales_brands=None, filtered_out_brands=None,
+                                 persisted_brands=None, missing_brands=None, warnings=None,
+                                 conn=None):
+        now = datetime.now().isoformat(timespec='seconds')
+        payload = (
+            report_id,
+            int(workbook_brand_count or 0),
+            int(active_brand_count or 0),
+            int(selected_brand_count or 0),
+            int(persisted_brand_count or 0),
+            json.dumps(list(zero_sales_brands or [])),
+            json.dumps(list(filtered_out_brands or [])),
+            json.dumps(list(persisted_brands or [])),
+            json.dumps(list(missing_brands or [])),
+            json.dumps(list(warnings or [])),
+            now,
+            now,
+        )
+        owns_conn = conn is None
+        conn = conn or self._connect()
+        try:
+            conn.execute(
+                """INSERT INTO report_import_audit
+                   (report_id, workbook_brand_count, active_brand_count, selected_brand_count,
+                    persisted_brand_count, zero_sales_brands_json, filtered_out_brands_json,
+                    persisted_brands_json, missing_brands_json, warnings_json, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(report_id) DO UPDATE SET
+                     workbook_brand_count=excluded.workbook_brand_count,
+                     active_brand_count=excluded.active_brand_count,
+                     selected_brand_count=excluded.selected_brand_count,
+                     persisted_brand_count=excluded.persisted_brand_count,
+                     zero_sales_brands_json=excluded.zero_sales_brands_json,
+                     filtered_out_brands_json=excluded.filtered_out_brands_json,
+                     persisted_brands_json=excluded.persisted_brands_json,
+                     missing_brands_json=excluded.missing_brands_json,
+                     warnings_json=excluded.warnings_json,
+                     updated_at=excluded.updated_at""",
+                payload
+            )
+            if owns_conn:
+                conn.commit()
+        finally:
+            if owns_conn:
+                conn.close()
+
+    def get_report_import_audit(self, report_id):
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM report_import_audit WHERE report_id=?",
+                (report_id,)
+            ).fetchone()
+        if not row:
+            return None
+        payload = dict(row)
+        for key in (
+            'zero_sales_brands_json',
+            'filtered_out_brands_json',
+            'persisted_brands_json',
+            'missing_brands_json',
+            'warnings_json',
+        ):
+            try:
+                payload[key[:-5]] = json.loads(payload.get(key) or '[]')
+            except Exception:
+                payload[key[:-5]] = []
+        return payload
+
+    def persist_report_bundle(self, *, start_date, end_date, xls_filename,
+                              total_revenue, total_qty, total_stores, report_type,
+                              brand_payloads, workbook_brand_count=0,
+                              active_brand_count=0, selected_brand_count=0,
+                              zero_sales_brands=None, filtered_out_brands=None,
+                              replace_report_id=None):
+        """Persist an imported report atomically and verify saved brand counts."""
+        now = datetime.now().isoformat(timespec='seconds')
+        expected_brand_names = []
+        for payload in brand_payloads or []:
+            normalized = self.normalize_brand_name(payload.get('brand_name'))
+            if normalized and normalized not in expected_brand_names:
+                expected_brand_names.append(normalized)
+
+        with self._connect() as conn:
+            if replace_report_id:
+                report_id = replace_report_id
+                self._clear_report_data_conn(conn, report_id)
+                self._update_report_conn(
+                    conn,
+                    report_id=report_id,
+                    xls_filename=xls_filename,
+                    total_revenue=total_revenue,
+                    total_qty=total_qty,
+                    total_stores=total_stores,
+                    brand_count=len(expected_brand_names),
+                    report_type=report_type,
+                    start_date=start_date,
+                    end_date=end_date,
+                    generated_at=now,
                 )
             else:
-                conn.execute(
-                    """UPDATE reports SET
-                       xls_filename=?, total_revenue=?, total_qty=?, total_stores=?,
-                       brand_count=?, generated_at=?
-                       WHERE id=?""",
-                    (xls_filename, total_revenue, total_qty, total_stores,
-                     brand_count, now, report_id)
+                rt = self._infer_report_type(start_date, end_date, report_type)
+                month_label = self._build_month_label(start_date, end_date, rt)
+                cur = conn.execute(
+                    """INSERT INTO reports
+                       (month_label, start_date, end_date, xls_filename, report_type,
+                        total_revenue, total_qty, total_stores, brand_count, generated_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        month_label, start_date, end_date, xls_filename, rt,
+                        total_revenue, total_qty, total_stores, len(expected_brand_names), now,
+                    )
                 )
+                report_id = cur.lastrowid
+
+            for payload in brand_payloads or []:
+                brand_name = payload.get('brand_name')
+                kpis = payload.get('kpis') or {}
+                perf_score = payload.get('perf_score') or {}
+                portfolio_share = payload.get('portfolio_share_pct') or 0
+                self._save_brand_kpis_conn(conn, report_id, brand_name, kpis, perf_score, portfolio_share)
+                self._save_brand_detail_json_conn(conn, report_id, brand_name, kpis)
+                daily_sales_df = kpis.get('daily_sales')
+                if daily_sales_df is not None and not daily_sales_df.empty:
+                    self._save_daily_sales_conn(conn, report_id, brand_name, daily_sales_df)
+
+            saved_rows = conn.execute(
+                "SELECT DISTINCT brand_name FROM brand_kpis WHERE report_id=? ORDER BY brand_name",
+                (report_id,)
+            ).fetchall()
+            persisted_brands = [row['brand_name'] for row in saved_rows]
+            missing_brands = [name for name in expected_brand_names if name not in persisted_brands]
+            warnings = []
+            if missing_brands or len(persisted_brands) != len(expected_brand_names):
+                warnings.append(
+                    f"Detected {len(expected_brand_names)} active brands but persisted {len(persisted_brands)}."
+                )
+                self.save_report_import_audit(
+                    report_id,
+                    workbook_brand_count=workbook_brand_count,
+                    active_brand_count=active_brand_count,
+                    selected_brand_count=selected_brand_count or len(expected_brand_names),
+                    persisted_brand_count=len(persisted_brands),
+                    zero_sales_brands=zero_sales_brands,
+                    filtered_out_brands=filtered_out_brands,
+                    persisted_brands=persisted_brands,
+                    missing_brands=missing_brands,
+                    warnings=warnings,
+                    conn=conn,
+                )
+                raise ValueError(
+                    f"Import reconciliation failed. Missing persisted brands: {', '.join(missing_brands) or 'unknown'}"
+                )
+
+            self.save_report_import_audit(
+                report_id,
+                workbook_brand_count=workbook_brand_count,
+                active_brand_count=active_brand_count,
+                selected_brand_count=selected_brand_count or len(expected_brand_names),
+                persisted_brand_count=len(persisted_brands),
+                zero_sales_brands=zero_sales_brands,
+                filtered_out_brands=filtered_out_brands,
+                persisted_brands=persisted_brands,
+                missing_brands=[],
+                warnings=[],
+                conn=conn,
+            )
+            self._update_report_conn(
+                conn,
+                report_id=report_id,
+                xls_filename=xls_filename,
+                total_revenue=total_revenue,
+                total_qty=total_qty,
+                total_stores=total_stores,
+                brand_count=len(persisted_brands),
+                report_type=report_type,
+                start_date=start_date,
+                end_date=end_date,
+                generated_at=now,
+            )
+            conn.commit()
+        return report_id
 
     # ── Brand KPI operations ──────────────────────────────────────────────────
 

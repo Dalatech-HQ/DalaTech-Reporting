@@ -138,7 +138,7 @@ def _parse_generation_options(source):
     }
 
 
-def _generation_result_payload(report_id, report_meta, brands, portfolio_filename=None, brands_done=None, options=None, coach_job_id=None):
+def _generation_result_payload(report_id, report_meta, brands, portfolio_filename=None, brands_done=None, options=None, coach_job_id=None, import_audit=None):
     options = options or {}
     brands_done = brands_done or []
     report_type = report_meta.get('report_type') if report_meta else None
@@ -147,7 +147,7 @@ def _generation_result_payload(report_id, report_meta, brands, portfolio_filenam
     dashboard_url = f"/dashboard?report_id={report_id}"
     latest_dashboard_url = "/dashboard"
     portfolio_dashboard = f"/download/html/{portfolio_filename}" if portfolio_filename else dashboard_url
-    return {
+    payload = {
         'report_id': report_id,
         'report_type': report_type,
         'brands': len(brands),
@@ -162,6 +162,19 @@ def _generation_result_payload(report_id, report_meta, brands, portfolio_filenam
         'import_mode': options.get('import_mode', 'full'),
         'coach_job_id': coach_job_id,
     }
+    if import_audit:
+        payload.update({
+            'workbook_brand_count': int(import_audit.get('workbook_brand_count') or 0),
+            'active_brand_count': int(import_audit.get('active_brand_count') or 0),
+            'selected_brand_count': int(import_audit.get('selected_brand_count') or 0),
+            'persisted_brand_count': int(import_audit.get('persisted_brand_count') or 0),
+            'zero_sales_brands': list(import_audit.get('zero_sales_brands') or []),
+            'filtered_out_brands': list(import_audit.get('filtered_out_brands') or []),
+            'persisted_brands': list(import_audit.get('persisted_brands') or []),
+            'missing_brands': list(import_audit.get('missing_brands') or []),
+            'import_warnings': list(import_audit.get('warnings') or []),
+        })
+    return payload
 
 
 def _run_post_import_maintenance(report_id, brands, all_kpis, report_type, end_date, portfolio_avg_revenue, filename, refresh_copilot=True, launch_coach=True):
@@ -1346,6 +1359,8 @@ def api_preview():
         'date_min_fmt':   date_min.strftime('%d %b %Y'),
         'date_max_fmt':   date_max.strftime('%d %b %Y'),
         'brand_count':    len(brand_stats),
+        'active_brand_count': len(brand_stats),
+        'workbook_brand_count': len(all_brands_in_file),
         'brand_stats':    brand_stats,
         'zero_sales_brands': zero_sales_brands,
         'missing_brands': missing_brands,
@@ -1392,8 +1407,13 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
         if df_ranged.empty:
             raise ValueError(f'No data between {start_date} and {end_date}.')
 
+        workbook_brands = sorted(set(df_ranged['Brand Partner'].dropna().astype(str).str.strip()))
         brand_data = split_by_brand(df_ranged)
+        active_brands = list(brand_data.keys())
+        zero_sales_brands = sorted(set(workbook_brands) - set(active_brands))
+        filtered_out_brands = []
         if selected_brands:
+            filtered_out_brands = sorted(set(active_brands) - set(selected_brands))
             brand_data = {b: df for b, df in brand_data.items() if b in selected_brands}
         if not brand_data:
             raise ValueError('No sales data found after filtering the selected brands.')
@@ -1422,47 +1442,43 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
         total_qty_sum = sum(k['total_qty'] for k in all_kpis.values())
         _upd(current_brand='Saving report to history...', progress=18)
         existing_report = ds.get_report_by_date_range(start_date, end_date)
-        if existing_report:
-            report_id = existing_report['id']
-            ds.clear_report_data(report_id)
-            ds.update_report(
-                report_id,
-                xls_filename=filename,
-                total_revenue=total_portfolio_revenue,
-                total_qty=total_qty_sum,
-                total_stores=len(all_stores),
-                brand_count=len(brands),
-                report_type=report_type,
-                start_date=start_date,
-                end_date=end_date,
-            )
-        else:
-            report_id = ds.save_report(
-                start_date=start_date,
-                end_date=end_date,
-                xls_filename=filename,
-                total_revenue=total_portfolio_revenue,
-                total_qty=total_qty_sum,
-                total_stores=len(all_stores),
-                brand_count=len(brands),
-                report_type=report_type,
-            )
+        brand_payloads = []
+        for brand_name in brands:
+            kpis = all_kpis[brand_name]
+            perf_score = kpis.get('perf_score', {})
+            share = round(kpis['total_revenue'] / max(total_portfolio_revenue, 1) * 100, 2)
+            brand_payloads.append({
+                'brand_name': brand_name,
+                'kpis': kpis,
+                'perf_score': perf_score,
+                'portfolio_share_pct': share,
+            })
+        report_id = ds.persist_report_bundle(
+            start_date=start_date,
+            end_date=end_date,
+            xls_filename=filename,
+            total_revenue=total_portfolio_revenue,
+            total_qty=total_qty_sum,
+            total_stores=len(all_stores),
+            report_type=report_type,
+            brand_payloads=brand_payloads,
+            workbook_brand_count=len(workbook_brands),
+            active_brand_count=len(active_brands),
+            selected_brand_count=len(brands),
+            zero_sales_brands=zero_sales_brands,
+            filtered_out_brands=filtered_out_brands,
+            replace_report_id=existing_report['id'] if existing_report else None,
+        )
         report_meta = ds.get_report(report_id) or {}
+        import_audit = ds.get_report_import_audit(report_id) or {}
         _upd(report_id=report_id, progress=24)
         _queue_catalog_candidates(catalog_df, source_filename=filename, report_id=report_id)
 
         _upd(current_brand='Persisting brand metrics...', progress=28)
         defer_secondary_refresh = options.get('import_mode') == 'fast'
-
-        for brand_name in brands:
-            kpis = all_kpis[brand_name]
-            perf_score = kpis.get('perf_score', {})
-            share = round(kpis['total_revenue'] / max(total_portfolio_revenue, 1) * 100, 2)
-            ds.save_brand_kpis(report_id, brand_name, kpis, perf_score, share)
-            ds.save_brand_detail_json(report_id, brand_name, kpis)
-            if not kpis['daily_sales'].empty:
-                ds.save_daily_sales(report_id, brand_name, kpis['daily_sales'])
-            if not defer_secondary_refresh:
+        if not defer_secondary_refresh:
+            for brand_name in brands:
+                kpis = all_kpis[brand_name]
                 history = ds.get_brand_history(brand_name, limit=3)
                 check_and_save_alerts(report_id, brand_name, kpis, portfolio_avg_revenue, history[1:], ds)
 
@@ -1681,6 +1697,7 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
             brands_done=brands_done,
             options=result_options,
             coach_job_id=coach_job_id,
+            import_audit=import_audit,
         )
         _upd(
             progress=100,
@@ -2389,11 +2406,14 @@ def generate():
         return jsonify({'success': False,
                         'error': f'No data between {start_date} and {end_date}.'}), 422
 
+    workbook_brands = sorted(set(df_ranged['Brand Partner'].dropna().astype(str).str.strip()))
     brand_data = split_by_brand(df_ranged)
     if not brand_data:
         return jsonify({'success': False, 'error': 'No sales data found.'}), 422
 
     brands = list(brand_data.keys())
+    active_brands = list(brands)
+    zero_sales_brands = sorted(set(workbook_brands) - set(active_brands))
     catalog_df = (
         pd.concat(list(brand_data.values()), ignore_index=True)
         if brand_data else df_ranged.head(0).copy()
@@ -2415,28 +2435,34 @@ def generate():
 
     total_qty_sum = sum(k['total_qty'] for k in all_kpis.values())
     existing_report = ds.get_report_by_date_range(start_date, end_date)
-    if existing_report:
-        report_id = existing_report['id']
-        ds.clear_report_data(report_id)
-        ds.update_report(report_id, xls_filename=file.filename,
-                         total_revenue=total_portfolio_revenue,
-                         total_qty=total_qty_sum,
-                         total_stores=len(all_stores),
-                         brand_count=len(brands),
-                         report_type=report_type,
-                         start_date=start_date,
-                         end_date=end_date)
-    else:
-        report_id = ds.save_report(
-            start_date=start_date,
-            end_date=end_date,
-            xls_filename=file.filename,
-            total_revenue=total_portfolio_revenue,
-            total_qty=total_qty_sum,
-            total_stores=len(all_stores),
-            brand_count=len(brands),
-            report_type=report_type,
-        )
+    brand_payloads = []
+    for brand_name in brands:
+        kpis = all_kpis[brand_name]
+        perf = calculate_perf_score(kpis, portfolio_avg_revenue)
+        kpis['perf_score'] = perf
+        portfolio_share = round(kpis['total_revenue'] / max(total_portfolio_revenue, 1) * 100, 2)
+        brand_payloads.append({
+            'brand_name': brand_name,
+            'kpis': kpis,
+            'perf_score': perf,
+            'portfolio_share_pct': portfolio_share,
+        })
+    report_id = ds.persist_report_bundle(
+        start_date=start_date,
+        end_date=end_date,
+        xls_filename=file.filename,
+        total_revenue=total_portfolio_revenue,
+        total_qty=total_qty_sum,
+        total_stores=len(all_stores),
+        report_type=report_type,
+        brand_payloads=brand_payloads,
+        workbook_brand_count=len(workbook_brands),
+        active_brand_count=len(active_brands),
+        selected_brand_count=len(brands),
+        zero_sales_brands=zero_sales_brands,
+        filtered_out_brands=[],
+        replace_report_id=existing_report['id'] if existing_report else None,
+    )
     _queue_catalog_candidates(catalog_df, source_filename=file.filename, report_id=report_id)
 
     # Generate files
@@ -2450,16 +2476,6 @@ def generate():
         safe = _safe_name(brand_name)
         pdf_path  = os.path.join(PDF_DIR,  f"{safe}_Report_{month_tag}.pdf")
         html_path = os.path.join(HTML_DIR, f"{safe}_Report_{month_tag}.html")
-
-        perf = calculate_perf_score(kpis, portfolio_avg_revenue)
-        kpis['perf_score'] = perf
-        portfolio_share = round(kpis['total_revenue'] / max(total_portfolio_revenue, 1) * 100, 2)
-
-        # Save to DB
-        ds.save_brand_kpis(report_id, brand_name, kpis, perf, portfolio_share)
-        ds.save_brand_detail_json(report_id, brand_name, kpis)
-        if not kpis['daily_sales'].empty:
-            ds.save_daily_sales(report_id, brand_name, kpis['daily_sales'])
 
         # Alerts
         history = ds.get_brand_history(brand_name, limit=3)
@@ -2536,12 +2552,19 @@ def generate():
         source='sync_generate',
     )
 
+    import_audit = ds.get_report_import_audit(report_id) or {}
     return jsonify({
         'success':    True,
         'report_id':  report_id,
         'pdf_count':  ok_pdf,
         'html_count': ok_html,
         'brands':     len(brands),
+        'workbook_brand_count': int(import_audit.get('workbook_brand_count') or len(workbook_brands)),
+        'active_brand_count': int(import_audit.get('active_brand_count') or len(active_brands)),
+        'persisted_brand_count': int(import_audit.get('persisted_brand_count') or len(ds.get_all_brand_kpis(report_id))),
+        'zero_sales_brands': list(import_audit.get('zero_sales_brands') or zero_sales_brands),
+        'missing_brands': list(import_audit.get('missing_brands') or []),
+        'import_warnings': list(import_audit.get('warnings') or []),
         'errors':     errors,
         'portfolio_dashboard': f"/download/html/{os.path.basename(portfolio_path)}",
         'coach_job_id': coach_job_id,

@@ -21,6 +21,7 @@
         <label class="form-label">Tally Excel File (.xls / .xlsx)</label>
         <input type="file" name="tally_file" class="form-control" accept=".xls,.xlsx" required>
       </div>
+      <div id="filePreviewNote" class="flash flash-success" style="display:none;margin-bottom:12px;"></div>
       <div class="grid-2" style="gap:12px;">
         <div class="form-group">
           <label class="form-label">Start Date</label>
@@ -126,6 +127,42 @@ async function parseJsonResponse(res) {
   }
 }
 
+function renderFilePreview(data) {
+  const preview = document.getElementById('filePreviewNote');
+  const workbookBrands = Number(data.workbook_brand_count || data.total_brand_count || 0);
+  const activeBrands = Number(data.brand_count || data.active_brand_count || 0);
+  const zeroSales = Array.isArray(data.zero_sales_brands) ? data.zero_sales_brands : [];
+  const zeroSalesNote = zeroSales.length
+    ? `<br><span class="text-muted fs-sm">${zeroSales.length} brand${zeroSales.length === 1 ? '' : 's'} will be skipped because they have no Sales rows in this date range: ${zeroSales.slice(0, 6).join(', ')}${zeroSales.length > 6 ? '…' : ''}</span>`
+    : '';
+  preview.innerHTML = `Workbook ready: ${workbookBrands} brands detected · ${activeBrands} active sales brands.${zeroSalesNote}`;
+  preview.style.display = 'block';
+  if (data.date_min) startDateInput.value = data.date_min;
+  if (data.date_max) endDateInput.value = data.date_max;
+}
+
+async function previewSelectedFile(file) {
+  const preview = document.getElementById('filePreviewNote');
+  preview.style.display = 'block';
+  preview.innerHTML = 'Reading workbook and checking brand counts...';
+  const fd = new FormData();
+  fd.append('tally_file', file);
+  try {
+    const res = await fetch('/api/preview', { method: 'POST', body: fd, cache: 'no-store' });
+    const data = await parseJsonResponse(res);
+    if (!data.success) {
+      preview.className = 'flash flash-error';
+      preview.textContent = data.error || 'Could not analyze workbook.';
+      return;
+    }
+    preview.className = 'flash flash-success';
+    renderFilePreview(data);
+  } catch (err) {
+    preview.className = 'flash flash-error';
+    preview.textContent = err.message || 'Could not analyze workbook.';
+  }
+}
+
 function renderImportComplete(status) {
   const dashboardUrl = status.dashboard_url || (status.report_id ? `/dashboard?report_id=${status.report_id}` : '/dashboard');
   const portfolioUrl = status.portfolio_dashboard || dashboardUrl;
@@ -135,8 +172,23 @@ function renderImportComplete(status) {
   const refreshNote = status.background_refresh_queued
     ? '<br><span class="text-muted fs-sm">Alerts, reorder trends, and coach refresh are continuing in the background.</span>'
     : '';
+  const workbookBrands = Number(status.workbook_brand_count || 0);
+  const activeBrands = Number(status.active_brand_count || status.brands || 0);
+  const persistedBrands = Number(status.persisted_brand_count || status.brands || 0);
+  const zeroSales = Array.isArray(status.zero_sales_brands) ? status.zero_sales_brands : [];
+  const warnings = Array.isArray(status.import_warnings) ? status.import_warnings : [];
+  const mismatchNote = persistedBrands !== activeBrands
+    ? `<br><span class="text-muted fs-sm" style="color:var(--red);">Import reconciliation warning: detected ${activeBrands} active brands but saved ${persistedBrands}. Missing: ${(status.missing_brands || []).slice(0, 8).join(', ') || 'unknown'}.</span>`
+    : '';
+  const zeroSalesNote = zeroSales.length
+    ? `<br><span class="text-muted fs-sm">${zeroSales.length} workbook brand${zeroSales.length === 1 ? '' : 's'} had no Sales rows and were skipped: ${zeroSales.slice(0, 6).join(', ')}${zeroSales.length > 6 ? '…' : ''}</span>`
+    : '';
+  const warningsNote = warnings.length
+    ? `<br><span class="text-muted fs-sm" style="color:var(--amber);">${warnings.join(' ')}</span>`
+    : '';
   return `<div class="flash flash-success">
-      ✅ Report saved to history for ${status.brands || 0} brands.${deferredNote}${refreshNote}
+      ✅ Report saved to history for ${persistedBrands} active brand${persistedBrands === 1 ? '' : 's'}.
+      <br><span class="text-muted fs-sm">Workbook brands: ${workbookBrands} · Active sales brands: ${activeBrands}</span>${zeroSalesNote}${mismatchNote}${warningsNote}${deferredNote}${refreshNote}
       <br><br>
       <a href="${dashboardUrl}" class="btn btn-navy btn-sm">View Dashboard</a>
       &nbsp;
@@ -246,6 +298,11 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
     btn.disabled = false;
     btn.textContent = '⚡ Generate All Reports';
   }
+});
+
+document.querySelector('input[name="tally_file"]').addEventListener('change', function() {
+  const file = this.files && this.files[0];
+  if (file) previewSelectedFile(file);
 });
 </script>
 {% endblock %}
