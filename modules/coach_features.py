@@ -224,6 +224,30 @@ def _comparison_basis(window: dict[str, Any]) -> dict[str, str | None]:
     }
 
 
+def _same_period_last_year(window: dict[str, Any]) -> dict[str, str | None]:
+    start_date = window.get("start_date")
+    end_date = window.get("end_date")
+    period_type = str(window.get("period_type") or "monthly").lower()
+    if not start_date or not end_date:
+        return {
+            "yoy_start_date": None,
+            "yoy_end_date": None,
+            "same_period_last_year_label": None,
+        }
+
+    start_ts = pd.Timestamp(start_date) - pd.DateOffset(years=1)
+    end_ts = pd.Timestamp(end_date) - pd.DateOffset(years=1)
+    if period_type == "monthly":
+        label = start_ts.strftime("%b %Y")
+    else:
+        label = f'{start_ts.strftime("%Y-%m-%d")} to {end_ts.strftime("%Y-%m-%d")}'
+    return {
+        "yoy_start_date": start_ts.strftime("%Y-%m-%d"),
+        "yoy_end_date": end_ts.strftime("%Y-%m-%d"),
+        "same_period_last_year_label": label,
+    }
+
+
 def _filter_scope(ds, df: pd.DataFrame, scope_type: str, scope_key: str | None = None,
                   retailer_code: str | None = None) -> pd.DataFrame:
     if df.empty:
@@ -688,12 +712,15 @@ def build_scope_snapshot(ds, scope_type: str, scope_key: str | None = None,
     df = load_sales_history()
     scope_df = _filter_scope(ds, df, scope_type, scope_key=scope_key, retailer_code=retailer_code)
     window = _report_window(ds, scope_df if not scope_df.empty else df, report_id=report_id, month_value=month_value)
+    yoy_window = _same_period_last_year(window)
 
     global_current_frame = _between(df, window["start_date"], window["end_date"])
     current_frame = _between(scope_df, window["start_date"], window["end_date"])
     previous_frame = _between(scope_df, window["previous_start_date"], window["previous_end_date"])
+    yoy_frame = _between(scope_df, yoy_window["yoy_start_date"], yoy_window["yoy_end_date"])
     current_metrics = _metrics_for_scope_frame(current_frame, scope_type)
     previous_metrics = _metrics_for_scope_frame(previous_frame, scope_type)
+    yoy_metrics = _metrics_for_scope_frame(yoy_frame, scope_type)
     monthly_history = _monthly_history(scope_df, scope_type, limit=12)
 
     comparisons = {
@@ -703,6 +730,9 @@ def build_scope_snapshot(ds, scope_type: str, scope_key: str | None = None,
         "active_store_delta": _count_delta(current_metrics["active_stores"], previous_metrics["active_stores"]),
         "active_brand_delta": _count_delta(current_metrics["active_brands"], previous_metrics["active_brands"]),
         "transaction_delta": _count_delta(current_metrics["transactions"], previous_metrics["transactions"]),
+        "revenue_yoy": _pct_delta(current_metrics["revenue"], yoy_metrics["revenue"]),
+        "quantity_yoy": _pct_delta(current_metrics["quantity"], yoy_metrics["quantity"]),
+        "repeat_rate_yoy": _count_delta(current_metrics["repeat_rate"], yoy_metrics["repeat_rate"]),
     }
 
     activity = {}
@@ -731,10 +761,12 @@ def build_scope_snapshot(ds, scope_type: str, scope_key: str | None = None,
         "report_id": window["report"]["id"] if window["report"] else None,
         "metrics": current_metrics,
         "previous_metrics": previous_metrics,
+        "same_period_last_year_metrics": yoy_metrics,
         "comparisons": comparisons,
         "historical": monthly_history,
         "activity": activity,
         **_comparison_basis(window),
+        **yoy_window,
     }
 
     if scope_type == "retailer":

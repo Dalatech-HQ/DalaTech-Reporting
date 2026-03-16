@@ -3755,7 +3755,10 @@ def api_retailer_report_pdf(retailer_code):
 def api_retailer_group_report_pdf(group_slug):
     report_id = request.args.get('report_id', type=int)
     month_value = (request.args.get('month') or '').strip() or None
-    pdf_bytes, detail = _build_retailer_group_report_pdf_bytes(group_slug, report_id=report_id, month_value=month_value)
+    try:
+        pdf_bytes, detail = _build_retailer_group_report_pdf_bytes(group_slug, report_id=report_id, month_value=month_value)
+    except ValueError:
+        abort(404)
     month_tag = detail.get('period_label') or 'Retailer_Group'
     safe = _safe_name(detail.get('retailer_name') or group_slug)
     filename = f"{safe}_Retailer_Group_Report_{month_tag.replace(' ', '_')}.pdf"

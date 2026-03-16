@@ -295,7 +295,7 @@
         {% endif %}
       </div>
       <div class="group-copy">{{ coach.summary.summary }}</div>
-      <div class="group-status">{{ detail.comparison_basis }}</div>
+      <div class="group-status"><strong>Comparison Basis:</strong> {{ detail.comparison_basis }}</div>
       <div class="group-actions" style="margin-top:16px;">
         <a class="btn btn-outline" href="{{ clean_url_for('retailers', month=selected_month, report_id=report.id if report else None) }}">Back to Retailers</a>
         {% if detail.top_branch %}
@@ -402,6 +402,30 @@
           <tr>
             <th>Transactions</th>
             <td><div class="value">{{ detail.metrics.transactions or 0 }}</div></td>
+          </tr>
+          <tr>
+            <th>Vs previous comparable</th>
+            <td>
+              <div class="value">
+                {% if detail.comparisons.revenue_mom is not none %}{{ "%+.1f"|format(detail.comparisons.revenue_mom) }}% revenue{% else %}N/A{% endif %}
+              </div>
+              <div class="sub">{{ detail.comparison_basis }}</div>
+            </td>
+          </tr>
+          <tr>
+            <th>Vs Same Period Last Year</th>
+            <td>
+              <div class="value">
+                {% if detail.comparisons.revenue_yoy is not none %}{{ "%+.1f"|format(detail.comparisons.revenue_yoy) }}% revenue{% else %}N/A{% endif %}
+              </div>
+              <div class="sub">
+                {% if detail.same_period_last_year_label %}
+                Same calendar {{ 'month' if detail.period_type == 'monthly' else 'week window' }} last year: {{ detail.same_period_last_year_label }}
+                {% else %}
+                No same-period last-year data is available.
+                {% endif %}
+              </div>
+            </td>
           </tr>
         </tbody>
       </table>

@@ -71,6 +71,8 @@
           <tr><th>Active Months</th><td>{{ detail.history.active_months or 0 }}</td></tr>
           <tr><th>All-Time Total Revenue</th><td>₦{{ detail.history.cumulative_revenue | money2 }}</td></tr>
           <tr><th>Comparison Basis</th><td>{{ detail.comparison_basis }}</td></tr>
+          <tr><th>Vs Previous Comparable</th><td>{% if detail.comparisons.revenue_mom is not none %}{{ "%+.1f"|format(detail.comparisons.revenue_mom) }}% revenue{% else %}N/A{% endif %}</td></tr>
+          <tr><th>Vs Same Period Last Year</th><td>{% if detail.comparisons.revenue_yoy is not none %}{{ "%+.1f"|format(detail.comparisons.revenue_yoy) }}% revenue · {{ detail.same_period_last_year_label or 'No same-period last-year data' }}{% else %}N/A · {{ detail.same_period_last_year_label or 'No same-period last-year data' }}{% endif %}</td></tr>
           <tr><th>Peak Period</th><td>{{ detail.history.peak_period_label or 'N/A' }} · ₦{{ detail.history.peak_period_revenue | money2 }}</td></tr>
         </tbody>
       </table>
