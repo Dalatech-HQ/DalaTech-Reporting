@@ -4,93 +4,118 @@
   <meta charset="utf-8">
   <style>
     @page { size: A4; margin: 12mm; }
-    body { font-family: "Segoe UI", Arial, sans-serif; color:#172033; font-size:12px; }
-    .hero { border:1px solid #dde4f2; border-radius:18px; padding:20px; margin-bottom:18px; }
+    body { font-family: "Segoe UI", Arial, sans-serif; color:#172033; font-size:11px; }
+    .hero { border:1px solid #dde4f2; border-radius:18px; padding:20px; margin-bottom:16px; }
     .eyebrow { color:#2E86C1; font-size:10px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
-    h1 { margin:8px 0 6px; color:#1B2B5E; font-size:26px; }
+    h1 { margin:8px 0 6px; color:#1B2B5E; font-size:28px; }
+    h2 { margin:0 0 10px; color:#1B2B5E; font-size:18px; }
     .muted { color:#7280a0; }
-    .grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px; }
-    .grid-2 { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin-bottom:18px; }
-    .card { border:1px solid #dde4f2; border-radius:16px; padding:16px; break-inside:avoid; }
+    .grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px; }
+    .grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px; }
+    .grid-2 { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin-bottom:16px; }
+    .card { border:1px solid #dde4f2; border-radius:16px; padding:14px; break-inside:avoid; }
     .kpi-label { color:#7280a0; font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
     .kpi-value { margin-top:8px; color:#1B2B5E; font-size:26px; font-weight:800; }
-    .signal { padding:10px 0; border-bottom:1px solid #dde4f2; }
-    .signal:last-child { border-bottom:none; }
-    .signal h4 { margin:0 0 4px; color:#1B2B5E; font-size:13px; }
-    .signal p { margin:0; color:#7280a0; font-size:11px; }
+    .band { display:inline-block; padding:6px 10px; border-radius:999px; background:#eef2f8; color:#1B2B5E; font-weight:700; }
+    .note { margin-top:10px; padding:10px 12px; border:1px solid #dde4f2; border-radius:12px; background:#f7faff; line-height:1.6; }
     table { width:100%; border-collapse:collapse; }
-    th, td { text-align:left; padding:9px 0; border-bottom:1px solid #dde4f2; font-size:11px; vertical-align:top; }
+    th, td { text-align:left; padding:8px 0; border-bottom:1px solid #dde4f2; vertical-align:top; font-size:11px; }
     th { color:#7280a0; font-size:10px; text-transform:uppercase; letter-spacing:.08em; }
-    ul { margin:8px 0 0 18px; color:#7280a0; }
-    .bar-track { height:8px; border-radius:999px; background:#eef2f8; overflow:hidden; margin-top:8px; }
-    .bar-fill { height:100%; border-radius:999px; background:#1B2B5E; }
+    ul { margin:8px 0 0 18px; color:#4f5f84; line-height:1.6; }
+    .story { padding:12px 14px; border:1px solid #dde4f2; border-radius:14px; background:#fbfcff; margin-bottom:10px; }
+    .story h4 { margin:0 0 6px; color:#1B2B5E; font-size:13px; }
+    .story p { margin:0; color:#7280a0; line-height:1.5; }
+    .break { page-break-before: always; }
   </style>
 </head>
 <body>
   <section class="hero">
     <div class="eyebrow">{{ detail.scope_label or 'Retailer Intelligence Report' }}</div>
     <h1>{{ detail.retailer_name }}</h1>
+    <div class="muted">History Window: {{ detail.history.first_seen or 'N/A' }} to {{ detail.history.last_seen or 'N/A' }}</div>
     <div class="muted">Current Period: {{ detail.period_label }} · Generated {{ generated_at }}</div>
-    <div class="muted">{{ detail.comparison_basis }}</div>
     <div class="muted">{{ detail.location_label }}{% if detail.branch_label %} · {{ detail.branch_label }}{% endif %}</div>
-    <div style="margin-top:12px;font-size:14px;font-weight:700;color:#1B2B5E;">{{ detail.coach.summary.headline }}</div>
+    <div style="margin-top:10px;font-size:14px;font-weight:800;color:#1B2B5E;">{{ detail.coach.summary.headline }}</div>
     <div class="muted" style="margin-top:6px;">{{ detail.coach.summary.summary }}</div>
+    <div class="note">
+      <strong>Comparison Basis:</strong> {{ detail.comparison_basis }}<br>
+      <strong>Same Period Last Year:</strong> {{ detail.same_period_last_year_label or 'No same-period last-year data is available.' }}
+    </div>
+    <ul>
+      {% for line in detail.executive_story.summary_lines %}
+      <li>{{ line }}</li>
+      {% endfor %}
+    </ul>
   </section>
 
   <section class="grid-4">
     <div class="card">
-      <div class="kpi-label">{% if detail.group_slug %}Group Revenue{% else %}Retailer Revenue{% endif %}</div>
+      <div class="kpi-label">All-Time Revenue</div>
+      <div class="kpi-value">₦{{ detail.history.cumulative_revenue | money2 }}</div>
+      <div class="muted">{{ detail.history.active_months or 0 }} active periods</div>
+    </div>
+    <div class="card">
+      <div class="kpi-label">All-Time Transactions</div>
+      <div class="kpi-value">{{ detail.history.cumulative_transactions or 0 }}</div>
+      <div class="muted">{{ detail.history.cumulative_active_days or 0 }} active days</div>
+    </div>
+    <div class="card">
+      <div class="kpi-label">All-Time Branches</div>
+      <div class="kpi-value">{{ detail.history.active_branches_total or 0 }}</div>
+      <div class="muted">{{ detail.location_label }}</div>
+    </div>
+    <div class="card">
+      <div class="kpi-label">All-Time Brands / SKUs</div>
+      <div class="kpi-value">{{ detail.history.active_brands_total or 0 }}</div>
+      <div class="muted">{{ detail.history.active_skus_total or 0 }} SKUs sold</div>
+    </div>
+  </section>
+
+  <section class="grid-4">
+    <div class="card">
+      <div class="kpi-label">Current Revenue</div>
       <div class="kpi-value">₦{{ detail.metrics.revenue | money2 }}</div>
-      <div class="muted">Current Period</div>
+      <div class="muted">{{ detail.period_label }}</div>
     </div>
     <div class="card">
-      <div class="kpi-label">Brand Mix</div>
-      <div class="kpi-value">{{ detail.metrics.active_brands or 0 }}</div>
-      <div class="muted">{{ detail.metrics.unique_skus or 0 }} active SKUs</div>
-    </div>
-    <div class="card">
-      <div class="kpi-label">{% if detail.group_slug %}Group Transactions{% else %}Transactions{% endif %}</div>
+      <div class="kpi-label">Current Transactions</div>
       <div class="kpi-value">{{ detail.metrics.transactions or 0 }}</div>
       <div class="muted">{{ detail.metrics.active_days or 0 }} active sales days</div>
     </div>
     <div class="card">
-      <div class="kpi-label">Repeat Depth</div>
-      <div class="kpi-value">{{ "{:,.1f}".format(detail.metrics.repeat_rate or 0) }}%</div>
-      <div class="bar-track"><div class="bar-fill" style="width:{{ detail.metrics.repeat_rate or 0 }}%;"></div></div>
+      <div class="kpi-label">Vs Previous Comparable</div>
+      <div class="kpi-value">{% if detail.comparisons.revenue_mom is not none %}{{ "%+.1f"|format(detail.comparisons.revenue_mom) }}%{% else %}N/A{% endif %}</div>
+      <div class="muted">Revenue movement</div>
+    </div>
+    <div class="card">
+      <div class="kpi-label">Vs Same Period Last Year</div>
+      <div class="kpi-value">{% if detail.comparisons.revenue_yoy is not none %}{{ "%+.1f"|format(detail.comparisons.revenue_yoy) }}%{% else %}N/A{% endif %}</div>
+      <div class="muted">{{ detail.same_period_last_year_label or 'No same-period last-year data' }}</div>
     </div>
   </section>
 
   <section class="grid-2">
-    {% if detail.history %}
     <div class="card">
-      <div class="eyebrow">History</div>
+      <div class="eyebrow">Overall History</div>
       <table>
         <tbody>
-          <tr><th>First Seen</th><td>{{ detail.history.first_seen or 'N/A' }}</td></tr>
-          <tr><th>Latest Seen</th><td>{{ detail.history.last_seen or 'N/A' }}</td></tr>
-          <tr><th>Active Months</th><td>{{ detail.history.active_months or 0 }}</td></tr>
-          <tr><th>All-Time Total Revenue</th><td>₦{{ detail.history.cumulative_revenue | money2 }}</td></tr>
-          <tr><th>Comparison Basis</th><td>{{ detail.comparison_basis }}</td></tr>
-          <tr><th>Vs Previous Comparable</th><td>{% if detail.comparisons.revenue_mom is not none %}{{ "%+.1f"|format(detail.comparisons.revenue_mom) }}% revenue{% else %}N/A{% endif %}</td></tr>
-          <tr><th>Vs Same Period Last Year</th><td>{% if detail.comparisons.revenue_yoy is not none %}{{ "%+.1f"|format(detail.comparisons.revenue_yoy) }}% revenue · {{ detail.same_period_last_year_label or 'No same-period last-year data' }}{% else %}N/A · {{ detail.same_period_last_year_label or 'No same-period last-year data' }}{% endif %}</td></tr>
+          <tr><th>Average Period Revenue</th><td>₦{{ detail.history.avg_monthly_revenue | money2 }}</td></tr>
+          <tr><th>Average Repeat Depth</th><td>{{ "{:,.1f}".format(detail.history.avg_repeat_rate or 0) }}%</td></tr>
           <tr><th>Peak Period</th><td>{{ detail.history.peak_period_label or 'N/A' }} · ₦{{ detail.history.peak_period_revenue | money2 }}</td></tr>
+          <tr><th>Weakest Period</th><td>{{ detail.history.low_period_label or 'N/A' }} · ₦{{ detail.history.low_period_revenue | money2 }}</td></tr>
+          <tr><th>Top 3 Branch Share</th><td>{{ "{:,.1f}".format(detail.history.top_three_share or 0) }}%</td></tr>
+          <tr><th>History Growth</th><td>{% if detail.history.history_growth_pct is not none %}{{ "%+.1f"|format(detail.history.history_growth_pct) }}%{% else %}N/A{% endif %}</td></tr>
         </tbody>
       </table>
     </div>
-    {% endif %}
     <div class="card">
-      <div class="eyebrow">Open Signals</div>
-      {% for signal in detail.coach.signals %}
-      <div class="signal">
+      <div class="eyebrow">Recommended Actions</div>
+      {% for signal in detail.coach.signals[:6] %}
+      <div class="story">
         <h4>{{ signal.evidence.title }}</h4>
         <p>{{ signal.evidence.message }}</p>
       </div>
-      {% else %}
-      <div class="muted">No open coach signal for this retailer.</div>
       {% endfor %}
-    </div>
-    <div class="card">
-      <div class="eyebrow">Recommended Actions</div>
       <ul>
         {% for action in detail.coach.summary.recommended_actions %}
         <li>{{ action }}</li>
@@ -100,154 +125,157 @@
   </section>
 
   <section class="grid-2">
-    {% if detail.branch_rows %}
     <div class="card">
-      <div class="eyebrow">Current Period Branches</div>
+      <div class="eyebrow">Branch Network</div>
       <table>
-        <thead><tr><th>Branch</th><th>Revenue</th><th>Repeat</th></tr></thead>
+        <thead><tr><th>Branch</th><th>All-Time Revenue</th><th>Current Revenue</th><th>MoM</th></tr></thead>
         <tbody>
-          {% for row in detail.branch_rows %}
+          {% for row in detail.branch_network_rows[:18] %}
           <tr>
-            <td>{{ row.retailer_name }}</td>
-            <td>₦{{ row.total_revenue | money2 }}</td>
-            <td>{{ "{:,.1f}".format(row.repeat_rate or 0) }}%</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% endif %}
-    <div class="card">
-      <div class="eyebrow">{% if detail.group_slug %}Brands in Group{% else %}Brands in Store{% endif %}</div>
-      <table>
-        <thead><tr><th>Brand</th><th>Revenue</th><th>MoM</th></tr></thead>
-        <tbody>
-          {% for row in detail.brand_rows %}
-          <tr>
-            <td>{{ row.brand_name }}</td>
-            <td>₦{{ row.revenue | money2 }}</td>
+            <td>{{ row.retailer_name }}<br><span class="muted">{{ row.location_label }}</span></td>
+            <td>₦{{ row.all_time_revenue | money2 }}<br><span class="muted">{{ "{:,.1f}".format(row.all_time_share_pct or 0) }}% share</span></td>
+            <td>₦{{ row.current_revenue | money2 }}</td>
             <td>{% if row.revenue_mom is not none %}{{ "%+.1f"|format(row.revenue_mom) }}%{% else %}N/A{% endif %}</td>
           </tr>
-          {% else %}
-          <tr><td colspan="3" class="muted">No brand mix data is available.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
     <div class="card">
-      <div class="eyebrow">Opportunity Brands</div>
+      <div class="eyebrow">Brand Performance</div>
       <table>
-        <thead><tr><th>Brand</th><th>Rank</th><th>Peer Demand</th></tr></thead>
+        <thead><tr><th>Brand</th><th>Current Revenue</th><th>All-Time Revenue</th><th>Current MoM</th></tr></thead>
         <tbody>
-          {% for row in detail.opportunity_brands %}
+          {% for row in detail.brand_mix_rows[:18] %}
           <tr>
             <td>{{ row.brand_name }}</td>
-            <td>{{ row.portfolio_rank or 'N/A' }}</td>
-            <td>₦{{ row.revenue | money2 }}</td>
+            <td>₦{{ row.current_revenue | money2 }}</td>
+            <td>₦{{ row.history_revenue | money2 }}</td>
+            <td>{% if row.current_mom is not none %}{{ "%+.1f"|format(row.current_mom) }}%{% else %}N/A{% endif %}</td>
           </tr>
-          {% else %}
-          <tr><td colspan="3" class="muted">No assortment gap is open for this retailer.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   </section>
 
-  {% if detail.history %}
   <section class="grid-2">
     <div class="card">
-      <div class="eyebrow">History Branch Appendix</div>
-      <div class="muted" style="margin:6px 0 10px;">Branch values below are all-time history totals, not current-period totals.</div>
+      <div class="eyebrow">SKU Performance</div>
       <table>
-        <thead><tr><th>Branch</th><th>All-Time Revenue</th><th>Share</th></tr></thead>
+        <thead><tr><th>SKU</th><th>Current Revenue</th><th>All-Time Revenue</th><th>Current Qty</th></tr></thead>
         <tbody>
-          {% for row in detail.history.branch_rows[:16] %}
-          <tr>
-            <td>{{ row.retailer_name }}</td>
-            <td>₦{{ row.revenue | money2 }}</td>
-            <td>{{ "{:,.1f}".format(row.share_pct or 0) }}%</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <div class="card">
-      <div class="eyebrow">History SKUs</div>
-      <table>
-        <thead><tr><th>SKU</th><th>Revenue</th><th>Qty</th></tr></thead>
-        <tbody>
-          {% for row in detail.history.top_products[:16] %}
+          {% for row in detail.sku_mix_rows[:18] %}
           <tr>
             <td>{{ row.sku }}</td>
-            <td>₦{{ row.revenue | money2 }}</td>
-            <td>{{ "{:,.1f}".format(row.quantity or 0) }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
-  <section class="grid-2">
-    <div class="card">
-      <div class="eyebrow">History Brands</div>
-      <table>
-        <thead><tr><th>Brand</th><th>Revenue</th><th>Share</th></tr></thead>
-        <tbody>
-          {% for row in detail.history.top_brands[:16] %}
-          <tr>
-            <td>{{ row.brand_name }}</td>
-            <td>₦{{ row.revenue | money2 }}</td>
-            <td>{{ "{:,.1f}".format(row.share_pct or 0) }}%</td>
+            <td>₦{{ row.current_revenue | money2 }}</td>
+            <td>₦{{ row.history_revenue | money2 }}</td>
+            <td>{{ "{:,.1f}".format(row.current_quantity or 0) }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
     <div class="card">
-      <div class="eyebrow">History Summary</div>
-      <table>
-        <tbody>
-          <tr><th>Top Branch</th><td>{% if detail.history.top_branch %}{{ detail.history.top_branch.retailer_name }} · ₦{{ detail.history.top_branch.revenue | money2 }}{% else %}N/A{% endif %}</td></tr>
-          <tr><th>Top Brand</th><td>{% if detail.history.top_brand %}{{ detail.history.top_brand.brand_name }} · ₦{{ detail.history.top_brand.revenue | money2 }}{% else %}N/A{% endif %}</td></tr>
-          <tr><th>Top SKU</th><td>{% if detail.history.top_product %}{{ detail.history.top_product.sku }} · ₦{{ detail.history.top_product.revenue | money2 }}{% else %}N/A{% endif %}</td></tr>
-          <tr><th>Top 3 Branch Share</th><td>{{ "{:,.1f}".format(detail.history.top_three_share or 0) }}%</td></tr>
-        </tbody>
-      </table>
+      <div class="eyebrow">Opportunities</div>
+      {% for item in detail.executive_story.opportunities %}
+      <div class="story">
+        <h4>{{ item.title }}</h4>
+        <p>{{ item.detail }}</p>
+        <ul>
+          {% for line in item["items"] %}
+          <li>{{ line }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% else %}
+      <div class="story"><p>No major chain opportunity is open from the current signal set.</p></div>
+      {% endfor %}
     </div>
   </section>
-  {% endif %}
 
   <section class="grid-2">
     <div class="card">
-      <div class="eyebrow">Recent Visits</div>
+      <div class="eyebrow">Risks</div>
+      {% for item in detail.executive_story.risks %}
+      <div class="story">
+        <h4>{{ item.title }}</h4>
+        <p>{{ item.detail }}</p>
+        <ul>
+          {% for line in item["items"] %}
+          <li>{{ line }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% else %}
+      <div class="story"><p>No major chain risk is open from the current signal set.</p></div>
+      {% endfor %}
+    </div>
+    <div class="card">
+      <div class="eyebrow">Activity and Issue Context</div>
       <table>
-        <thead><tr><th>Date</th><th>Salesman</th><th>Issues</th></tr></thead>
+        <thead><tr><th>Date</th><th>Salesman</th><th>Issue / Visit</th></tr></thead>
         <tbody>
           {% for row in detail.activity.visits[:10] %}
           <tr>
             <td>{{ row.activity_date }}</td>
             <td>{{ row.salesman_name or 'Unknown SE' }}</td>
-            <td>{{ row.issue_count or 0 }}</td>
+            <td>{{ row.issue_count or 0 }} linked issues</td>
           </tr>
-          {% else %}
-          <tr><td colspan="3" class="muted">No activity visits are linked yet.</td></tr>
+          {% endfor %}
+          {% for row in detail.activity.issues[:10] %}
+          <tr>
+            <td>{{ row.activity_date }}</td>
+            <td>{{ row.salesman_name or 'Unknown SE' }}</td>
+            <td>{{ row.issue_type|replace('_', ' ')|title }}{% if row.brand_name %} · {{ row.brand_name }}{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="break grid-2">
+    <div class="card">
+      <div class="eyebrow">History Branch Appendix</div>
+      <table>
+        <thead><tr><th>Branch</th><th>All-Time Revenue</th><th>Share</th><th>Brands</th></tr></thead>
+        <tbody>
+          {% for row in detail.history.branch_rows[:24] %}
+          <tr>
+            <td>{{ row.retailer_name }}</td>
+            <td>₦{{ row.revenue | money2 }}</td>
+            <td>{{ "{:,.1f}".format(row.share_pct or 0) }}%</td>
+            <td>{{ row.active_brands or 0 }}</td>
+          </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
     <div class="card">
-      <div class="eyebrow">Issue Log</div>
+      <div class="eyebrow">History Brands and SKUs</div>
       <table>
-        <thead><tr><th>Date</th><th>Issue</th><th>Brand</th></tr></thead>
+        <thead><tr><th>Brand</th><th>All-Time Revenue</th><th>Share</th></tr></thead>
         <tbody>
-          {% for row in detail.activity.issues[:10] %}
+          {% for row in detail.history.top_brands[:12] %}
           <tr>
-            <td>{{ row.activity_date }}</td>
-            <td>{{ row.issue_type|replace('_', ' ')|title }}</td>
-            <td>{{ row.brand_name or 'Unmatched' }}</td>
+            <td>{{ row.brand_name }}</td>
+            <td>₦{{ row.revenue | money2 }}</td>
+            <td>{{ "{:,.1f}".format(row.share_pct or 0) }}%</td>
           </tr>
-          {% else %}
-          <tr><td colspan="3" class="muted">No issue is recorded for this retailer.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <br>
+      <table>
+        <thead><tr><th>SKU</th><th>All-Time Revenue</th><th>Qty</th></tr></thead>
+        <tbody>
+          {% for row in detail.history.top_products[:12] %}
+          <tr>
+            <td>{{ row.sku }}</td>
+            <td>₦{{ row.revenue | money2 }}</td>
+            <td>{{ "{:,.1f}".format(row.quantity or 0) }}</td>
+          </tr>
           {% endfor %}
         </tbody>
       </table>

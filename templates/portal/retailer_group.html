@@ -318,28 +318,28 @@
   </section>
 
   <section class="group-panel">
-    <div class="group-kicker">Current Period</div>
-    <h4 class="group-section-title">{{ detail.current_period_label or detail.period_label }}</h4>
+    <div class="group-kicker">Overall History</div>
+    <h4 class="group-section-title">From {{ detail.history.first_seen or 'the first recorded period' }} to {{ detail.history.last_seen or 'today' }}</h4>
     <div class="group-kpi-grid">
     <div class="kpi-card blue group-kpi-card">
-      <div class="kpi-label">Group Revenue</div>
-      <div class="kpi-value-sm">₦{{ "{:,.2f}".format(detail.metrics.revenue or 0) }}</div>
-      <div class="kpi-sub">{{ detail.branch_rows|length }} branches in scope</div>
+      <div class="kpi-label">All-Time Revenue</div>
+      <div class="kpi-value-sm">₦{{ "{:,.2f}".format(detail.history.cumulative_revenue or 0) }}</div>
+      <div class="kpi-sub">{{ detail.history.active_months or 0 }} active periods</div>
     </div>
     <div class="kpi-card group-kpi-card">
-      <div class="kpi-label">Brand Mix</div>
-      <div class="kpi-value-sm">{{ detail.metrics.active_brands or 0 }}</div>
-      <div class="kpi-sub">{{ detail.metrics.unique_skus or 0 }} SKUs across the group</div>
+      <div class="kpi-label">All-Time Brands / SKUs</div>
+      <div class="kpi-value-sm">{{ detail.history.active_brands_total or 0 }}</div>
+      <div class="kpi-sub">{{ detail.history.active_skus_total or 0 }} SKUs sold</div>
     </div>
     <div class="kpi-card green group-kpi-card">
-      <div class="kpi-label">Transactions</div>
-      <div class="kpi-value-sm">{{ detail.metrics.transactions or 0 }}</div>
-      <div class="kpi-sub">{{ detail.metrics.active_days or 0 }} active sales days</div>
+      <div class="kpi-label">All-Time Transactions</div>
+      <div class="kpi-value-sm">{{ detail.history.cumulative_transactions or 0 }}</div>
+      <div class="kpi-sub">{{ detail.history.cumulative_active_days or 0 }} active days</div>
     </div>
     <div class="kpi-card amber group-kpi-card">
-      <div class="kpi-label">Repeat Depth</div>
-      <div class="kpi-value-sm">{{ "{:,.1f}".format(detail.metrics.repeat_rate or 0) }}%</div>
-      <div class="kpi-sub">{{ detail.metrics.repeat_entities or 0 }} repeat brands · {{ detail.metrics.single_entities or 0 }} one-time brands</div>
+      <div class="kpi-label">Average Repeat Depth</div>
+      <div class="kpi-value-sm">{{ "{:,.1f}".format(detail.history.avg_repeat_rate or 0) }}%</div>
+      <div class="kpi-sub">{{ detail.history.active_branches_total or 0 }} branches ever active</div>
     </div>
   </section>
   </section>
@@ -377,7 +377,7 @@
 
     <div class="group-panel">
       <div class="group-kicker">Current Period Snapshot</div>
-      <h4>Top branch and operating spread</h4>
+      <h4>{{ detail.current_period_label or detail.period_label }}</h4>
       <table class="group-table">
         <tbody>
           <tr>
@@ -518,19 +518,19 @@
 
   <section class="group-grid">
     <div class="group-panel">
-      <div class="group-kicker">Branch Explorer</div>
-      <h4>{{ detail.history.branch_rows|length if detail.history.branch_rows else detail.branch_rows|length }} branches across history</h4>
+      <div class="group-kicker">Branch Network</div>
+      <h4>All-time branch footprint with current-period context</h4>
       <div class="group-status">Branch explorer values are history totals from the first recorded period to the latest recorded period.</div>
       <div class="group-explorer">
-        {% for row in detail.history.branch_rows %}
+        {% for row in detail.branch_network_rows %}
         <details {% if loop.first %}open{% endif %}>
           <summary>{{ row.retailer_name }}</summary>
           <div class="group-branch-summary">{{ row.location_label }} · Active from {{ row.first_seen or 'N/A' }} to {{ row.last_seen or 'N/A' }}</div>
           <div class="group-branch-detail">
-            <div class="mini"><div class="kpi-label">All-Time Revenue</div><strong>₦{{ "{:,.2f}".format(row.revenue or 0) }}</strong></div>
-            <div class="mini"><div class="kpi-label">Share</div><strong>{{ "{:,.1f}".format(row.share_pct or 0) }}%</strong></div>
-            <div class="mini"><div class="kpi-label">Brands</div><strong>{{ row.active_brands or 0 }}</strong></div>
-            <div class="mini"><div class="kpi-label">SKUs</div><strong>{{ row.unique_skus or 0 }}</strong></div>
+            <div class="mini"><div class="kpi-label">All-Time Revenue</div><strong>₦{{ "{:,.2f}".format(row.all_time_revenue or 0) }}</strong></div>
+            <div class="mini"><div class="kpi-label">Current Revenue</div><strong>₦{{ "{:,.2f}".format(row.current_revenue or 0) }}</strong></div>
+            <div class="mini"><div class="kpi-label">Current MoM</div><strong>{% if row.revenue_mom is not none %}{{ "%+.1f"|format(row.revenue_mom) }}%{% else %}N/A{% endif %}</strong></div>
+            <div class="mini"><div class="kpi-label">Repeat Depth</div><strong>{{ "{:,.1f}".format(row.current_repeat_rate or 0) }}%</strong></div>
           </div>
           <div class="group-actions" style="margin-top:12px;">
             <a class="btn btn-outline btn-sm" href="{{ clean_url_for('retailer_detail', retailer_code=row.retailer_code, month=selected_month, report_id=report.id if report else None) }}">Open Branch</a>
@@ -572,52 +572,93 @@
 
   <section class="group-grid">
     <div class="group-panel">
-      <div class="group-kicker">Current Period Brands</div>
-      <h4>Commercial mix in {{ detail.current_period_label or detail.period_label }}</h4>
+      <div class="group-kicker">Brand Performance</div>
+      <h4>Current period versus all-time mix</h4>
       <table class="group-table">
         <thead>
           <tr>
             <th>Brand</th>
-            <th>Revenue</th>
-            <th>MoM</th>
+            <th>Current Revenue</th>
+            <th>All-Time Revenue</th>
+            <th>Current MoM</th>
           </tr>
         </thead>
         <tbody>
-          {% for row in detail.brand_rows %}
+          {% for row in detail.brand_mix_rows %}
           <tr>
             <td>{{ row.brand_name }}</td>
-            <td>₦{{ "{:,.2f}".format(row.revenue or 0) }}</td>
-            <td>{% if row.revenue_mom is not none %}{{ "%+.1f"|format(row.revenue_mom) }}%{% else %}N/A{% endif %}</td>
+            <td>₦{{ "{:,.2f}".format(row.current_revenue or 0) }}</td>
+            <td>₦{{ "{:,.2f}".format(row.history_revenue or 0) }}</td>
+            <td>{% if row.current_mom is not none %}{{ "%+.1f"|format(row.current_mom) }}%{% else %}N/A{% endif %}</td>
           </tr>
           {% else %}
-          <tr><td colspan="3" class="text-muted">No current-period brand rows are available for this group.</td></tr>
+          <tr><td colspan="4" class="text-muted">No brand rows are available for this group.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
     <div class="group-panel">
-      <div class="group-kicker">History SKUs</div>
-      <h4>Highest-value products across all recorded periods</h4>
+      <div class="group-kicker">SKU Performance</div>
+      <h4>Current period versus all-time product leaders</h4>
       <table class="group-table">
         <thead>
           <tr>
             <th>SKU</th>
-            <th>Revenue</th>
-            <th>Qty</th>
+            <th>Current Revenue</th>
+            <th>All-Time Revenue</th>
+            <th>Current Qty</th>
           </tr>
         </thead>
         <tbody>
-          {% for row in detail.history.top_products %}
+          {% for row in detail.sku_mix_rows %}
           <tr>
             <td>{{ row.sku }}</td>
-            <td>₦{{ "{:,.2f}".format(row.revenue or 0) }}</td>
-            <td>{{ "{:,.1f}".format(row.quantity or 0) }}</td>
+            <td>₦{{ "{:,.2f}".format(row.current_revenue or 0) }}</td>
+            <td>₦{{ "{:,.2f}".format(row.history_revenue or 0) }}</td>
+            <td>{{ "{:,.1f}".format(row.current_quantity or 0) }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="3" class="text-muted">No historical SKU rows are available for this group.</td></tr>
+          <tr><td colspan="4" class="text-muted">No SKU rows are available for this group.</td></tr>
           {% endfor %}
         </tbody>
       </table>
+    </div>
+  </section>
+
+  <section class="group-grid">
+    <div class="group-panel">
+      <div class="group-kicker">Opportunities</div>
+      <h4>Where this chain can unlock more value</h4>
+      {% for item in detail.executive_story.opportunities %}
+      <div class="group-reco-item">
+        <strong>{{ item.title }}</strong>
+        <div class="text-muted">{{ item.detail }}</div>
+        <ul class="mt-2">
+          {% for line in item["items"] %}
+          <li>{{ line }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% else %}
+      <div class="group-empty">No major chain opportunity is open from the current signal set.</div>
+      {% endfor %}
+    </div>
+    <div class="group-panel">
+      <div class="group-kicker">Risks</div>
+      <h4>Where this chain is exposed</h4>
+      {% for item in detail.executive_story.risks %}
+      <div class="group-reco-item">
+        <strong>{{ item.title }}</strong>
+        <div class="text-muted">{{ item.detail }}</div>
+        <ul class="mt-2">
+          {% for line in item["items"] %}
+          <li>{{ line }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% else %}
+      <div class="group-empty">No major chain risk is open from the current signal set.</div>
+      {% endfor %}
     </div>
   </section>
 </div>
@@ -628,6 +669,7 @@
 <script>
 const groupHistoryRows = {{ detail.history.monthly_history|tojson if detail and detail.history else '[]' }};
 const historyCanvas = document.getElementById('groupHistoryChart');
+const branchNetworkRows = {{ detail.branch_network_rows|tojson if detail and detail.branch_network_rows else '[]' }};
 if (historyCanvas && groupHistoryRows.length && window.Chart) {
   new Chart(historyCanvas, {
     type: 'line',
@@ -641,15 +683,31 @@ if (historyCanvas && groupHistoryRows.length && window.Chart) {
         fill: true,
         tension: 0.3,
         borderWidth: 2
+      },{
+        label: 'Repeat Depth',
+        data: groupHistoryRows.map((row) => row.repeat_rate || 0),
+        borderColor: '#2E86C1',
+        backgroundColor: 'rgba(46,134,193,0.08)',
+        fill: false,
+        tension: 0.3,
+        borderWidth: 2,
+        yAxisID: 'y1'
       }]
     },
     options: {
       responsive: true,
-      plugins: { legend: { display: false } },
+      plugins: { legend: { display: true } },
       scales: {
         y: {
           ticks: {
             callback: (value) => '₦' + Number(value || 0).toLocaleString()
+          }
+        },
+        y1: {
+          position: 'right',
+          grid: { drawOnChartArea: false },
+          ticks: {
+            callback: (value) => Number(value || 0).toFixed(0) + '%'
           }
         }
       }

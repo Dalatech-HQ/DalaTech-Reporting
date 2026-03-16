@@ -515,6 +515,10 @@ def _branch_rows_for_group(current_frame: pd.DataFrame, previous_frame: pd.DataF
     for retailer_code, row in current_grouped.sort_values("revenue", ascending=False).head(limit).iterrows():
         previous_revenue = float(previous_grouped.loc[retailer_code]["revenue"]) if retailer_code in previous_grouped.index else 0.0
         identity = _retailer_identity(str(retailer_code))
+        retailer_frame = current_sales[current_sales["Retailer Key"] == retailer_code].copy()
+        brand_orders = retailer_frame.groupby("Brand Partner Canonical").size()
+        repeat_brands = int((brand_orders > 1).sum()) if len(brand_orders) else 0
+        repeat_rate = round((repeat_brands / max(int(row["active_brands"]), 1)) * 100, 2)
         rows.append({
             "retailer_code": str(retailer_code),
             "retailer_name": identity["retailer_name"],
@@ -526,6 +530,7 @@ def _branch_rows_for_group(current_frame: pd.DataFrame, previous_frame: pd.DataF
             "active_brands": int(row["active_brands"]),
             "unique_skus": int(row["unique_skus"]),
             "active_days": int(row["active_days"]),
+            "repeat_rate": repeat_rate,
             "share_pct": round((float(row["revenue"]) / total) * 100, 2) if total else 0.0,
             "revenue_mom": _pct_delta(float(row["revenue"]), previous_revenue),
             "previous_revenue": _money(previous_revenue),
@@ -600,6 +605,15 @@ def _history_summary(scope_df: pd.DataFrame, scope_type: str) -> dict[str, Any]:
     low_period = min(monthly_history, key=lambda row: row.get("revenue") or 0, default={})
     cumulative_revenue = _money(sales_df["Sales_Value"].sum())
     cumulative_quantity = _money(sales_df["Quantity"].sum())
+    cumulative_transactions = int(sales_df["Vch No."].nunique())
+    cumulative_active_days = int(sales_df["Date"].dt.date.nunique())
+    active_branches_total = int(sales_df["Retailer Key"].nunique())
+    active_brands_total = int(sales_df["Brand Partner Canonical"].nunique())
+    active_skus_total = int(sales_df["SKUs"].nunique())
+    avg_repeat_rate = round(sum((row.get("repeat_rate") or 0) for row in monthly_history) / max(len(monthly_history), 1), 2)
+    first_period = monthly_history[0] if monthly_history else {}
+    last_period = monthly_history[-1] if monthly_history else {}
+    history_growth_pct = _pct_delta(last_period.get("revenue") or 0, first_period.get("revenue") or 0) if first_period else None
     return {
         "first_seen": first_seen.strftime("%Y-%m-%d") if pd.notna(first_seen) else None,
         "last_seen": last_seen.strftime("%Y-%m-%d") if pd.notna(last_seen) else None,
@@ -610,11 +624,158 @@ def _history_summary(scope_df: pd.DataFrame, scope_type: str) -> dict[str, Any]:
         "top_products": _top_products(sales_df, limit=16),
         "cumulative_revenue": cumulative_revenue,
         "cumulative_quantity": cumulative_quantity,
+        "cumulative_transactions": cumulative_transactions,
+        "cumulative_active_days": cumulative_active_days,
+        "active_branches_total": active_branches_total,
+        "active_brands_total": active_brands_total,
+        "active_skus_total": active_skus_total,
         "avg_monthly_revenue": round(cumulative_revenue / max(int(sales_df["YearMonth"].nunique()), 1), 2),
+        "avg_repeat_rate": avg_repeat_rate,
+        "history_growth_pct": history_growth_pct,
         "peak_period_label": peak_period.get("month_label"),
         "peak_period_revenue": _money(peak_period.get("revenue") or 0),
         "low_period_label": low_period.get("month_label"),
         "low_period_revenue": _money(low_period.get("revenue") or 0),
+    }
+
+
+def _current_history_mix_rows(current_rows: list[dict[str, Any]], history_rows: list[dict[str, Any]], key: str, limit: int = 16):
+    current_map = {str(row.get(key)): row for row in current_rows}
+    history_map = {str(row.get(key)): row for row in history_rows}
+    merged_keys = []
+    for row in history_rows:
+        merged_keys.append(str(row.get(key)))
+    for row in current_rows:
+        row_key = str(row.get(key))
+        if row_key not in merged_keys:
+            merged_keys.append(row_key)
+
+    rows = []
+    for row_key in merged_keys[:limit]:
+        current = current_map.get(row_key, {})
+        history = history_map.get(row_key, {})
+        rows.append({
+            key: row_key,
+            "current_revenue": _money(current.get("revenue") or 0),
+            "current_quantity": _money(current.get("quantity") or 0),
+            "current_share_pct": round(float(current.get("share_pct") or 0), 2),
+            "current_mom": current.get("revenue_mom"),
+            "history_revenue": _money(history.get("revenue") or 0),
+            "history_quantity": _money(history.get("quantity") or 0),
+            "history_share_pct": round(float(history.get("share_pct") or 0), 2),
+            "transactions": int((current or history).get("transactions") or 0),
+        })
+    return rows
+
+
+def _branch_network_rows(current_rows: list[dict[str, Any]], history_rows: list[dict[str, Any]], limit: int = 24):
+    current_map = {str(row.get("retailer_code")): row for row in current_rows}
+    rows = []
+    for history in history_rows[:limit]:
+        current = current_map.get(str(history.get("retailer_code")), {})
+        rows.append({
+            "retailer_code": history.get("retailer_code"),
+            "retailer_name": history.get("retailer_name"),
+            "location_label": history.get("location_label"),
+            "first_seen": history.get("first_seen"),
+            "last_seen": history.get("last_seen"),
+            "all_time_revenue": _money(history.get("revenue") or 0),
+            "all_time_share_pct": round(float(history.get("share_pct") or 0), 2),
+            "all_time_transactions": int(history.get("transactions") or 0),
+            "all_time_brands": int(history.get("active_brands") or 0),
+            "all_time_skus": int(history.get("unique_skus") or 0),
+            "current_revenue": _money(current.get("revenue") or 0),
+            "current_share_pct": round(float(current.get("share_pct") or 0), 2),
+            "current_repeat_rate": round(float(current.get("repeat_rate") or 0), 2) if current else 0.0,
+            "current_transactions": int(current.get("transactions") or 0),
+            "revenue_mom": current.get("revenue_mom"),
+        })
+    return rows
+
+
+def _retailer_group_story(detail: dict[str, Any]) -> dict[str, Any]:
+    history = detail.get("history") or {}
+    comparisons = detail.get("comparisons") or {}
+    network_rows = detail.get("branch_network_rows") or []
+    current_brand_rows = detail.get("brand_rows") or []
+    current_product_rows = detail.get("current_top_products") or []
+    opportunity_rows = detail.get("opportunity_brands") or []
+
+    declining_branches = [row for row in network_rows if row.get("revenue_mom") is not None and row.get("revenue_mom") <= -10][:6]
+    growing_branches = [row for row in network_rows if row.get("revenue_mom") is not None and row.get("revenue_mom") >= 10][:6]
+    weak_repeat_branches = [row for row in network_rows if row.get("current_revenue") and (row.get("current_repeat_rate") or 0) < 35][:6]
+    declining_brands = [row for row in current_brand_rows if row.get("revenue_mom") is not None and row.get("revenue_mom") < 0][:6]
+    growing_brands = [row for row in current_brand_rows if row.get("revenue_mom") is not None and row.get("revenue_mom") > 0][:6]
+
+    risks = []
+    if declining_branches:
+        risks.append({
+            "title": "Branch revenue pressure",
+            "detail": f"{len(declining_branches)} branches are down at least 10% against the previous comparable period.",
+            "items": [f'{row["retailer_name"]}: {row["revenue_mom"]:+.1f}% current-period revenue' for row in declining_branches[:4]],
+        })
+    if weak_repeat_branches:
+        risks.append({
+            "title": "Weak repeat depth in selling branches",
+            "detail": f"{len(weak_repeat_branches)} branches sold this period but repeat depth stayed below 35%.",
+            "items": [f'{row["retailer_name"]}: {row["current_repeat_rate"]:.1f}% repeat depth' for row in weak_repeat_branches[:4]],
+        })
+    if (history.get("top_three_share") or 0) >= 65:
+        risks.append({
+            "title": "Revenue concentration risk",
+            "detail": f'The top 3 branches account for {history.get("top_three_share"):.1f}% of all-time revenue.',
+            "items": [f'{row["retailer_name"]}: {row["all_time_share_pct"]:.1f}% share' for row in network_rows[:3]],
+        })
+    if declining_brands:
+        risks.append({
+            "title": "Brand weakness this period",
+            "detail": f"{len(declining_brands)} active brands are down versus the previous comparable period.",
+            "items": [f'{row["brand_name"]}: {row["revenue_mom"]:+.1f}% revenue' for row in declining_brands[:4]],
+        })
+
+    opportunities = []
+    if growing_branches:
+        opportunities.append({
+            "title": "Branch momentum pockets",
+            "detail": f"{len(growing_branches)} branches are accelerating and can support wider assortment or stronger fill rates.",
+            "items": [f'{row["retailer_name"]}: {row["revenue_mom"]:+.1f}% current-period revenue' for row in growing_branches[:4]],
+        })
+    if opportunity_rows:
+        opportunities.append({
+            "title": "Assortment gaps",
+            "detail": f'{len(opportunity_rows)} strong portfolio brands are absent from this chain in the current period.',
+            "items": [f'{row["brand_name"]}: portfolio rank {row.get("portfolio_rank") or "N/A"} · peer demand ₦{row.get("revenue") or 0:,.2f}' for row in opportunity_rows[:4]],
+        })
+    if growing_brands:
+        opportunities.append({
+            "title": "Brands winning in the chain",
+            "detail": f"{len(growing_brands)} brands are growing this period and can be amplified across more branches.",
+            "items": [f'{row["brand_name"]}: {row["revenue_mom"]:+.1f}% revenue' for row in growing_brands[:4]],
+        })
+    if current_product_rows:
+        opportunities.append({
+            "title": "SKU leaders to protect",
+            "detail": "The highest-selling SKUs this period should be protected with stock and visibility.",
+            "items": [f'{row["sku"]}: ₦{row["revenue"]:,.2f} · {row["quantity"]:,.1f} packs' for row in current_product_rows[:4]],
+        })
+
+    revenue_mom_text = f'{comparisons.get("revenue_mom"):+.1f}%' if comparisons.get("revenue_mom") is not None else "N/A"
+    revenue_yoy_text = f'{comparisons.get("revenue_yoy"):+.1f}%' if comparisons.get("revenue_yoy") is not None else "N/A"
+    summary_lines = [
+        f'All-time revenue is ₦{history.get("cumulative_revenue", 0):,.2f} across {history.get("active_months", 0)} active periods and {history.get("active_branches_total", 0)} branches.',
+        f'Current-period revenue is ₦{detail.get("metrics", {}).get("revenue", 0):,.2f}, with {revenue_mom_text} versus the previous comparable period and {revenue_yoy_text} versus the same period last year.',
+        f'All-time top branch is {(history.get("top_branch") or {}).get("retailer_name") or "N/A"}, and all-time top brand is {(history.get("top_brand") or {}).get("brand_name") or "N/A"}.',
+    ]
+
+    return {
+        "risks": risks,
+        "opportunities": opportunities,
+        "declining_branches": declining_branches,
+        "growing_branches": growing_branches,
+        "weak_repeat_branches": weak_repeat_branches,
+        "declining_brands": declining_brands,
+        "growing_brands": growing_brands,
+        "summary_lines": summary_lines,
     }
 
 
@@ -1045,6 +1206,16 @@ def build_retailer_group_detail(ds, group_slug: str, report_id: int | None = Non
     history["top_product"] = history["top_products"][0] if history["top_products"] else None
     history["top_three_share"] = round(sum((row.get("share_pct") or 0) for row in history_branch_rows[:3]), 2)
     history["top_five_share"] = round(sum((row.get("share_pct") or 0) for row in history_branch_rows[:5]), 2)
+    current_top_products = snapshot.get("top_products") or []
+    branch_network_rows = _branch_network_rows(branch_rows, history_branch_rows, limit=40)
+    brand_mix_rows = _current_history_mix_rows(snapshot.get("brand_rows") or [], history.get("top_brands") or [], "brand_name", limit=20)
+    sku_mix_rows = _current_history_mix_rows(current_top_products, history.get("top_products") or [], "sku", limit=20)
+    executive_story = _retailer_group_story({
+        **snapshot,
+        "history": history,
+        "branch_network_rows": branch_network_rows,
+        "current_top_products": current_top_products,
+    })
     return {
         "retailer_code": group_slug,
         "retailer_name": group["name"],
@@ -1064,6 +1235,11 @@ def build_retailer_group_detail(ds, group_slug: str, report_id: int | None = Non
         },
         "current_period_label": snapshot.get("period_label"),
         "history": history,
+        "current_top_products": current_top_products,
+        "branch_network_rows": branch_network_rows,
+        "brand_mix_rows": brand_mix_rows,
+        "sku_mix_rows": sku_mix_rows,
+        "executive_story": executive_story,
         **health,
         **snapshot,
     }
