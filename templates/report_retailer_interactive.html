@@ -199,6 +199,27 @@
     </section>
 
     <section class="grid-3">
+      {% for item in detail.executive_story.meeting_brief %}
+      <div class="card">
+        <div class="eyebrow">Executive Brief</div>
+        <h3>{{ item.title }}</h3>
+        <div class="kpi-value" style="font-size:30px;">{{ item.value }}</div>
+        <div class="section-note">{{ item.detail }}</div>
+      </div>
+      {% endfor %}
+    </section>
+
+    <section class="card">
+      <div class="eyebrow">Executive Brief</div>
+      <h2>What to say in the room</h2>
+      <ul class="bullets">
+        {% for line in detail.executive_story.meeting_questions %}
+        <li>{{ line }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="grid-3">
       <div class="card">
         <div class="kpi-label">Current Period Revenue</div>
         <div class="kpi-value">₦{{ detail.metrics.revenue | money2 }}</div>

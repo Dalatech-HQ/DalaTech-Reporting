@@ -274,6 +274,7 @@
 
 {% block topbar_actions %}
 <a class="btn btn-outline btn-sm" target="_blank" href="{{ clean_url_for('retailer_group_report_page', group_slug=group_slug, month=selected_month, report_id=report.id if report else None) }}">Interactive Report</a>
+<a class="btn btn-outline btn-sm" href="{{ clean_url_for('api_retailer_group_report_html', group_slug=group_slug, month=selected_month, report_id=report.id if report else None, download=1) }}">Download HTML</a>
 <a class="btn btn-primary btn-sm" href="{{ clean_url_for('api_retailer_group_report_pdf', group_slug=group_slug, month=selected_month, report_id=report.id if report else None) }}">Download Group PDF</a>
 {% endblock %}
 
@@ -456,6 +457,27 @@
         <strong>{{ "{:,.1f}".format(detail.history.top_three_share or 0) }}%</strong>
         <span>Top 3 branches share of all-time revenue</span>
       </div>
+    </div>
+  </section>
+
+  <section class="group-panel">
+    <div class="group-kicker">Executive Brief</div>
+    <h4 class="group-section-title">What to say in the room</h4>
+    <div class="group-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+      {% for item in detail.executive_story.meeting_brief %}
+      <div class="group-history-card">
+        <div class="kpi-label">{{ item.title }}</div>
+        <strong style="font-size:26px;">{{ item.value }}</strong>
+        <span>{{ item.detail }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="group-empty" style="margin-top:16px;">
+      <ul style="margin:0 0 0 18px; color:var(--muted); line-height:1.8;">
+        {% for line in detail.executive_story.meeting_questions %}
+        <li>{{ line }}</li>
+        {% endfor %}
+      </ul>
     </div>
   </section>
 

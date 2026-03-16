@@ -71,6 +71,27 @@
     </div>
   </section>
 
+  <section class="grid-3">
+    {% for item in detail.executive_story.meeting_brief %}
+    <div class="card">
+      <div class="eyebrow">Executive Brief</div>
+      <div style="color:#1B2B5E;font-size:16px;font-weight:800;margin-top:8px;">{{ item.title }}</div>
+      <div class="kpi-value" style="font-size:22px;">{{ item.value }}</div>
+      <div class="muted">{{ item.detail }}</div>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="card">
+    <div class="eyebrow">Executive Brief</div>
+    <h2>What to say in the room</h2>
+    <ul>
+      {% for line in detail.executive_story.meeting_questions %}
+      <li>{{ line }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+
   <section class="grid-4">
     <div class="card">
       <div class="kpi-label">Current Revenue</div>

@@ -3724,7 +3724,16 @@ def api_retailer_report_html(retailer_code):
         abort(404)
     coach = _coach_summary_for_snapshot(detail, persist=True)
     detail['coach'] = coach
-    return Response(render_retailer_html_report(detail), mimetype='text/html')
+    html = render_retailer_html_report(detail)
+    if request.args.get('download', type=int) == 1:
+        month_tag = detail.get('period_label') or 'Retailer'
+        safe = _safe_name(detail.get('retailer_name') or retailer_code)
+        return Response(
+            html,
+            mimetype='text/html',
+            headers={'Content-Disposition': f'attachment; filename="{safe}_Retailer_Report_{month_tag.replace(" ", "_")}.html"'},
+        )
+    return Response(html, mimetype='text/html')
 
 
 @app.route('/api/retailer-groups/<path:group_slug>/report_html')
@@ -3737,7 +3746,16 @@ def api_retailer_group_report_html(group_slug):
     coach = _coach_summary_for_snapshot(detail, persist=True)
     detail['coach'] = coach
     detail['scope_label'] = 'Retailer Group Intelligence Report'
-    return Response(render_retailer_html_report(detail), mimetype='text/html')
+    html = render_retailer_html_report(detail)
+    if request.args.get('download', type=int) == 1:
+        month_tag = detail.get('period_label') or 'Retailer_Group'
+        safe = _safe_name(detail.get('retailer_name') or group_slug)
+        return Response(
+            html,
+            mimetype='text/html',
+            headers={'Content-Disposition': f'attachment; filename="{safe}_Retailer_Group_Report_{month_tag.replace(" ", "_")}.html"'},
+        )
+    return Response(html, mimetype='text/html')
 
 
 @app.route('/api/retailers/<path:retailer_code>/report_pdf')

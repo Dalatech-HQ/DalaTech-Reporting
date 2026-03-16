@@ -767,6 +767,31 @@ def _retailer_group_story(detail: dict[str, Any]) -> dict[str, Any]:
         f'All-time top branch is {(history.get("top_branch") or {}).get("retailer_name") or "N/A"}, and all-time top brand is {(history.get("top_brand") or {}).get("brand_name") or "N/A"}.',
     ]
 
+    meeting_brief = [
+        {
+            "title": "What this chain is worth",
+            "value": f'₦{history.get("cumulative_revenue", 0):,.2f}',
+            "detail": f'Generated across {history.get("active_months", 0)} active periods, {history.get("active_branches_total", 0)} branches, and {history.get("cumulative_transactions", 0)} transactions.',
+        },
+        {
+            "title": "What changed this period",
+            "value": f'{revenue_mom_text} vs prior',
+            "detail": f'Current-period revenue closed at ₦{detail.get("metrics", {}).get("revenue", 0):,.2f}; same-period last-year context is {revenue_yoy_text}.',
+        },
+        {
+            "title": "Who is carrying performance",
+            "value": (history.get("top_branch") or {}).get("retailer_name") or "N/A",
+            "detail": f'Top 3 branches account for {history.get("top_three_share", 0):.1f}% of all-time revenue. Top brand is {(history.get("top_brand") or {}).get("brand_name") or "N/A"}.',
+        },
+    ]
+
+    meeting_questions = [
+        f'Overall chain history: ₦{history.get("cumulative_revenue", 0):,.2f} since {history.get("first_seen") or "first record"}.',
+        f'Current period versus previous comparable: {revenue_mom_text}; versus same period last year: {revenue_yoy_text}.',
+        f'Highest-performing branch all-time: {(history.get("top_branch") or {}).get("retailer_name") or "N/A"}. Highest-performing brand all-time: {(history.get("top_brand") or {}).get("brand_name") or "N/A"}.',
+        f'Highest-performing SKU all-time: {(history.get("top_product") or {}).get("sku") or "N/A"}.',
+    ]
+
     return {
         "risks": risks,
         "opportunities": opportunities,
@@ -776,6 +801,8 @@ def _retailer_group_story(detail: dict[str, Any]) -> dict[str, Any]:
         "declining_brands": declining_brands,
         "growing_brands": growing_brands,
         "summary_lines": summary_lines,
+        "meeting_brief": meeting_brief,
+        "meeting_questions": meeting_questions,
     }
 
 
