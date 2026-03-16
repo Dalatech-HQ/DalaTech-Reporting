@@ -336,14 +336,16 @@ def _metrics_for_scope_frame(frame: pd.DataFrame, scope_type: str) -> dict[str, 
     }
 
 
-def _monthly_history(scope_df: pd.DataFrame, scope_type: str, limit: int = 12) -> list[dict[str, Any]]:
+def _monthly_history(scope_df: pd.DataFrame, scope_type: str, limit: int | None = 12) -> list[dict[str, Any]]:
     sales_df = scope_df[scope_df["Vch Type"] == "Sales"].copy()
     if sales_df.empty:
         return []
     periods = sorted(sales_df["YearMonth"].dropna().unique())
+    if limit:
+        periods = periods[-limit:]
     history: list[dict[str, Any]] = []
     previous = None
-    for period in periods[-limit:]:
+    for period in periods:
         period_frame = sales_df[sales_df["YearMonth"] == period].copy()
         metrics = _metrics_for_scope_frame(period_frame, scope_type)
         row = {
@@ -480,6 +482,91 @@ def _branch_rows_for_group(current_frame: pd.DataFrame, previous_frame: pd.DataF
             "previous_revenue": _money(previous_revenue),
         })
     return rows
+
+
+def _all_time_branch_rows(ds, frame: pd.DataFrame, limit: int = 40):
+    sales_df = frame[frame["Vch Type"] == "Sales"].copy()
+    if sales_df.empty:
+        return []
+    grouped = sales_df.groupby("Retailer Key").agg(
+        revenue=("Sales_Value", "sum"),
+        quantity=("Quantity", "sum"),
+        transactions=("Vch No.", "nunique"),
+        active_brands=("Brand Partner Canonical", "nunique"),
+        unique_skus=("SKUs", "nunique"),
+        active_days=("Date", lambda s: s.dt.date.nunique()),
+        first_seen=("Date", "min"),
+        last_seen=("Date", "max"),
+    )
+    total = float(grouped["revenue"].sum() or 0)
+    profile_map = {row["retailer_code"]: row for row in ds.list_retailer_profiles(limit=2000)}
+    rows = []
+    for retailer_code, row in grouped.sort_values("revenue", ascending=False).head(limit).iterrows():
+        profile = profile_map.get(str(retailer_code), {})
+        identity = _retailer_identity(
+            profile.get("retailer_name") or str(retailer_code),
+            city=profile.get("city"),
+            state=profile.get("state"),
+        )
+        rows.append({
+            "retailer_code": str(retailer_code),
+            "retailer_name": identity["retailer_name"],
+            "location_label": identity["location_label"],
+            "revenue": _money(row["revenue"]),
+            "quantity": _money(row["quantity"]),
+            "transactions": int(row["transactions"]),
+            "active_brands": int(row["active_brands"]),
+            "unique_skus": int(row["unique_skus"]),
+            "active_days": int(row["active_days"]),
+            "share_pct": round((float(row["revenue"]) / total) * 100, 2) if total else 0.0,
+            "first_seen": row["first_seen"].strftime("%Y-%m-%d") if pd.notna(row["first_seen"]) else None,
+            "last_seen": row["last_seen"].strftime("%Y-%m-%d") if pd.notna(row["last_seen"]) else None,
+        })
+    return rows
+
+
+def _history_summary(scope_df: pd.DataFrame, scope_type: str) -> dict[str, Any]:
+    sales_df = scope_df[scope_df["Vch Type"] == "Sales"].copy()
+    if sales_df.empty:
+        return {
+            "first_seen": None,
+            "last_seen": None,
+            "active_months": 0,
+            "metrics": _metrics_for_scope_frame(scope_df.iloc[0:0].copy(), scope_type),
+            "monthly_history": [],
+            "top_brands": [],
+            "top_products": [],
+            "cumulative_revenue": 0.0,
+            "cumulative_quantity": 0.0,
+            "avg_monthly_revenue": 0.0,
+            "peak_period_label": None,
+            "peak_period_revenue": 0.0,
+            "low_period_label": None,
+            "low_period_revenue": 0.0,
+        }
+    first_seen = sales_df["Date"].min()
+    last_seen = sales_df["Date"].max()
+    monthly_history = _monthly_history(sales_df, scope_type, limit=None)
+    peak_period = max(monthly_history, key=lambda row: row.get("revenue") or 0, default={})
+    low_period = min(monthly_history, key=lambda row: row.get("revenue") or 0, default={})
+    cumulative_revenue = _money(sales_df["Sales_Value"].sum())
+    cumulative_quantity = _money(sales_df["Quantity"].sum())
+    return {
+        "first_seen": first_seen.strftime("%Y-%m-%d") if pd.notna(first_seen) else None,
+        "last_seen": last_seen.strftime("%Y-%m-%d") if pd.notna(last_seen) else None,
+        "active_months": int(sales_df["YearMonth"].nunique()),
+        "metrics": _metrics_for_scope_frame(sales_df, scope_type),
+        "monthly_history": monthly_history,
+        "top_brands": _top_brands(sales_df, limit=16),
+        "top_products": _top_products(sales_df, limit=16),
+        "cumulative_revenue": cumulative_revenue,
+        "cumulative_quantity": cumulative_quantity,
+        "avg_monthly_revenue": round(cumulative_revenue / max(int(sales_df["YearMonth"].nunique()), 1), 2),
+        "peak_period_label": peak_period.get("month_label"),
+        "peak_period_revenue": _money(peak_period.get("revenue") or 0),
+        "low_period_label": low_period.get("month_label"),
+        "low_period_revenue": _money(low_period.get("revenue") or 0),
+    }
 
 
 def _activity_for_retailer_group(ds, retailer_codes: list[str], report_id: int | None = None) -> dict[str, Any]:
@@ -836,6 +923,7 @@ def build_retailer_group_index(ds, report_id: int | None = None, month_value: st
 def build_retailer_detail(ds, retailer_code: str, report_id: int | None = None,
                           month_value: str | None = None) -> dict[str, Any]:
     snapshot = build_scope_snapshot(ds, "retailer", scope_key=retailer_code, report_id=report_id, month_value=month_value, persist=True)
+    history = _history_summary(_filter_scope(ds, load_sales_history(), "retailer", scope_key=retailer_code), "retailer")
     profile = ds.get_retailer_profile(retailer_code) or {}
     activity_store = (snapshot.get("activity") or {}).get("store") or {}
     identity = _retailer_identity(
@@ -858,6 +946,7 @@ def build_retailer_detail(ds, retailer_code: str, report_id: int | None = None,
         "location_label": identity["location_label"],
         "activity_available": bool((activity.get("visits") or []) or (activity.get("issues") or [])),
         "profile": profile,
+        "history": history,
         **health,
         **snapshot,
     }
@@ -871,6 +960,8 @@ def build_retailer_group_detail(ds, group_slug: str, report_id: int | None = Non
     snapshot = build_scope_snapshot(ds, "retailer_group", scope_key=group_slug, report_id=report_id, month_value=month_value, persist=True)
     if not snapshot.get("period_start"):
         return {}
+    df = load_sales_history()
+    scope_df = _filter_scope(ds, df, "retailer_group", scope_key=group_slug)
     branch_rows = snapshot.get("branch_rows") or []
     top_branch = branch_rows[0] if branch_rows else None
     state_values = sorted({row.get("state") for row in branch_rows if row.get("state")})
@@ -887,6 +978,15 @@ def build_retailer_group_detail(ds, group_slug: str, report_id: int | None = Non
         (snapshot.get("metrics") or {}).get("active_brands"),
         (snapshot.get("metrics") or {}).get("transactions"),
     )
+    history = _history_summary(scope_df, "retailer_group")
+    history_branch_rows = _all_time_branch_rows(ds, scope_df, limit=40)
+    history["branch_rows"] = history_branch_rows
+    history["top_branch"] = history_branch_rows[0] if history_branch_rows else None
+    history["branch_count"] = len(history_branch_rows)
+    history["top_brand"] = history["top_brands"][0] if history["top_brands"] else None
+    history["top_product"] = history["top_products"][0] if history["top_products"] else None
+    history["top_three_share"] = round(sum((row.get("share_pct") or 0) for row in history_branch_rows[:3]), 2)
+    history["top_five_share"] = round(sum((row.get("share_pct") or 0) for row in history_branch_rows[:5]), 2)
     return {
         "retailer_code": group_slug,
         "retailer_name": group["name"],
@@ -901,9 +1001,11 @@ def build_retailer_group_detail(ds, group_slug: str, report_id: int | None = Non
         "activity_available": bool((snapshot.get("activity") or {}).get("visits") or (snapshot.get("activity") or {}).get("issues")),
         "profile": {
             "retailer_name": group["name"],
-            "first_seen": snapshot.get("historical", [{}])[0].get("period_start") if snapshot.get("historical") else None,
-            "last_seen": snapshot.get("period_end"),
+            "first_seen": history.get("first_seen"),
+            "last_seen": history.get("last_seen"),
         },
+        "current_period_label": snapshot.get("period_label"),
+        "history": history,
         **health,
         **snapshot,
     }

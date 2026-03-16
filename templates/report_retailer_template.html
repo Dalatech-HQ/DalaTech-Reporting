@@ -30,7 +30,7 @@
   <section class="hero">
     <div class="eyebrow">{{ detail.scope_label or 'Retailer Intelligence Report' }}</div>
     <h1>{{ detail.retailer_name }}</h1>
-    <div class="muted">{{ detail.period_label }} · Generated {{ generated_at }}</div>
+    <div class="muted">Current Period: {{ detail.period_label }} · Generated {{ generated_at }}</div>
     <div class="muted">{{ detail.location_label }}{% if detail.branch_label %} · {{ detail.branch_label }}{% endif %}</div>
     <div style="margin-top:12px;font-size:14px;font-weight:700;color:#1B2B5E;">{{ detail.coach.summary.headline }}</div>
     <div class="muted" style="margin-top:6px;">{{ detail.coach.summary.summary }}</div>
@@ -40,7 +40,7 @@
     <div class="card">
       <div class="kpi-label">{% if detail.group_slug %}Group Revenue{% else %}Retailer Revenue{% endif %}</div>
       <div class="kpi-value">₦{{ detail.metrics.revenue | money2 }}</div>
-      <div class="muted">{{ detail.period_label }}</div>
+      <div class="muted">Current Period</div>
     </div>
     <div class="card">
       <div class="kpi-label">Brand Mix</div>
@@ -60,6 +60,20 @@
   </section>
 
   <section class="grid-2">
+    {% if detail.history %}
+    <div class="card">
+      <div class="eyebrow">History</div>
+      <table>
+        <tbody>
+          <tr><th>First Seen</th><td>{{ detail.history.first_seen or 'N/A' }}</td></tr>
+          <tr><th>Latest Seen</th><td>{{ detail.history.last_seen or 'N/A' }}</td></tr>
+          <tr><th>Active Months</th><td>{{ detail.history.active_months or 0 }}</td></tr>
+          <tr><th>Cumulative Revenue</th><td>₦{{ detail.history.cumulative_revenue | money2 }}</td></tr>
+          <tr><th>Peak Period</th><td>{{ detail.history.peak_period_label or 'N/A' }} · ₦{{ detail.history.peak_period_revenue | money2 }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
     <div class="card">
       <div class="eyebrow">Open Signals</div>
       {% for signal in detail.coach.signals %}
@@ -84,7 +98,7 @@
   <section class="grid-2">
     {% if detail.branch_rows %}
     <div class="card">
-      <div class="eyebrow">Branches In Group</div>
+      <div class="eyebrow">Current Period Branches</div>
       <table>
         <thead><tr><th>Branch</th><th>Revenue</th><th>Repeat</th></tr></thead>
         <tbody>
@@ -134,6 +148,69 @@
       </table>
     </div>
   </section>
+
+  {% if detail.history %}
+  <section class="grid-2">
+    <div class="card">
+      <div class="eyebrow">History Branch Appendix</div>
+      <table>
+        <thead><tr><th>Branch</th><th>Revenue</th><th>Share</th></tr></thead>
+        <tbody>
+          {% for row in detail.history.branch_rows[:16] %}
+          <tr>
+            <td>{{ row.retailer_name }}</td>
+            <td>₦{{ row.revenue | money2 }}</td>
+            <td>{{ "{:,.1f}".format(row.share_pct or 0) }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="eyebrow">History SKUs</div>
+      <table>
+        <thead><tr><th>SKU</th><th>Revenue</th><th>Qty</th></tr></thead>
+        <tbody>
+          {% for row in detail.history.top_products[:16] %}
+          <tr>
+            <td>{{ row.sku }}</td>
+            <td>₦{{ row.revenue | money2 }}</td>
+            <td>{{ "{:,.1f}".format(row.quantity or 0) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="grid-2">
+    <div class="card">
+      <div class="eyebrow">History Brands</div>
+      <table>
+        <thead><tr><th>Brand</th><th>Revenue</th><th>Share</th></tr></thead>
+        <tbody>
+          {% for row in detail.history.top_brands[:16] %}
+          <tr>
+            <td>{{ row.brand_name }}</td>
+            <td>₦{{ row.revenue | money2 }}</td>
+            <td>{{ "{:,.1f}".format(row.share_pct or 0) }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="eyebrow">History Summary</div>
+      <table>
+        <tbody>
+          <tr><th>Top Branch</th><td>{% if detail.history.top_branch %}{{ detail.history.top_branch.retailer_name }} · ₦{{ detail.history.top_branch.revenue | money2 }}{% else %}N/A{% endif %}</td></tr>
+          <tr><th>Top Brand</th><td>{% if detail.history.top_brand %}{{ detail.history.top_brand.brand_name }} · ₦{{ detail.history.top_brand.revenue | money2 }}{% else %}N/A{% endif %}</td></tr>
+          <tr><th>Top SKU</th><td>{% if detail.history.top_product %}{{ detail.history.top_product.sku }} · ₦{{ detail.history.top_product.revenue | money2 }}{% else %}N/A{% endif %}</td></tr>
+          <tr><th>Top 3 Branch Share</th><td>{{ "{:,.1f}".format(detail.history.top_three_share or 0) }}%</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
 
   <section class="grid-2">
     <div class="card">

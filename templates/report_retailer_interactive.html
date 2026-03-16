@@ -41,6 +41,9 @@
     .badge-amber { background:#fff5db; color:var(--amber); }
     .badge-muted { background:#eef2f8; color:var(--navy); }
     .actions { margin:10px 0 0 18px; color:var(--muted); }
+    details.branch-card { border:1px solid var(--line); border-radius:14px; padding:12px 14px; background:#fbfcff; }
+    details.branch-card + details.branch-card { margin-top:10px; }
+    details.branch-card summary { cursor:pointer; font-weight:700; color:var(--navy); }
   </style>
 </head>
 <body>
@@ -49,7 +52,7 @@
       <div>
         <div class="eyebrow">{{ detail.scope_label or 'Retailer Intelligence Report' }}</div>
         <h1>{{ detail.retailer_name }}</h1>
-        <div class="muted">{{ detail.period_label }} · Generated {{ generated_at }}</div>
+        <div class="muted">Current Period: {{ detail.period_label }} · Generated {{ generated_at }}</div>
         <div class="muted">{{ detail.location_label }}{% if detail.branch_label %} · {{ detail.branch_label }}{% endif %}</div>
       </div>
       <div style="max-width:420px;">
@@ -63,7 +66,7 @@
       <div class="card">
         <div class="kpi-label">{% if detail.group_slug %}Group Revenue{% else %}Retailer Revenue{% endif %}</div>
         <div class="kpi-value">₦{{ detail.metrics.revenue | money2 }}</div>
-        <div class="muted">{{ detail.period_label }}</div>
+        <div class="muted">Current Period</div>
       </div>
       <div class="card">
         <div class="kpi-label">Brand Mix</div>
@@ -84,7 +87,7 @@
 
     <section class="grid-2">
       <div class="card">
-        <div class="eyebrow">Trend</div>
+        <div class="eyebrow">Current Period Trend Window</div>
         <canvas id="retailerChart" height="180"></canvas>
       </div>
       <div class="card">
@@ -107,21 +110,39 @@
     </section>
 
     <section class="grid-2">
-      {% if detail.branch_rows %}
+      {% if detail.history %}
       <div class="card">
-        <div class="eyebrow">Branches In Group</div>
+        <div class="eyebrow">History</div>
         <table>
-          <thead><tr><th>Branch</th><th>Revenue</th><th>Repeat</th></tr></thead>
           <tbody>
-            {% for row in detail.branch_rows %}
-            <tr>
-              <td>{{ row.retailer_name }}</td>
-              <td>₦{{ row.total_revenue | money2 }}</td>
-              <td>{{ "{:,.1f}".format(row.repeat_rate or 0) }}%</td>
-            </tr>
-            {% endfor %}
+            <tr><th>First Seen</th><td>{{ detail.history.first_seen or 'N/A' }}</td></tr>
+            <tr><th>Latest Seen</th><td>{{ detail.history.last_seen or 'N/A' }}</td></tr>
+            <tr><th>Active Months</th><td>{{ detail.history.active_months or 0 }}</td></tr>
+            <tr><th>Cumulative Revenue</th><td>₦{{ detail.history.cumulative_revenue | money2 }}</td></tr>
+            <tr><th>Peak Period</th><td>{{ detail.history.peak_period_label or 'N/A' }} · ₦{{ detail.history.peak_period_revenue | money2 }}</td></tr>
           </tbody>
         </table>
+      </div>
+      {% endif %}
+      {% if detail.branch_rows %}
+      <div class="card">
+        <div class="eyebrow">Branch Explorer</div>
+        {% for row in detail.history.branch_rows if detail.history and detail.history.branch_rows %}
+        <details class="branch-card" {% if loop.first %}open{% endif %}>
+          <summary>{{ row.retailer_name }}</summary>
+          <div class="muted" style="margin:8px 0;">{{ row.location_label }} · {{ row.first_seen or 'N/A' }} to {{ row.last_seen or 'N/A' }}</div>
+          <table>
+            <tbody>
+              <tr><th>Revenue</th><td>₦{{ row.revenue | money2 }}</td></tr>
+              <tr><th>Share</th><td>{{ "{:,.1f}".format(row.share_pct or 0) }}%</td></tr>
+              <tr><th>Brands</th><td>{{ row.active_brands or 0 }}</td></tr>
+              <tr><th>SKUs</th><td>{{ row.unique_skus or 0 }}</td></tr>
+            </tbody>
+          </table>
+        </details>
+        {% else %}
+        <p class="muted">No branch history is available.</p>
+        {% endfor %}
       </div>
       {% endif %}
       <div class="card">
@@ -157,10 +178,45 @@
         </table>
       </div>
     </section>
+
+    {% if detail.history %}
+    <section class="grid-2">
+      <div class="card">
+        <div class="eyebrow">History Brands</div>
+        <table>
+          <thead><tr><th>Brand</th><th>Revenue</th><th>Share</th></tr></thead>
+          <tbody>
+            {% for row in detail.history.top_brands %}
+            <tr>
+              <td>{{ row.brand_name }}</td>
+              <td>₦{{ row.revenue | money2 }}</td>
+              <td>{{ "{:,.1f}".format(row.share_pct or 0) }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="eyebrow">History SKUs</div>
+        <table>
+          <thead><tr><th>SKU</th><th>Revenue</th><th>Qty</th></tr></thead>
+          <tbody>
+            {% for row in detail.history.top_products %}
+            <tr>
+              <td>{{ row.sku }}</td>
+              <td>₦{{ row.revenue | money2 }}</td>
+              <td>{{ "{:,.1f}".format(row.quantity or 0) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endif %}
   </div>
 
   <script>
-    const historyRows = {{ detail.historical|tojson }};
+    const historyRows = {{ (detail.history.monthly_history if detail.history else detail.historical)|tojson }};
     const canvas = document.getElementById('retailerChart');
     if (canvas && historyRows.length) {
       new Chart(canvas, {

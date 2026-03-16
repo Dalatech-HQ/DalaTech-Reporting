@@ -181,9 +181,74 @@
     color: var(--muted);
     line-height: 1.75;
   }
+  .group-section-title {
+    margin-bottom: 12px;
+    color: var(--navy);
+    font-size: 26px;
+  }
+  .group-history-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .group-history-card {
+    padding: 18px 20px;
+    border-radius: 16px;
+    border: 1px solid rgba(27, 43, 94, .08);
+    background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+  }
+  .group-history-card strong {
+    display: block;
+    color: var(--navy);
+    font-size: 28px;
+    margin: 8px 0 4px;
+  }
+  .group-history-card span {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .group-explorer details {
+    border: 1px solid rgba(27, 43, 94, .08);
+    border-radius: 16px;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+    padding: 14px 16px;
+  }
+  .group-explorer details + details {
+    margin-top: 12px;
+  }
+  .group-explorer summary {
+    cursor: pointer;
+    font-weight: 700;
+    color: var(--navy);
+  }
+  .group-branch-summary {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .group-branch-detail {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .group-branch-detail .mini {
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(27, 43, 94, .08);
+    background: #fff;
+  }
+  .group-branch-detail .mini strong {
+    display: block;
+    color: var(--navy);
+    font-size: 18px;
+    margin-top: 6px;
+  }
   @media (max-width: 1200px) {
     .group-hero,
-    .group-grid {
+    .group-grid,
+    .group-history-grid {
       grid-template-columns: 1fr;
     }
     .group-kpi-grid {
@@ -199,6 +264,9 @@
     }
     .group-reco-meta {
       align-items: flex-start;
+    }
+    .group-branch-detail {
+      grid-template-columns: 1fr;
     }
   }
 </style>
@@ -248,7 +316,10 @@
     </aside>
   </section>
 
-  <section class="group-kpi-grid">
+  <section class="group-panel">
+    <div class="group-kicker">Current Period</div>
+    <h4 class="group-section-title">{{ detail.current_period_label or detail.period_label }}</h4>
+    <div class="group-kpi-grid">
     <div class="kpi-card blue group-kpi-card">
       <div class="kpi-label">Group Revenue</div>
       <div class="kpi-value-sm">₦{{ "{:,.2f}".format(detail.metrics.revenue or 0) }}</div>
@@ -269,6 +340,7 @@
       <div class="kpi-value-sm">{{ "{:,.1f}".format(detail.metrics.repeat_rate or 0) }}%</div>
       <div class="kpi-sub">{{ detail.metrics.repeat_entities or 0 }} repeat brands · {{ detail.metrics.single_entities or 0 }} one-time brands</div>
     </div>
+  </section>
   </section>
 
   <section class="group-grid">
@@ -303,7 +375,7 @@
     </div>
 
     <div class="group-panel">
-      <div class="group-kicker">Chain Snapshot</div>
+      <div class="group-kicker">Current Period Snapshot</div>
       <h4>Top branch and operating spread</h4>
       <table class="group-table">
         <tbody>
@@ -335,52 +407,147 @@
     </div>
   </section>
 
+  <section class="group-panel">
+    <div class="group-kicker">History</div>
+    <h4 class="group-section-title">From {{ detail.history.first_seen or 'the first recorded period' }} to {{ detail.history.last_seen or 'today' }}</h4>
+    <div class="group-history-grid">
+      <div class="group-history-card">
+        <div class="kpi-label">Cumulative Revenue</div>
+        <strong>₦{{ "{:,.2f}".format(detail.history.cumulative_revenue or 0) }}</strong>
+        <span>{{ detail.history.active_months or 0 }} active months on record</span>
+      </div>
+      <div class="group-history-card">
+        <div class="kpi-label">Average Monthly Revenue</div>
+        <strong>₦{{ "{:,.2f}".format(detail.history.avg_monthly_revenue or 0) }}</strong>
+        <span>Average pace across the full history window</span>
+      </div>
+      <div class="group-history-card">
+        <div class="kpi-label">Peak Period</div>
+        <strong>{{ detail.history.peak_period_label or 'N/A' }}</strong>
+        <span>₦{{ "{:,.2f}".format(detail.history.peak_period_revenue or 0) }}</span>
+      </div>
+      <div class="group-history-card">
+        <div class="kpi-label">Concentration</div>
+        <strong>{{ "{:,.1f}".format(detail.history.top_three_share or 0) }}%</strong>
+        <span>Top 3 branches share of all-time revenue</span>
+      </div>
+    </div>
+  </section>
+
   <section class="group-grid">
     <div class="group-panel">
-      <div class="group-kicker">Branch Network</div>
-      <h4>{{ detail.branch_rows|length }} branches in {{ detail.group_name }}</h4>
+      <div class="group-kicker">History Trend</div>
+      <h4>Revenue movement across the full relationship</h4>
+      {% if detail.history.monthly_history %}
+      <canvas id="groupHistoryChart" height="240"></canvas>
+      {% else %}
+      <div class="group-empty">Historical trend becomes available once more periods are recorded.</div>
+      {% endif %}
+    </div>
+    <div class="group-panel">
+      <div class="group-kicker">History Summary</div>
+      <h4>How this chain has behaved over time</h4>
+      <table class="group-table">
+        <tbody>
+          <tr>
+            <th>All-time top branch</th>
+            <td>
+              {% if detail.history.top_branch %}
+              <div class="value">{{ detail.history.top_branch.retailer_name }}</div>
+              <div class="sub">₦{{ "{:,.2f}".format(detail.history.top_branch.revenue or 0) }} · {{ "{:,.1f}".format(detail.history.top_branch.share_pct or 0) }}% of lifetime revenue</div>
+              {% else %}
+              <span class="text-muted">Not available yet</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th>All-time top brand</th>
+            <td>
+              {% if detail.history.top_brand %}
+              <div class="value">{{ detail.history.top_brand.brand_name }}</div>
+              <div class="sub">₦{{ "{:,.2f}".format(detail.history.top_brand.revenue or 0) }} · {{ "{:,.1f}".format(detail.history.top_brand.share_pct or 0) }}% of lifetime revenue</div>
+              {% else %}
+              <span class="text-muted">Not available yet</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th>All-time top SKU</th>
+            <td>
+              {% if detail.history.top_product %}
+              <div class="value">{{ detail.history.top_product.sku }}</div>
+              <div class="sub">₦{{ "{:,.2f}".format(detail.history.top_product.revenue or 0) }} · {{ "{:,.1f}".format(detail.history.top_product.quantity or 0) }} packs</div>
+              {% else %}
+              <span class="text-muted">Not available yet</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th>Weakest period</th>
+            <td><div class="value">{{ detail.history.low_period_label or 'N/A' }}</div><div class="sub">₦{{ "{:,.2f}".format(detail.history.low_period_revenue or 0) }}</div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="group-grid">
+    <div class="group-panel">
+      <div class="group-kicker">Branch Explorer</div>
+      <h4>{{ detail.history.branch_rows|length if detail.history.branch_rows else detail.branch_rows|length }} branches across history</h4>
+      <div class="group-explorer">
+        {% for row in detail.history.branch_rows %}
+        <details {% if loop.first %}open{% endif %}>
+          <summary>{{ row.retailer_name }}</summary>
+          <div class="group-branch-summary">{{ row.location_label }} · Active from {{ row.first_seen or 'N/A' }} to {{ row.last_seen or 'N/A' }}</div>
+          <div class="group-branch-detail">
+            <div class="mini"><div class="kpi-label">Revenue</div><strong>₦{{ "{:,.2f}".format(row.revenue or 0) }}</strong></div>
+            <div class="mini"><div class="kpi-label">Share</div><strong>{{ "{:,.1f}".format(row.share_pct or 0) }}%</strong></div>
+            <div class="mini"><div class="kpi-label">Brands</div><strong>{{ row.active_brands or 0 }}</strong></div>
+            <div class="mini"><div class="kpi-label">SKUs</div><strong>{{ row.unique_skus or 0 }}</strong></div>
+          </div>
+          <div class="group-actions" style="margin-top:12px;">
+            <a class="btn btn-outline btn-sm" href="{{ clean_url_for('retailer_detail', retailer_code=row.retailer_code, month=selected_month, report_id=report.id if report else None) }}">Open Branch</a>
+            <a class="btn btn-outline btn-sm" target="_blank" href="{{ clean_url_for('retailer_report_page', retailer_code=row.retailer_code, month=selected_month, report_id=report.id if report else None) }}">Branch Report</a>
+            <a class="btn btn-primary btn-sm" href="{{ clean_url_for('api_retailer_report_pdf', retailer_code=row.retailer_code, month=selected_month, report_id=report.id if report else None) }}">Branch PDF</a>
+          </div>
+        </details>
+        {% else %}
+        <div class="group-empty">No branches are available for this retailer group yet.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="group-panel">
+      <div class="group-kicker">History Brands</div>
+      <h4>Commercial mix across the full relationship</h4>
       <table class="group-table">
         <thead>
           <tr>
-            <th>Branch</th>
+            <th>Brand</th>
             <th>Revenue</th>
-            <th>Repeat</th>
-            <th>Actions</th>
+            <th>Share</th>
           </tr>
         </thead>
         <tbody>
-          {% for row in detail.branch_rows %}
+          {% for row in detail.history.top_brands %}
           <tr>
-            <td>
-              <div class="value">{{ row.retailer_name }}</div>
-              <div class="sub">{{ row.location_label }}</div>
-            </td>
-            <td>
-              <div class="value">₦{{ "{:,.2f}".format(row.total_revenue or 0) }}</div>
-              <div class="sub">{{ row.active_brands }} brands · {{ row.transactions }} transactions</div>
-            </td>
-            <td>
-              <div class="value">{{ "{:,.1f}".format(row.repeat_rate or 0) }}%</div>
-              <div class="sub">{% if row.revenue_mom is not none %}{{ "%+.1f"|format(row.revenue_mom) }}% vs prior{% else %}No prior comparison{% endif %}</div>
-            </td>
-            <td>
-              <div class="group-actions">
-                <a class="btn btn-outline btn-sm" href="{{ clean_url_for('retailer_detail', retailer_code=row.retailer_code, month=selected_month, report_id=report.id if report else None) }}">Open</a>
-                <a class="btn btn-outline btn-sm" target="_blank" href="{{ clean_url_for('retailer_report_page', retailer_code=row.retailer_code, month=selected_month, report_id=report.id if report else None) }}">Report</a>
-                <a class="btn btn-primary btn-sm" href="{{ clean_url_for('api_retailer_report_pdf', retailer_code=row.retailer_code, month=selected_month, report_id=report.id if report else None) }}">PDF</a>
-              </div>
-            </td>
+            <td>{{ row.brand_name }}</td>
+            <td>₦{{ "{:,.2f}".format(row.revenue or 0) }}</td>
+            <td>{{ "{:,.1f}".format(row.share_pct or 0) }}%</td>
           </tr>
           {% else %}
-          <tr><td colspan="4" class="text-muted">No branches are available for this retailer group yet.</td></tr>
+          <tr><td colspan="3" class="text-muted">No brand rows are available for this group.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+  </section>
 
+  <section class="group-grid">
     <div class="group-panel">
-      <div class="group-kicker">Brands In Group</div>
-      <h4>Commercial mix across the chain</h4>
+      <div class="group-kicker">Current Period Brands</div>
+      <h4>Commercial mix in {{ detail.current_period_label or detail.period_label }}</h4>
       <table class="group-table">
         <thead>
           <tr>
@@ -397,7 +564,31 @@
             <td>{% if row.revenue_mom is not none %}{{ "%+.1f"|format(row.revenue_mom) }}%{% else %}N/A{% endif %}</td>
           </tr>
           {% else %}
-          <tr><td colspan="3" class="text-muted">No brand rows are available for this group.</td></tr>
+          <tr><td colspan="3" class="text-muted">No current-period brand rows are available for this group.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="group-panel">
+      <div class="group-kicker">History SKUs</div>
+      <h4>Highest-value products across all recorded periods</h4>
+      <table class="group-table">
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>Revenue</th>
+            <th>Qty</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in detail.history.top_products %}
+          <tr>
+            <td>{{ row.sku }}</td>
+            <td>₦{{ "{:,.2f}".format(row.revenue or 0) }}</td>
+            <td>{{ "{:,.1f}".format(row.quantity or 0) }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="text-muted">No historical SKU rows are available for this group.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -409,6 +600,37 @@
 
 {% block scripts %}
 <script>
+const groupHistoryRows = {{ detail.history.monthly_history|tojson if detail and detail.history else '[]' }};
+const historyCanvas = document.getElementById('groupHistoryChart');
+if (historyCanvas && groupHistoryRows.length && window.Chart) {
+  new Chart(historyCanvas, {
+    type: 'line',
+    data: {
+      labels: groupHistoryRows.map((row) => row.month_label),
+      datasets: [{
+        label: 'Revenue',
+        data: groupHistoryRows.map((row) => row.revenue || 0),
+        borderColor: '#1B2B5E',
+        backgroundColor: 'rgba(27,43,94,0.08)',
+        fill: true,
+        tension: 0.3,
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: {
+          ticks: {
+            callback: (value) => '₦' + Number(value || 0).toLocaleString()
+          }
+        }
+      }
+    }
+  });
+}
+
 function recordCoachOutcome(action, outcome, score) {
   const statusEl = document.getElementById('coachStatus');
   if (statusEl) statusEl.textContent = 'Saving coach outcome...';
