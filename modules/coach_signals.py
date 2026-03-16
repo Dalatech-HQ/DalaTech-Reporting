@@ -121,7 +121,7 @@ def derive_snapshot_signals(snapshot: dict[str, Any], thresholds: dict[str, Any]
             ],
         ))
 
-    if scope_type == "retailer":
+    if scope_type in {"retailer", "retailer_group"}:
         issue_total = int((activity.get("totals") or {}).get("issues") or 0)
         visit_total = int((activity.get("totals") or {}).get("visits") or 0)
         issue_density = round(issue_total / max(visit_total, 1), 2) if visit_total else 0.0
@@ -130,7 +130,7 @@ def derive_snapshot_signals(snapshot: dict[str, Any], thresholds: dict[str, Any]
                 scope_type, scope_key, period_type, period_start, period_end,
                 "high_issue_density",
                 "Field execution issues are elevated",
-                f"{issue_total} issues were logged across {visit_total} visits for this retailer.",
+                f"{issue_total} issues were logged across {visit_total} visits for this {'retailer group' if scope_type == 'retailer_group' else 'retailer'}.",
                 severity="high",
                 confidence=0.76,
                 metrics={"issues": issue_total, "visits": visit_total, "issue_density": issue_density},
@@ -146,7 +146,7 @@ def derive_snapshot_signals(snapshot: dict[str, Any], thresholds: dict[str, Any]
                 scope_type, scope_key, period_type, period_start, period_end,
                 "retailer_underpenetrated",
                 "Assortment opportunity exists",
-                f"{len(opportunity_brands)} strong portfolio brands are not currently active in this retailer.",
+                f"{len(opportunity_brands)} strong portfolio brands are not currently active in this {'retailer group' if scope_type == 'retailer_group' else 'retailer'}.",
                 severity="medium",
                 confidence=0.74,
                 metrics={"missing_brand_count": len(opportunity_brands)},
@@ -161,7 +161,7 @@ def derive_snapshot_signals(snapshot: dict[str, Any], thresholds: dict[str, Any]
                 scope_type, scope_key, period_type, period_start, period_end,
                 "low_visit_high_potential",
                 "Retailer engagement looks thin for current sales value",
-                "This retailer generated sales with very few transactions in the selected period.",
+                f"This {'retailer group' if scope_type == 'retailer_group' else 'retailer'} generated sales with very few transactions in the selected period.",
                 severity="medium",
                 confidence=0.65,
                 metrics={"transactions": metrics.get("transactions"), "revenue": metrics.get("revenue")},
@@ -336,6 +336,13 @@ def build_action_items(ds, snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             _action("open", "Open Retailer", "open_retailer_detail", url=f"/retailer/{encoded_scope}{query_string}", tone="primary"),
             _action("report", "Open Report", "generate_retailer_report", url=f"/retailer/{encoded_scope}/report{query_string}", tone="secondary"),
             _action("open", "View Activity", "open_retailer_activity", url=f"/activity-intelligence?store={encoded_scope}" + (f"&report_id={report_id}" if report_id else ""), tone="secondary"),
+        ])
+    elif scope_type == "retailer_group":
+        encoded_scope = quote(str(scope_key), safe="")
+        query_string = f"?report_id={report_id}" if report_id else ""
+        items.extend([
+            _action("open", "Open Group", "open_retailer_group_detail", url=f"/retailer-groups/{encoded_scope}{query_string}", tone="primary"),
+            _action("report", "Open Group Report", "generate_retailer_group_report", url=f"/retailer-groups/{encoded_scope}/report{query_string}", tone="secondary"),
         ])
     else:
         items.extend([

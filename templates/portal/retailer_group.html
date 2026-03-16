@@ -1,0 +1,438 @@
+{% extends "portal/base.html" %}
+{% block title %}Retailer Group Intelligence - DALA Analytics{% endblock %}
+{% block page_title %}Retailer Group Intelligence{% endblock %}
+
+{% block head %}
+<style>
+  .group-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .group-hero,
+  .group-panel {
+    padding: 24px;
+    border-radius: 20px;
+    background: #fff;
+    border: 1px solid rgba(27, 43, 94, .08);
+    box-shadow: 0 18px 42px rgba(18, 29, 68, .07);
+  }
+  .group-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr);
+    gap: 18px;
+  }
+  .group-kicker {
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    font-weight: 800;
+    color: var(--blue);
+  }
+  .group-title {
+    margin: 10px 0 12px;
+    color: var(--navy);
+    font-size: 38px;
+    line-height: 1.05;
+  }
+  .group-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .group-meta-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(27, 43, 94, .08);
+    background: rgba(255, 255, 255, .72);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--navy);
+  }
+  .group-copy {
+    color: var(--muted);
+    line-height: 1.75;
+  }
+  .group-actions,
+  .group-reco-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .group-score-card {
+    padding: 22px;
+    border-radius: 20px;
+    background: linear-gradient(160deg, #19285d 0%, #203572 100%);
+    color: #fff;
+  }
+  .group-score-card .label {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, .72);
+  }
+  .group-score-card .score {
+    font-size: 56px;
+    line-height: 1;
+    font-weight: 800;
+    margin: 10px 0 6px;
+  }
+  .group-score-card .band {
+    display: inline-flex;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .12);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .group-score-track {
+    margin-top: 16px;
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .14);
+    overflow: hidden;
+  }
+  .group-score-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #6de2a6 0%, #38b6ff 100%);
+  }
+  .group-score-note {
+    margin-top: 16px;
+    color: rgba(255, 255, 255, .82);
+    line-height: 1.65;
+    font-size: 13px;
+  }
+  .group-kpi-grid,
+  .group-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .group-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+  }
+  .group-kpi-card {
+    padding: 20px 22px;
+  }
+  .group-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .group-table th,
+  .group-table td {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--gray);
+    text-align: left;
+    vertical-align: top;
+  }
+  .group-table th {
+    font-size: 11px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .group-signal-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 14px 0 18px;
+  }
+  .group-reco-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .group-reco-item {
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(27, 43, 94, .08);
+    background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+  }
+  .group-reco-item strong {
+    display: block;
+    color: var(--navy);
+    font-size: 17px;
+    margin-bottom: 8px;
+  }
+  .group-reco-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .group-status {
+    min-height: 18px;
+    margin-top: 12px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .group-empty {
+    padding: 24px;
+    border-radius: 18px;
+    border: 1px dashed rgba(27, 43, 94, .14);
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    color: var(--muted);
+    line-height: 1.75;
+  }
+  @media (max-width: 1200px) {
+    .group-hero,
+    .group-grid {
+      grid-template-columns: 1fr;
+    }
+    .group-kpi-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 720px) {
+    .group-kpi-grid {
+      grid-template-columns: 1fr;
+    }
+    .group-title {
+      font-size: 30px;
+    }
+    .group-reco-meta {
+      align-items: flex-start;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block topbar_actions %}
+<a class="btn btn-outline btn-sm" target="_blank" href="{{ clean_url_for('retailer_group_report_page', group_slug=group_slug, month=selected_month, report_id=report.id if report else None) }}">Interactive Report</a>
+<a class="btn btn-primary btn-sm" href="{{ clean_url_for('api_retailer_group_report_pdf', group_slug=group_slug, month=selected_month, report_id=report.id if report else None) }}">Download Group PDF</a>
+{% endblock %}
+
+{% block content %}
+{% if not detail %}
+<div class="card"><p class="text-muted">No retailer group intelligence is available yet.</p></div>
+{% else %}
+<div class="group-shell">
+  <section class="group-hero">
+    <div>
+      <div class="group-kicker">Retailer Group Intelligence</div>
+      <h3 class="group-title">{{ detail.group_name }}</h3>
+      <div class="group-meta">
+        <span class="group-meta-pill">{{ detail.branch_label }}</span>
+        <span class="group-meta-pill">{{ detail.location_label }}</span>
+        <span class="group-meta-pill">{{ detail.period_label }}</span>
+        {% if detail.report_id %}
+        <span class="group-meta-pill">Report {{ detail.report_id }}</span>
+        {% endif %}
+      </div>
+      <div class="group-copy">{{ coach.summary.summary }}</div>
+      <div class="group-actions" style="margin-top:16px;">
+        <a class="btn btn-outline" href="{{ clean_url_for('retailers', month=selected_month, report_id=report.id if report else None) }}">Back to Retailers</a>
+        {% if detail.top_branch %}
+        <a class="btn btn-outline" href="{{ clean_url_for('retailer_detail', retailer_code=detail.top_branch.retailer_code, month=selected_month, report_id=report.id if report else None) }}">Open Top Branch</a>
+        {% endif %}
+      </div>
+    </div>
+    <aside class="group-score-card">
+      <div class="label">Operating Score</div>
+      <div class="score">{{ "{:,.1f}".format(detail.health_score) }}</div>
+      <div class="band">{{ detail.health_band }}</div>
+      <div class="group-score-track">
+        <div class="group-score-fill" style="width:{{ detail.health_score }}%;"></div>
+      </div>
+      <div class="group-score-note">
+        Revenue {{ "%+.1f"|format(detail.comparisons.revenue_mom or 0) if detail.comparisons.revenue_mom is not none else 'N/A' }}
+        versus prior period across {{ detail.branch_rows|length }} branches with {{ "{:,.1f}".format(detail.metrics.repeat_rate or 0) }}% repeat depth.
+      </div>
+    </aside>
+  </section>
+
+  <section class="group-kpi-grid">
+    <div class="kpi-card blue group-kpi-card">
+      <div class="kpi-label">Group Revenue</div>
+      <div class="kpi-value-sm">₦{{ "{:,.2f}".format(detail.metrics.revenue or 0) }}</div>
+      <div class="kpi-sub">{{ detail.branch_rows|length }} branches in scope</div>
+    </div>
+    <div class="kpi-card group-kpi-card">
+      <div class="kpi-label">Brand Mix</div>
+      <div class="kpi-value-sm">{{ detail.metrics.active_brands or 0 }}</div>
+      <div class="kpi-sub">{{ detail.metrics.unique_skus or 0 }} SKUs across the group</div>
+    </div>
+    <div class="kpi-card green group-kpi-card">
+      <div class="kpi-label">Transactions</div>
+      <div class="kpi-value-sm">{{ detail.metrics.transactions or 0 }}</div>
+      <div class="kpi-sub">{{ detail.metrics.active_days or 0 }} active sales days</div>
+    </div>
+    <div class="kpi-card amber group-kpi-card">
+      <div class="kpi-label">Repeat Depth</div>
+      <div class="kpi-value-sm">{{ "{:,.1f}".format(detail.metrics.repeat_rate or 0) }}%</div>
+      <div class="kpi-sub">{{ detail.metrics.repeat_entities or 0 }} repeat brands · {{ detail.metrics.single_entities or 0 }} one-time brands</div>
+    </div>
+  </section>
+
+  <section class="group-grid">
+    <div class="group-panel">
+      <div class="group-kicker">Recommended Actions</div>
+      <h4>{{ coach.summary.headline }}</h4>
+      <p class="text-muted mb-3">{{ coach.summary.summary }}</p>
+      <div class="group-signal-row">
+        {% for signal in coach.signals[:5] %}
+        <span class="badge {% if signal.severity == 'critical' or signal.severity == 'high' %}badge-red{% elif signal.severity == 'medium' %}badge-amber{% else %}badge-blue{% endif %}">{{ signal.evidence.title }}</span>
+        {% else %}
+        <span class="badge badge-blue">No open chain signals</span>
+        {% endfor %}
+      </div>
+      <div class="group-reco-list">
+        {% for action in coach.recommendation_items[:4] %}
+        <div class="group-reco-item">
+          <strong>{{ action.label }}</strong>
+          <div class="group-reco-meta">
+            <span class="fs-sm text-muted">Outcome score {{ "{:+.1f}".format(action.weighted_score or 0) }} · {{ action.total_events or 0 }} recorded events</span>
+            <div class="group-reco-actions">
+              <button class="btn btn-outline btn-sm" type="button" onclick='recordCoachOutcome({{ action|tojson }}, "positive", 1)'>Worked</button>
+              <button class="btn btn-outline btn-sm" type="button" onclick='recordCoachOutcome({{ action|tojson }}, "negative", -1)'>Didn’t Help</button>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div class="group-empty">No chain-level recommendation items have been scored yet.</div>
+        {% endfor %}
+      </div>
+      <div id="coachStatus" class="group-status"></div>
+    </div>
+
+    <div class="group-panel">
+      <div class="group-kicker">Chain Snapshot</div>
+      <h4>Top branch and operating spread</h4>
+      <table class="group-table">
+        <tbody>
+          <tr>
+            <th>Top branch</th>
+            <td>
+              {% if detail.top_branch %}
+              <div class="value">{{ detail.top_branch.retailer_name }}</div>
+              <div class="sub">₦{{ "{:,.2f}".format(detail.top_branch.total_revenue or 0) }} · {{ "{:,.1f}".format(detail.top_branch.repeat_rate or 0) }}% repeat depth</div>
+              {% else %}
+              <span class="text-muted">Not available yet</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th>Coverage</th>
+            <td><div class="value">{{ detail.city_values|length }} cities · {{ detail.state_values|length }} states</div></td>
+          </tr>
+          <tr>
+            <th>Active brands</th>
+            <td><div class="value">{{ detail.metrics.active_brands or 0 }}</div></td>
+          </tr>
+          <tr>
+            <th>Transactions</th>
+            <td><div class="value">{{ detail.metrics.transactions or 0 }}</div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="group-grid">
+    <div class="group-panel">
+      <div class="group-kicker">Branch Network</div>
+      <h4>{{ detail.branch_rows|length }} branches in {{ detail.group_name }}</h4>
+      <table class="group-table">
+        <thead>
+          <tr>
+            <th>Branch</th>
+            <th>Revenue</th>
+            <th>Repeat</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in detail.branch_rows %}
+          <tr>
+            <td>
+              <div class="value">{{ row.retailer_name }}</div>
+              <div class="sub">{{ row.location_label }}</div>
+            </td>
+            <td>
+              <div class="value">₦{{ "{:,.2f}".format(row.total_revenue or 0) }}</div>
+              <div class="sub">{{ row.active_brands }} brands · {{ row.transactions }} transactions</div>
+            </td>
+            <td>
+              <div class="value">{{ "{:,.1f}".format(row.repeat_rate or 0) }}%</div>
+              <div class="sub">{% if row.revenue_mom is not none %}{{ "%+.1f"|format(row.revenue_mom) }}% vs prior{% else %}No prior comparison{% endif %}</div>
+            </td>
+            <td>
+              <div class="group-actions">
+                <a class="btn btn-outline btn-sm" href="{{ clean_url_for('retailer_detail', retailer_code=row.retailer_code, month=selected_month, report_id=report.id if report else None) }}">Open</a>
+                <a class="btn btn-outline btn-sm" target="_blank" href="{{ clean_url_for('retailer_report_page', retailer_code=row.retailer_code, month=selected_month, report_id=report.id if report else None) }}">Report</a>
+                <a class="btn btn-primary btn-sm" href="{{ clean_url_for('api_retailer_report_pdf', retailer_code=row.retailer_code, month=selected_month, report_id=report.id if report else None) }}">PDF</a>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="text-muted">No branches are available for this retailer group yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="group-panel">
+      <div class="group-kicker">Brands In Group</div>
+      <h4>Commercial mix across the chain</h4>
+      <table class="group-table">
+        <thead>
+          <tr>
+            <th>Brand</th>
+            <th>Revenue</th>
+            <th>MoM</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in detail.brand_rows %}
+          <tr>
+            <td>{{ row.brand_name }}</td>
+            <td>₦{{ "{:,.2f}".format(row.revenue or 0) }}</td>
+            <td>{% if row.revenue_mom is not none %}{{ "%+.1f"|format(row.revenue_mom) }}%{% else %}N/A{% endif %}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="text-muted">No brand rows are available for this group.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function recordCoachOutcome(action, outcome, score) {
+  const statusEl = document.getElementById('coachStatus');
+  if (statusEl) statusEl.textContent = 'Saving coach outcome...';
+  fetch('/api/coach/outcome', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recommendation_key: action.recommendation_key,
+      label: action.label,
+      outcome,
+      score_delta: score,
+      scope_type: 'retailer_group',
+      scope_key: {{ group_slug|tojson }},
+      report_id: {{ report.id if report else 'null' }},
+    }),
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      if (!data.success) throw new Error(data.error || 'Unable to save outcome.');
+      if (statusEl) statusEl.textContent = 'Outcome recorded.';
+    })
+    .catch((error) => {
+      if (statusEl) statusEl.textContent = error.message || 'Unable to save outcome.';
+    });
+}
+</script>
+{% endblock %}

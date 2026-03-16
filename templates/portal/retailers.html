@@ -130,6 +130,11 @@
   .retailer-feature-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+  .retailer-group-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+  }
   .retailer-analytics-card {
     padding: 22px;
     border-radius: 18px;
@@ -276,19 +281,112 @@
     color: var(--muted);
     line-height: 1.7;
   }
+  .retailer-group-card {
+    padding: 0;
+    overflow: hidden;
+  }
+  .retailer-group-top {
+    padding: 22px 22px 18px;
+    border-bottom: 1px solid rgba(27, 43, 94, .06);
+    background: linear-gradient(180deg, rgba(248, 251, 255, .96) 0%, rgba(255, 255, 255, 1) 100%);
+  }
+  .retailer-group-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .retailer-group-metric {
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: #fff;
+    border: 1px solid rgba(27, 43, 94, .08);
+  }
+  .retailer-group-metric strong {
+    display: block;
+    color: var(--navy);
+    font-size: 18px;
+    margin-bottom: 4px;
+  }
+  .retailer-group-metric span {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+  .retailer-group-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .retailer-group-body {
+    padding: 18px 22px 22px;
+  }
+  .retailer-group-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .retailer-group-branches {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .retailer-branch-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid rgba(27, 43, 94, .08);
+    border-radius: 16px;
+    background: linear-gradient(180deg, #fff 0%, #fbfcff 100%);
+  }
+  .retailer-branch-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+  }
+  .retailer-group-toggle {
+    margin-top: 12px;
+  }
+  .retailer-group-toggle summary {
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--navy);
+    list-style: none;
+  }
+  .retailer-group-toggle summary::-webkit-details-marker {
+    display: none;
+  }
+  .retailer-priority-note {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.7;
+    margin-top: 12px;
+  }
   @media (max-width: 1200px) {
     .retailer-hero,
     .retailer-feature-grid,
-    .retailer-chart-grid {
+    .retailer-chart-grid,
+    .retailer-group-grid {
       grid-template-columns: 1fr;
     }
     .retailer-kpis {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+    .retailer-group-metrics {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
   @media (max-width: 720px) {
     .retailer-controls-form,
-    .retailer-kpis {
+    .retailer-kpis,
+    .retailer-group-metrics {
       grid-template-columns: 1fr;
     }
     .retailer-feature-item {
@@ -296,6 +394,12 @@
     }
     .retailer-hero-panel h3 {
       font-size: 26px;
+    }
+    .retailer-branch-item {
+      grid-template-columns: 1fr;
+    }
+    .retailer-branch-actions {
+      justify-content: flex-start;
     }
   }
 </style>
@@ -398,6 +502,118 @@
       <div class="kpi-label">Average Operating Score</div>
       <div class="kpi-value-sm">{{ "{:,.1f}".format(summary.avg_health) }}</div>
       <div class="kpi-sub">Composite score from momentum, repeat depth, mix, and transactions</div>
+    </div>
+  </section>
+
+  <section class="retailer-group-grid">
+    <div class="retailer-analytics-card retailer-group-card">
+      <div class="retailer-group-top">
+        <div class="retailer-kicker">Retailer Groups To Prioritize</div>
+        <h4>Chains with multiple branches should be managed at group level first.</h4>
+        <p>These are the retailer networks that should be grouped before leadership conversations, trading reviews, and downloadable reports.</p>
+        <div class="retailer-group-metrics">
+          <div class="retailer-group-metric">
+            <strong>{{ group_summary.group_count }}</strong>
+            <span>Grouped chains</span>
+          </div>
+          <div class="retailer-group-metric">
+            <strong>{{ group_summary.branch_count }}</strong>
+            <span>Branches covered</span>
+          </div>
+          <div class="retailer-group-metric">
+            <strong>₦{{ "{:,.2f}".format(group_summary.total_revenue) }}</strong>
+            <span>Grouped revenue</span>
+          </div>
+          <div class="retailer-group-metric">
+            <strong>{{ "{:,.1f}".format(group_summary.avg_repeat) }}%</strong>
+            <span>Average repeat depth</span>
+          </div>
+        </div>
+        <div class="retailer-group-meta">
+          {% for item in group_choices[:10] %}
+          <span class="badge badge-blue">{{ item.name }}</span>
+          {% endfor %}
+        </div>
+        <div class="retailer-priority-note">
+          First grouping set: Justrite, Jendol, Prince Ebeano, Grocery Bazaar, Foodco, Twins Faja, Prime Mart,
+          Supersaver, Blenco, Renees, Am to Pm, Home Affairs, Reno, Spar, Market Square, Buymore, De Royal Prince,
+          Globus, Prestige, Enej, Hutoos, Mattoris, and Ozzy.
+        </div>
+      </div>
+      <div class="retailer-group-body">
+        <div class="retailer-feature-list">
+          {% for item in retailer_group_rows %}
+          <div class="retailer-feature-item">
+            <div>
+              <strong>{{ item.group_name }}</strong>
+              <div class="retailer-feature-meta">
+                {{ item.retailer_count }} branches · ₦{{ "{:,.2f}".format(item.total_revenue) }} ·
+                {{ "{:,.1f}".format(item.repeat_rate or 0) }}% repeat depth ·
+                {% if item.revenue_mom is not none %}
+                {{ "%+.1f"|format(item.revenue_mom) }}% vs prior period
+                {% else %}
+                no prior comparison yet
+                {% endif %}
+              </div>
+            </div>
+            <div class="retailer-group-actions">
+              <a class="btn btn-outline btn-sm" href="{{ clean_url_for('retailer_group_detail', group_slug=item.group_slug, month=selected_month, report_id=report.id if report else None) }}">Open Group</a>
+              <a class="btn btn-outline btn-sm" target="_blank" href="{{ clean_url_for('retailer_group_report_page', group_slug=item.group_slug, month=selected_month, report_id=report.id if report else None) }}">Group Report</a>
+              <a class="btn btn-primary btn-sm" href="{{ clean_url_for('api_retailer_group_report_pdf', group_slug=item.group_slug, month=selected_month, report_id=report.id if report else None) }}">Group PDF</a>
+            </div>
+          </div>
+          <details class="retailer-group-toggle">
+            <summary>View {{ item.retailer_count }} branches under {{ item.group_name }}</summary>
+            <div class="retailer-group-branches">
+              {% for branch in item.branches[:10] %}
+              <div class="retailer-branch-item">
+                <div>
+                  <div class="fw-bold">{{ branch.retailer_name }}</div>
+                  <div class="retailer-location">{{ branch.location_label }}</div>
+                  <div class="retailer-feature-meta">
+                    ₦{{ "{:,.2f}".format(branch.total_revenue) }} · {{ branch.active_brands }} brands ·
+                    {{ "{:,.1f}".format(branch.repeat_rate or 0) }}% repeat depth
+                  </div>
+                </div>
+                <div class="retailer-branch-actions">
+                  <a class="btn btn-outline btn-sm" href="{{ clean_url_for('retailer_detail', retailer_code=branch.retailer_code, month=selected_month, report_id=report.id if report else None) }}">Open</a>
+                  <a class="btn btn-outline btn-sm" target="_blank" href="{{ clean_url_for('retailer_report_page', retailer_code=branch.retailer_code, month=selected_month, report_id=report.id if report else None) }}">Report</a>
+                  <a class="btn btn-primary btn-sm" href="{{ clean_url_for('api_retailer_report_pdf', retailer_code=branch.retailer_code, month=selected_month, report_id=report.id if report else None) }}">PDF</a>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </details>
+          {% else %}
+          <div class="retailer-empty">No retailer groups have been detected in the current period.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="retailer-analytics-card">
+      <h4>Why group these retailers first</h4>
+      <p>Chain management meetings need one view of the network before branch exceptions. Grouped reporting gives that immediately.</p>
+      <div class="retailer-feature-list">
+        <div class="retailer-feature-item">
+          <div>
+            <strong>Chain-level revenue and branch mix</strong>
+            <div class="retailer-feature-meta">See total commercial exposure across all branches before discussing local underperformance.</div>
+          </div>
+        </div>
+        <div class="retailer-feature-item">
+          <div>
+            <strong>Branch drill-down on demand</strong>
+            <div class="retailer-feature-meta">Every grouped retailer keeps clickable branches for operational follow-up and downloadable branch reports.</div>
+          </div>
+        </div>
+        <div class="retailer-feature-item">
+          <div>
+            <strong>Leadership-ready chain reports</strong>
+            <div class="retailer-feature-meta">Use group exports for meetings with Justrite, Jendol, and other network leaders without stitching branch files together manually.</div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 

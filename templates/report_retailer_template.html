@@ -28,17 +28,17 @@
 </head>
 <body>
   <section class="hero">
-    <div class="eyebrow">Retailer Intelligence Report</div>
+    <div class="eyebrow">{{ detail.scope_label or 'Retailer Intelligence Report' }}</div>
     <h1>{{ detail.retailer_name }}</h1>
     <div class="muted">{{ detail.period_label }} · Generated {{ generated_at }}</div>
-    <div class="muted">{{ detail.location_label }}</div>
+    <div class="muted">{{ detail.location_label }}{% if detail.branch_label %} · {{ detail.branch_label }}{% endif %}</div>
     <div style="margin-top:12px;font-size:14px;font-weight:700;color:#1B2B5E;">{{ detail.coach.summary.headline }}</div>
     <div class="muted" style="margin-top:6px;">{{ detail.coach.summary.summary }}</div>
   </section>
 
   <section class="grid-4">
     <div class="card">
-      <div class="kpi-label">Retailer Revenue</div>
+      <div class="kpi-label">{% if detail.group_slug %}Group Revenue{% else %}Retailer Revenue{% endif %}</div>
       <div class="kpi-value">₦{{ detail.metrics.revenue | money2 }}</div>
       <div class="muted">{{ detail.period_label }}</div>
     </div>
@@ -48,7 +48,7 @@
       <div class="muted">{{ detail.metrics.unique_skus or 0 }} active SKUs</div>
     </div>
     <div class="card">
-      <div class="kpi-label">Transactions</div>
+      <div class="kpi-label">{% if detail.group_slug %}Group Transactions{% else %}Transactions{% endif %}</div>
       <div class="kpi-value">{{ detail.metrics.transactions or 0 }}</div>
       <div class="muted">{{ detail.metrics.active_days or 0 }} active sales days</div>
     </div>
@@ -82,8 +82,25 @@
   </section>
 
   <section class="grid-2">
+    {% if detail.branch_rows %}
     <div class="card">
-      <div class="eyebrow">Brands in Store</div>
+      <div class="eyebrow">Branches In Group</div>
+      <table>
+        <thead><tr><th>Branch</th><th>Revenue</th><th>Repeat</th></tr></thead>
+        <tbody>
+          {% for row in detail.branch_rows %}
+          <tr>
+            <td>{{ row.retailer_name }}</td>
+            <td>₦{{ row.total_revenue | money2 }}</td>
+            <td>{{ "{:,.1f}".format(row.repeat_rate or 0) }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    <div class="card">
+      <div class="eyebrow">{% if detail.group_slug %}Brands in Group{% else %}Brands in Store{% endif %}</div>
       <table>
         <thead><tr><th>Brand</th><th>Revenue</th><th>MoM</th></tr></thead>
         <tbody>

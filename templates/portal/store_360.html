@@ -317,6 +317,9 @@
 {% endblock %}
 
 {% block topbar_actions %}
+{% if detail.group_slug %}
+<a class="btn btn-outline btn-sm" href="{{ clean_url_for('retailer_group_detail', group_slug=detail.group_slug, month=selected_month, report_id=report.id if report else None) }}">Open {{ detail.group_name }}</a>
+{% endif %}
 <a class="btn btn-outline btn-sm" href="{{ clean_url_for('activity_intelligence', store=retailer_code, report_id=report.id if report else None) }}">View Activity</a>
 <a class="btn btn-outline btn-sm" target="_blank" href="{{ clean_url_for('retailer_report_page', retailer_code=retailer_code, month=selected_month, report_id=report.id if report else None) }}">Interactive Report</a>
 <a class="btn btn-primary btn-sm" href="{{ clean_url_for('api_retailer_report_pdf', retailer_code=retailer_code, month=selected_month, report_id=report.id if report else None) }}">Download PDF</a>
@@ -333,6 +336,9 @@
       <h3 class="retailer-hero-title">{{ detail.retailer_name }}</h3>
       <div class="retailer-meta-row">
         <span class="retailer-meta-pill">{{ detail.location_label }}</span>
+        {% if detail.group_slug %}
+        <span class="retailer-meta-pill">{{ detail.group_name }}</span>
+        {% endif %}
         <span class="retailer-meta-pill muted">{{ detail.period_label }}</span>
         {% if detail.report_id %}
         <span class="retailer-meta-pill muted">Report {{ detail.report_id }}</span>
@@ -346,6 +352,9 @@
       </div>
       <div class="retailer-hero-actions">
         <a class="btn btn-outline" href="{{ clean_url_for('retailers', month=selected_month, report_id=report.id if report else None) }}">Back to Retailers</a>
+        {% if detail.group_slug %}
+        <a class="btn btn-outline" href="{{ clean_url_for('retailer_group_detail', group_slug=detail.group_slug, month=selected_month, report_id=report.id if report else None) }}">Open {{ detail.group_name }}</a>
+        {% endif %}
         <a class="btn btn-outline" href="{{ clean_url_for('activity_intelligence', store=retailer_code, report_id=report.id if report else None) }}">Activity Intelligence</a>
       </div>
     </div>

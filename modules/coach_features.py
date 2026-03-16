@@ -21,6 +21,7 @@ import pandas as pd
 from .brand_names import canonicalize_brand_name
 from .ingestion import load_and_clean
 from .predictor import build_brand_forecasts
+from .retailer_groups import retailer_group_for_name, retailer_group_choices, retailer_group_definition
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 HISTORY_PATH = BASE_DIR / "2024to2026salesreport.xlsx"
@@ -70,12 +71,30 @@ def _retailer_identity(retailer_name: str, city: str | None = None, state: str |
     location_label = ", ".join(bit for bit in location_bits if bit)
     if not location_label:
         location_label = branch_hint or "Location detail pending"
+    group = retailer_group_for_name(retailer_name)
     return {
         "chain_name": chain_name,
         "branch_label": branch_hint or chain_name,
         "location_label": location_label,
         "retailer_name": retailer_name or chain_name,
+        "group_slug": group["slug"] if group else None,
+        "group_name": group["name"] if group else None,
+        "is_grouped": bool(group),
     }
+
+
+def _group_codes(df: pd.DataFrame, group_slug: str) -> list[str]:
+    if df.empty or not group_slug:
+        return []
+    target = retailer_group_definition(group_slug)
+    if not target:
+        return []
+    codes = []
+    for retailer_code in sorted(set(df["Retailer Key"].dropna().astype(str))):
+        group = retailer_group_for_name(retailer_code)
+        if group and group["slug"] == target["slug"]:
+            codes.append(retailer_code)
+    return codes
 
 
 def _retailer_health_snapshot(revenue_mom: float | None, repeat_rate: float | None,
@@ -191,6 +210,11 @@ def _filter_scope(ds, df: pd.DataFrame, scope_type: str, scope_key: str | None =
     if scope_type == "retailer":
         retailer_code = str(scope_key or "").strip()
         return df[df["Retailer Key"] == retailer_code].copy()
+    if scope_type == "retailer_group":
+        codes = set(_group_codes(df, str(scope_key or "").strip()))
+        if not codes:
+            return df.iloc[0:0].copy()
+        return df[df["Retailer Key"].isin(codes)].copy()
     if scope_type == "brand_retailer":
         brand_name = ds.analytics_brand_name(scope_key or "")
         retailer_code = str(retailer_code or "").strip()
@@ -272,7 +296,7 @@ def _metrics_for_scope_frame(frame: pd.DataFrame, scope_type: str) -> dict[str, 
     if scope_type in {"portfolio", "brand"}:
         entity_orders = sales_df.groupby("Retailer Key").size()
         entity_count = active_stores
-    elif scope_type == "retailer":
+    elif scope_type in {"retailer", "retailer_group"}:
         entity_orders = sales_df.groupby("Brand Partner Canonical").size()
         entity_count = active_brands
     else:
@@ -421,6 +445,79 @@ def _top_retailers_for_brand(current_frame: pd.DataFrame, previous_frame: pd.Dat
     return rows
 
 
+def _branch_rows_for_group(current_frame: pd.DataFrame, previous_frame: pd.DataFrame, limit: int = 24):
+    current_sales = current_frame[current_frame["Vch Type"] == "Sales"].copy()
+    previous_sales = previous_frame[previous_frame["Vch Type"] == "Sales"].copy()
+    if current_sales.empty:
+        return []
+    current_grouped = current_sales.groupby("Retailer Key").agg(
+        revenue=("Sales_Value", "sum"),
+        quantity=("Quantity", "sum"),
+        transactions=("Vch No.", "nunique"),
+        active_brands=("Brand Partner Canonical", "nunique"),
+        unique_skus=("SKUs", "nunique"),
+        active_days=("Date", lambda s: s.dt.date.nunique()),
+    )
+    previous_grouped = previous_sales.groupby("Retailer Key").agg(revenue=("Sales_Value", "sum"))
+    total = float(current_grouped["revenue"].sum() or 0)
+    rows = []
+    for retailer_code, row in current_grouped.sort_values("revenue", ascending=False).head(limit).iterrows():
+        previous_revenue = float(previous_grouped.loc[retailer_code]["revenue"]) if retailer_code in previous_grouped.index else 0.0
+        identity = _retailer_identity(str(retailer_code))
+        rows.append({
+            "retailer_code": str(retailer_code),
+            "retailer_name": identity["retailer_name"],
+            "branch_label": identity["branch_label"],
+            "location_label": identity["location_label"],
+            "revenue": _money(row["revenue"]),
+            "quantity": _money(row["quantity"]),
+            "transactions": int(row["transactions"]),
+            "active_brands": int(row["active_brands"]),
+            "unique_skus": int(row["unique_skus"]),
+            "active_days": int(row["active_days"]),
+            "share_pct": round((float(row["revenue"]) / total) * 100, 2) if total else 0.0,
+            "revenue_mom": _pct_delta(float(row["revenue"]), previous_revenue),
+            "previous_revenue": _money(previous_revenue),
+        })
+    return rows
+
+
+def _activity_for_retailer_group(ds, retailer_codes: list[str], report_id: int | None = None) -> dict[str, Any]:
+    totals = {"events": 0, "issues": 0, "visits": 0, "brand_mentions": 0, "active_days": 0, "salespeople": 0}
+    visits = []
+    issues = []
+    seen_days = set()
+    seen_salespeople = set()
+    for retailer_code in retailer_codes:
+        summary = ds.get_retailer_activity_summary(retailer_code, report_id=report_id)
+        store = summary.get("store") or {}
+        if not totals.get("store") and store:
+            totals["store"] = store
+        inner_totals = summary.get("totals") or {}
+        for key in ("events", "issues", "visits", "brand_mentions"):
+            totals[key] += int(inner_totals.get(key) or 0)
+        for row in summary.get("visits") or []:
+            visits.append(row)
+            if row.get("activity_date"):
+                seen_days.add(row["activity_date"])
+            if row.get("salesman_name"):
+                seen_salespeople.add(row["salesman_name"])
+        for row in summary.get("issues") or []:
+            issues.append(row)
+            if row.get("activity_date"):
+                seen_days.add(row["activity_date"])
+    totals["active_days"] = len(seen_days)
+    totals["salespeople"] = len(seen_salespeople)
+    return {
+        "store": totals.get("store") or {},
+        "totals": totals,
+        "visit_count": len(visits),
+        "issue_count": len(issues),
+        "visits": visits[:24],
+        "issues": issues[:24],
+    }
+
+
 def _brand_rows_for_retailer(current_frame: pd.DataFrame, previous_frame: pd.DataFrame, limit: int = 12):
     current_sales = current_frame[current_frame["Vch Type"] == "Sales"].copy()
     previous_sales = previous_frame[previous_frame["Vch Type"] == "Sales"].copy()
@@ -499,6 +596,12 @@ def build_scope_snapshot(ds, scope_type: str, scope_key: str | None = None,
     activity = {}
     if scope_type == "retailer":
         activity = ds.get_retailer_activity_summary(scope_key, report_id=window["report"]["id"] if window["report"] else None)
+    elif scope_type == "retailer_group":
+        activity = _activity_for_retailer_group(
+            ds,
+            _group_codes(df, str(scope_key or "").strip()),
+            report_id=window["report"]["id"] if window["report"] else None,
+        )
     elif scope_type == "brand":
         activity = ds.get_activity_brand_summary(scope_key, limit=8)
 
@@ -550,6 +653,12 @@ def build_scope_snapshot(ds, scope_type: str, scope_key: str | None = None,
                     row,
                     report_id=snapshot["report_id"],
                 )
+    elif scope_type == "retailer_group":
+        snapshot["brand_rows"] = _brand_rows_for_retailer(current_frame, previous_frame, limit=18)
+        snapshot["top_products"] = _top_products(current_frame, limit=14)
+        snapshot["opportunity_brands"] = _opportunity_brands(ds, global_current_frame, current_frame, limit=10)
+        snapshot["branch_rows"] = _branch_rows_for_group(current_frame, previous_frame, limit=30)
+        snapshot["retailer_codes"] = _group_codes(df, str(scope_key or "").strip())
     elif scope_type == "brand":
         snapshot["retailer_rows"] = _top_retailers_for_brand(current_frame, previous_frame, limit=12)
         try:
@@ -620,6 +729,9 @@ def build_retailer_index(ds, report_id: int | None = None, month_value: str | No
             "chain_name": identity["chain_name"],
             "branch_label": identity["branch_label"],
             "location_label": identity["location_label"],
+            "group_slug": identity["group_slug"],
+            "group_name": identity["group_name"],
+            "is_grouped": identity["is_grouped"],
             "state": profile.get("state"),
             "city": profile.get("city"),
             "total_revenue": _money(row["total_revenue"]),
@@ -647,6 +759,77 @@ def build_retailer_index(ds, report_id: int | None = None, month_value: str | No
         "period_end": window["end_date"],
         "report_id": window["report"]["id"] if window["report"] else None,
         "available_months": available_months,
+        "group_choices": retailer_group_choices(),
+    }
+
+
+def build_retailer_group_index(ds, report_id: int | None = None, month_value: str | None = None,
+                               limit: int | None = None) -> dict[str, Any]:
+    dataset = build_retailer_index(ds, report_id=report_id, month_value=month_value, limit=None)
+    rows = dataset.get("rows", [])
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not row.get("group_slug"):
+            continue
+        bucket = grouped.setdefault(row["group_slug"], {
+            "group_slug": row["group_slug"],
+            "group_name": row["group_name"],
+            "branches": [],
+            "total_revenue": 0.0,
+            "total_qty": 0.0,
+            "transactions": 0,
+            "active_days": 0,
+            "repeat_rate_values": [],
+            "active_brand_values": [],
+            "retailer_count": 0,
+            "states": set(),
+            "cities": set(),
+            "revenue_mom_values": [],
+        })
+        bucket["branches"].append(row)
+        bucket["retailer_count"] += 1
+        bucket["total_revenue"] += float(row.get("total_revenue") or 0)
+        bucket["total_qty"] += float(row.get("total_qty") or 0)
+        bucket["transactions"] += int(row.get("transactions") or 0)
+        bucket["active_days"] = max(bucket["active_days"], int(row.get("active_days") or 0))
+        bucket["repeat_rate_values"].append(float(row.get("repeat_rate") or 0))
+        bucket["active_brand_values"].append(int(row.get("active_brands") or 0))
+        if row.get("state"):
+            bucket["states"].add(row["state"])
+        if row.get("city"):
+            bucket["cities"].add(row["city"])
+        if row.get("revenue_mom") is not None:
+            bucket["revenue_mom_values"].append(float(row["revenue_mom"]))
+    final_rows = []
+    total_group_revenue = sum(bucket["total_revenue"] for bucket in grouped.values()) or 0.0
+    for bucket in grouped.values():
+        branches = sorted(bucket["branches"], key=lambda item: item.get("total_revenue") or 0, reverse=True)
+        avg_repeat = round(sum(bucket["repeat_rate_values"]) / max(len(bucket["repeat_rate_values"]), 1), 2)
+        avg_active_brands = round(sum(bucket["active_brand_values"]) / max(len(bucket["active_brand_values"]), 1), 1)
+        revenue_mom = round(sum(bucket["revenue_mom_values"]) / len(bucket["revenue_mom_values"]), 2) if bucket["revenue_mom_values"] else None
+        final_rows.append({
+            "group_slug": bucket["group_slug"],
+            "group_name": bucket["group_name"],
+            "retailer_count": bucket["retailer_count"],
+            "total_revenue": _money(bucket["total_revenue"]),
+            "total_qty": _money(bucket["total_qty"]),
+            "transactions": bucket["transactions"],
+            "active_days": bucket["active_days"],
+            "repeat_rate": avg_repeat,
+            "active_brands_avg": avg_active_brands,
+            "revenue_mom": revenue_mom,
+            "portfolio_share_pct": round((bucket["total_revenue"] / total_group_revenue) * 100, 2) if total_group_revenue else 0.0,
+            "top_branch": branches[0] if branches else None,
+            "branches": branches,
+            "state_count": len(bucket["states"]),
+            "city_count": len(bucket["cities"]),
+        })
+    final_rows.sort(key=lambda item: item.get("total_revenue") or 0, reverse=True)
+    if limit:
+        final_rows = final_rows[:limit]
+    return {
+        **dataset,
+        "rows": final_rows,
     }
 
 
@@ -675,6 +858,52 @@ def build_retailer_detail(ds, retailer_code: str, report_id: int | None = None,
         "location_label": identity["location_label"],
         "activity_available": bool((activity.get("visits") or []) or (activity.get("issues") or [])),
         "profile": profile,
+        **health,
+        **snapshot,
+    }
+
+
+def build_retailer_group_detail(ds, group_slug: str, report_id: int | None = None,
+                                month_value: str | None = None) -> dict[str, Any]:
+    group = retailer_group_definition(group_slug)
+    if not group:
+        return {}
+    snapshot = build_scope_snapshot(ds, "retailer_group", scope_key=group_slug, report_id=report_id, month_value=month_value, persist=True)
+    if not snapshot.get("period_start"):
+        return {}
+    branch_rows = snapshot.get("branch_rows") or []
+    top_branch = branch_rows[0] if branch_rows else None
+    state_values = sorted({row.get("state") for row in branch_rows if row.get("state")})
+    city_values = sorted({row.get("city") for row in branch_rows if row.get("city")})
+    location_bits = []
+    if city_values:
+        location_bits.append(f"{len(city_values)} cities")
+    if state_values:
+        location_bits.append(f"{len(state_values)} states")
+    location_label = " · ".join(location_bits) or "Branch location detail pending"
+    health = _retailer_health_snapshot(
+        (snapshot.get("comparisons") or {}).get("revenue_mom"),
+        (snapshot.get("metrics") or {}).get("repeat_rate"),
+        (snapshot.get("metrics") or {}).get("active_brands"),
+        (snapshot.get("metrics") or {}).get("transactions"),
+    )
+    return {
+        "retailer_code": group_slug,
+        "retailer_name": group["name"],
+        "group_slug": group_slug,
+        "group_name": group["name"],
+        "location_label": location_label,
+        "branch_label": f"{len(branch_rows)} branches",
+        "branch_rows": branch_rows,
+        "top_branch": top_branch,
+        "state_values": state_values,
+        "city_values": city_values,
+        "activity_available": bool((snapshot.get("activity") or {}).get("visits") or (snapshot.get("activity") or {}).get("issues")),
+        "profile": {
+            "retailer_name": group["name"],
+            "first_seen": snapshot.get("historical", [{}])[0].get("period_start") if snapshot.get("historical") else None,
+            "last_seen": snapshot.get("period_end"),
+        },
         **health,
         **snapshot,
     }

@@ -59,7 +59,9 @@ from modules.coach_features   import (
     history_available as coach_history_available,
     build_scope_snapshot,
     build_retailer_index,
+    build_retailer_group_index,
     build_retailer_detail,
+    build_retailer_group_detail,
     build_brand_coach_data,
 )
 from modules.coach_signals    import build_coach_payload, get_signal_thresholds
@@ -280,6 +282,25 @@ def _decorate_retailer_rows(rows):
     return decorated
 
 
+def _decorate_retailer_group_rows(rows):
+    decorated = []
+    for raw in rows or []:
+        row = dict(raw)
+        tags = []
+        revenue_mom = row.get('revenue_mom')
+        if revenue_mom is not None and revenue_mom <= -12:
+            tags.append({'label': 'Chain Under Pressure', 'class': 'badge-red'})
+        elif revenue_mom is not None and revenue_mom >= 15:
+            tags.append({'label': 'Chain Accelerating', 'class': 'badge-green'})
+        if float(row.get('repeat_rate') or 0) < 30 and int(row.get('retailer_count') or 0) >= 3:
+            tags.append({'label': 'Weak Reorder Depth', 'class': 'badge-amber'})
+        if int(row.get('retailer_count') or 0) >= 5:
+            tags.append({'label': f"{int(row.get('retailer_count') or 0)} branches", 'class': 'badge-blue'})
+        row['tags'] = tags[:3]
+        decorated.append(row)
+    return decorated
+
+
 def _build_retailer_summary(rows):
     rows = rows or []
     total_revenue = sum(float(row.get('total_revenue') or 0) for row in rows)
@@ -300,6 +321,26 @@ def _build_retailer_summary(rows):
             if row_count else 0
         ),
         'top_retailer': rows[0] if rows else None,
+    }
+
+
+def _build_retailer_group_summary(rows):
+    rows = rows or []
+    row_count = len(rows)
+    total_revenue = sum(float(row.get('total_revenue') or 0) for row in rows)
+    return {
+        'group_count': row_count,
+        'branch_count': sum(int(row.get('retailer_count') or 0) for row in rows),
+        'total_revenue': total_revenue,
+        'avg_repeat': (
+            sum(float(row.get('repeat_rate') or 0) for row in rows) / row_count
+            if row_count else 0
+        ),
+        'avg_branches': (
+            sum(float(row.get('retailer_count') or 0) for row in rows) / row_count
+            if row_count else 0
+        ),
+        'top_group': rows[0] if rows else None,
     }
 
 
@@ -831,6 +872,8 @@ def _current_copilot_context(overrides=None):
         'retailers': 'Retailers',
         'retailer_detail': 'Retailer Intelligence',
         'retailer_report_page': 'Retailer Report',
+        'retailer_group_detail': 'Retailer Groups',
+        'retailer_group_report_page': 'Retailer Group Report',
         'forecasting': 'Forecasting',
         'activity_intelligence': 'Activity',
         'store_360': 'Store 360',
@@ -2385,9 +2428,13 @@ def retailers():
 
     dataset = build_retailer_index(ds, report_id=report_id, month_value=month_value)
     retailer_rows = _decorate_retailer_rows(dataset.get('rows', []))
+    group_dataset = build_retailer_group_index(ds, report_id=report_id, month_value=month_value)
+    retailer_group_rows = _decorate_retailer_group_rows(group_dataset.get('rows', []))
     summary = _build_retailer_summary(retailer_rows)
+    group_summary = _build_retailer_group_summary(retailer_group_rows)
     chart_rows = retailer_rows[:10]
     table_rows = retailer_rows[:40]
+    group_rows = retailer_group_rows[:16]
 
     featured = {
         'risk': [row for row in retailer_rows if (row.get('revenue_mom') or 0) <= -12][:5],
@@ -2402,14 +2449,17 @@ def retailers():
         'portal/retailers.html',
         alert_count=alert_count,
         retailer_rows=table_rows,
+        retailer_group_rows=group_rows,
         chart_rows=chart_rows,
         full_row_count=len(retailer_rows),
         summary=summary,
+        group_summary=group_summary,
         featured=featured,
         period_label=dataset.get('period_label'),
         period_start=dataset.get('period_start'),
         period_end=dataset.get('period_end'),
         available_months=dataset.get('available_months', []),
+        group_choices=group_dataset.get('group_choices', []),
         selected_month=selected_month,
         report=ds.get_report(dataset.get('report_id')) if dataset.get('report_id') else (ds.get_report(report_id) if report_id else ds.get_latest_report()),
         reports=ds.get_all_reports(),
@@ -3430,6 +3480,18 @@ def _build_retailer_report_pdf_bytes(retailer_code: str, report_id: int | None =
     return render_pdf_bytes(html), detail
 
 
+def _build_retailer_group_report_pdf_bytes(group_slug: str, report_id: int | None = None,
+                                           month_value: str | None = None) -> tuple[bytes, dict]:
+    detail = build_retailer_group_detail(ds, group_slug, report_id=report_id, month_value=month_value)
+    if not detail.get('period_start'):
+        raise ValueError(f'Retailer group data not found for {group_slug}')
+    coach = _coach_summary_for_snapshot(detail, persist=True)
+    detail['coach'] = coach
+    detail['scope_label'] = 'Retailer Group Intelligence Report'
+    html = render_retailer_pdf_report_html(detail)
+    return render_pdf_bytes(html), detail
+
+
 _REPORT_DEPENDENCY_PATHS = [
     os.path.join(os.path.dirname(__file__), 'app.py'),
     os.path.join(os.path.dirname(__file__), 'templates', 'report_template.html'),
@@ -3640,6 +3702,19 @@ def retailer_report_page(retailer_code):
     return Response(html_content, mimetype='text/html')
 
 
+@app.route('/retailer-groups/<path:group_slug>/report')
+def retailer_group_report_page(group_slug):
+    report_id = request.args.get('report_id', type=int)
+    month_value = (request.args.get('month') or '').strip() or None
+    detail = build_retailer_group_detail(ds, group_slug, report_id=report_id, month_value=month_value)
+    if not detail.get('period_start'):
+        abort(404)
+    coach = _coach_summary_for_snapshot(detail, persist=True)
+    detail['coach'] = coach
+    detail['scope_label'] = 'Retailer Group Intelligence Report'
+    return Response(render_retailer_html_report(detail), mimetype='text/html')
+
+
 @app.route('/api/retailers/<path:retailer_code>/report_html')
 def api_retailer_report_html(retailer_code):
     report_id = request.args.get('report_id', type=int)
@@ -3652,6 +3727,19 @@ def api_retailer_report_html(retailer_code):
     return Response(render_retailer_html_report(detail), mimetype='text/html')
 
 
+@app.route('/api/retailer-groups/<path:group_slug>/report_html')
+def api_retailer_group_report_html(group_slug):
+    report_id = request.args.get('report_id', type=int)
+    month_value = (request.args.get('month') or '').strip() or None
+    detail = build_retailer_group_detail(ds, group_slug, report_id=report_id, month_value=month_value)
+    if not detail.get('period_start'):
+        abort(404)
+    coach = _coach_summary_for_snapshot(detail, persist=True)
+    detail['coach'] = coach
+    detail['scope_label'] = 'Retailer Group Intelligence Report'
+    return Response(render_retailer_html_report(detail), mimetype='text/html')
+
+
 @app.route('/api/retailers/<path:retailer_code>/report_pdf')
 def api_retailer_report_pdf(retailer_code):
     report_id = request.args.get('report_id', type=int)
@@ -3660,6 +3748,17 @@ def api_retailer_report_pdf(retailer_code):
     month_tag = detail.get('period_label') or 'Retailer'
     safe = _safe_name(detail.get('retailer_name') or retailer_code)
     filename = f"{safe}_Retailer_Report_{month_tag.replace(' ', '_')}.pdf"
+    return send_file(io.BytesIO(pdf_bytes), as_attachment=True, download_name=filename, mimetype='application/pdf')
+
+
+@app.route('/api/retailer-groups/<path:group_slug>/report_pdf')
+def api_retailer_group_report_pdf(group_slug):
+    report_id = request.args.get('report_id', type=int)
+    month_value = (request.args.get('month') or '').strip() or None
+    pdf_bytes, detail = _build_retailer_group_report_pdf_bytes(group_slug, report_id=report_id, month_value=month_value)
+    month_tag = detail.get('period_label') or 'Retailer_Group'
+    safe = _safe_name(detail.get('retailer_name') or group_slug)
+    filename = f"{safe}_Retailer_Group_Report_{month_tag.replace(' ', '_')}.pdf"
     return send_file(io.BytesIO(pdf_bytes), as_attachment=True, download_name=filename, mimetype='application/pdf')
 
 
@@ -4173,6 +4272,29 @@ def retailer_detail(retailer_code):
     )
 
 
+@app.route('/retailer-groups/<path:group_slug>')
+def retailer_group_detail(group_slug):
+    alert_count = ds.get_unacknowledged_count()
+    report_id = request.args.get('report_id', type=int)
+    month_value = (request.args.get('month') or '').strip() or None
+    if not coach_history_available():
+        abort(404)
+    detail = build_retailer_group_detail(ds, group_slug, report_id=report_id, month_value=month_value)
+    if not detail.get('period_start'):
+        abort(404)
+    coach = _coach_summary_for_snapshot(detail, persist=True)
+    return render_template(
+        'portal/retailer_group.html',
+        alert_count=alert_count,
+        group_slug=group_slug,
+        detail=detail,
+        coach=coach,
+        report=ds.get_report(detail.get('report_id')) if detail.get('report_id') else (ds.get_report(report_id) if report_id else ds.get_latest_report()),
+        reports=ds.get_all_reports(),
+        selected_month=month_value or '',
+    )
+
+
 @app.route('/store-360/<path:retailer_code>')
 def store_360(retailer_code):
     return redirect(url_for('retailer_detail', retailer_code=retailer_code, **request.args.to_dict()))
@@ -4435,6 +4557,15 @@ def api_retailers():
     return jsonify({'success': True, **dataset})
 
 
+@app.route('/api/retailer-groups')
+def api_retailer_groups():
+    report_id = request.args.get('report_id', type=int)
+    month_value = (request.args.get('month') or '').strip() or None
+    dataset = build_retailer_group_index(ds, report_id=report_id, month_value=month_value)
+    dataset['rows'] = _decorate_retailer_group_rows(dataset.get('rows', []))
+    return jsonify({'success': True, **dataset})
+
+
 @app.route('/api/retailers/<path:retailer_code>')
 def api_retailer_detail(retailer_code):
     report_id = request.args.get('report_id', type=int)
@@ -4442,6 +4573,17 @@ def api_retailer_detail(retailer_code):
     detail = build_retailer_detail(ds, retailer_code, report_id=report_id, month_value=month_value)
     if not detail.get('period_start'):
         return jsonify({'success': False, 'error': 'Retailer not found'}), 404
+    coach = _coach_summary_for_snapshot(detail, persist=True)
+    return jsonify({'success': True, 'detail': detail, 'coach': coach})
+
+
+@app.route('/api/retailer-groups/<path:group_slug>')
+def api_retailer_group_detail(group_slug):
+    report_id = request.args.get('report_id', type=int)
+    month_value = (request.args.get('month') or '').strip() or None
+    detail = build_retailer_group_detail(ds, group_slug, report_id=report_id, month_value=month_value)
+    if not detail.get('period_start'):
+        return jsonify({'success': False, 'error': 'Retailer group not found'}), 404
     coach = _coach_summary_for_snapshot(detail, persist=True)
     return jsonify({'success': True, 'detail': detail, 'coach': coach})
 
@@ -4454,6 +4596,16 @@ def api_retailer_brands(retailer_code):
     if not detail.get('period_start'):
         return jsonify({'success': False, 'error': 'Retailer not found'}), 404
     return jsonify({'success': True, 'brands': detail.get('brand_rows', [])})
+
+
+@app.route('/api/retailer-groups/<path:group_slug>/branches')
+def api_retailer_group_branches(group_slug):
+    report_id = request.args.get('report_id', type=int)
+    month_value = (request.args.get('month') or '').strip() or None
+    detail = build_retailer_group_detail(ds, group_slug, report_id=report_id, month_value=month_value)
+    if not detail.get('period_start'):
+        return jsonify({'success': False, 'error': 'Retailer group not found'}), 404
+    return jsonify({'success': True, 'branches': detail.get('branch_rows', [])})
 
 
 @app.route('/api/coach/signals')
