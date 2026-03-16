@@ -53,6 +53,7 @@
         <div class="eyebrow">{{ detail.scope_label or 'Retailer Intelligence Report' }}</div>
         <h1>{{ detail.retailer_name }}</h1>
         <div class="muted">Current Period: {{ detail.period_label }} · Generated {{ generated_at }}</div>
+        <div class="muted">{{ detail.comparison_basis }}</div>
         <div class="muted">{{ detail.location_label }}{% if detail.branch_label %} · {{ detail.branch_label }}{% endif %}</div>
       </div>
       <div style="max-width:420px;">
@@ -118,7 +119,8 @@
             <tr><th>First Seen</th><td>{{ detail.history.first_seen or 'N/A' }}</td></tr>
             <tr><th>Latest Seen</th><td>{{ detail.history.last_seen or 'N/A' }}</td></tr>
             <tr><th>Active Months</th><td>{{ detail.history.active_months or 0 }}</td></tr>
-            <tr><th>Cumulative Revenue</th><td>₦{{ detail.history.cumulative_revenue | money2 }}</td></tr>
+            <tr><th>All-Time Total Revenue</th><td>₦{{ detail.history.cumulative_revenue | money2 }}</td></tr>
+            <tr><th>Comparison Basis</th><td>{{ detail.comparison_basis }}</td></tr>
             <tr><th>Peak Period</th><td>{{ detail.history.peak_period_label or 'N/A' }} · ₦{{ detail.history.peak_period_revenue | money2 }}</td></tr>
           </tbody>
         </table>
@@ -126,14 +128,15 @@
       {% endif %}
       {% if detail.branch_rows %}
       <div class="card">
-        <div class="eyebrow">Branch Explorer</div>
+        <div class="eyebrow">Branch Explorer (All-Time)</div>
+        <div class="muted" style="margin:8px 0 12px;">These branch values are history totals across the full recorded relationship, not the current-period total above.</div>
         {% for row in detail.history.branch_rows if detail.history and detail.history.branch_rows %}
         <details class="branch-card" {% if loop.first %}open{% endif %}>
           <summary>{{ row.retailer_name }}</summary>
           <div class="muted" style="margin:8px 0;">{{ row.location_label }} · {{ row.first_seen or 'N/A' }} to {{ row.last_seen or 'N/A' }}</div>
           <table>
             <tbody>
-              <tr><th>Revenue</th><td>₦{{ row.revenue | money2 }}</td></tr>
+              <tr><th>All-Time Revenue</th><td>₦{{ row.revenue | money2 }}</td></tr>
               <tr><th>Share</th><td>{{ "{:,.1f}".format(row.share_pct or 0) }}%</td></tr>
               <tr><th>Brands</th><td>{{ row.active_brands or 0 }}</td></tr>
               <tr><th>SKUs</th><td>{{ row.unique_skus or 0 }}</td></tr>
@@ -146,7 +149,7 @@
       </div>
       {% endif %}
       <div class="card">
-        <div class="eyebrow">{% if detail.group_slug %}Brands in Group{% else %}Brands in Store{% endif %}</div>
+        <div class="eyebrow">{% if detail.group_slug %}Current Period Brands{% else %}Brands in Store{% endif %}</div>
         <table>
           <thead><tr><th>Brand</th><th>Revenue</th><th>MoM</th></tr></thead>
           <tbody>

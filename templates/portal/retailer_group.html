@@ -295,6 +295,7 @@
         {% endif %}
       </div>
       <div class="group-copy">{{ coach.summary.summary }}</div>
+      <div class="group-status">{{ detail.comparison_basis }}</div>
       <div class="group-actions" style="margin-top:16px;">
         <a class="btn btn-outline" href="{{ clean_url_for('retailers', month=selected_month, report_id=report.id if report else None) }}">Back to Retailers</a>
         {% if detail.top_branch %}
@@ -311,7 +312,7 @@
       </div>
       <div class="group-score-note">
         Revenue {{ "%+.1f"|format(detail.comparisons.revenue_mom or 0) if detail.comparisons.revenue_mom is not none else 'N/A' }}
-        versus prior period across {{ detail.branch_rows|length }} branches with {{ "{:,.1f}".format(detail.metrics.repeat_rate or 0) }}% repeat depth.
+        against the comparison basis above across {{ detail.branch_rows|length }} branches with {{ "{:,.1f}".format(detail.metrics.repeat_rate or 0) }}% repeat depth.
       </div>
     </aside>
   </section>
@@ -412,12 +413,12 @@
     <h4 class="group-section-title">From {{ detail.history.first_seen or 'the first recorded period' }} to {{ detail.history.last_seen or 'today' }}</h4>
     <div class="group-history-grid">
       <div class="group-history-card">
-        <div class="kpi-label">Cumulative Revenue</div>
+        <div class="kpi-label">All-Time Total Revenue</div>
         <strong>₦{{ "{:,.2f}".format(detail.history.cumulative_revenue or 0) }}</strong>
         <span>{{ detail.history.active_months or 0 }} active months on record</span>
       </div>
       <div class="group-history-card">
-        <div class="kpi-label">Average Monthly Revenue</div>
+        <div class="kpi-label">Average Period Revenue</div>
         <strong>₦{{ "{:,.2f}".format(detail.history.avg_monthly_revenue or 0) }}</strong>
         <span>Average pace across the full history window</span>
       </div>
@@ -495,13 +496,14 @@
     <div class="group-panel">
       <div class="group-kicker">Branch Explorer</div>
       <h4>{{ detail.history.branch_rows|length if detail.history.branch_rows else detail.branch_rows|length }} branches across history</h4>
+      <div class="group-status">Branch explorer values are history totals from the first recorded period to the latest recorded period.</div>
       <div class="group-explorer">
         {% for row in detail.history.branch_rows %}
         <details {% if loop.first %}open{% endif %}>
           <summary>{{ row.retailer_name }}</summary>
           <div class="group-branch-summary">{{ row.location_label }} · Active from {{ row.first_seen or 'N/A' }} to {{ row.last_seen or 'N/A' }}</div>
           <div class="group-branch-detail">
-            <div class="mini"><div class="kpi-label">Revenue</div><strong>₦{{ "{:,.2f}".format(row.revenue or 0) }}</strong></div>
+            <div class="mini"><div class="kpi-label">All-Time Revenue</div><strong>₦{{ "{:,.2f}".format(row.revenue or 0) }}</strong></div>
             <div class="mini"><div class="kpi-label">Share</div><strong>{{ "{:,.1f}".format(row.share_pct or 0) }}%</strong></div>
             <div class="mini"><div class="kpi-label">Brands</div><strong>{{ row.active_brands or 0 }}</strong></div>
             <div class="mini"><div class="kpi-label">SKUs</div><strong>{{ row.unique_skus or 0 }}</strong></div>

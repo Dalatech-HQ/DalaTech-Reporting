@@ -199,6 +199,31 @@ def _report_window(ds, df: pd.DataFrame, report_id: int | None = None,
     }
 
 
+def _comparison_basis(window: dict[str, Any]) -> dict[str, str | None]:
+    period_type = str(window.get("period_type") or "monthly").lower()
+    previous_report = window.get("previous_report") or {}
+    previous_label = previous_report.get("month_label")
+    if not previous_label and previous_report.get("start_date") and previous_report.get("end_date"):
+        previous_label = f'{previous_report.get("start_date")} to {previous_report.get("end_date")}'
+    if not previous_label and window.get("previous_start_date") and window.get("previous_end_date"):
+        previous_label = f'{window.get("previous_start_date")} to {window.get("previous_end_date")}'
+
+    if period_type == "weekly":
+        basis = "Compared with the previous saved weekly period"
+    else:
+        basis = "Compared with the previous saved monthly period"
+
+    if previous_label:
+        basis = f"{basis}: {previous_label}"
+    else:
+        basis = f"{basis}; no earlier comparable period is available."
+
+    return {
+        "comparison_basis": basis,
+        "comparison_period_label": previous_label,
+    }
+
+
 def _filter_scope(ds, df: pd.DataFrame, scope_type: str, scope_key: str | None = None,
                   retailer_code: str | None = None) -> pd.DataFrame:
     if df.empty:
@@ -709,6 +734,7 @@ def build_scope_snapshot(ds, scope_type: str, scope_key: str | None = None,
         "comparisons": comparisons,
         "historical": monthly_history,
         "activity": activity,
+        **_comparison_basis(window),
     }
 
     if scope_type == "retailer":

@@ -31,6 +31,7 @@
     <div class="eyebrow">{{ detail.scope_label or 'Retailer Intelligence Report' }}</div>
     <h1>{{ detail.retailer_name }}</h1>
     <div class="muted">Current Period: {{ detail.period_label }} · Generated {{ generated_at }}</div>
+    <div class="muted">{{ detail.comparison_basis }}</div>
     <div class="muted">{{ detail.location_label }}{% if detail.branch_label %} · {{ detail.branch_label }}{% endif %}</div>
     <div style="margin-top:12px;font-size:14px;font-weight:700;color:#1B2B5E;">{{ detail.coach.summary.headline }}</div>
     <div class="muted" style="margin-top:6px;">{{ detail.coach.summary.summary }}</div>
@@ -68,7 +69,8 @@
           <tr><th>First Seen</th><td>{{ detail.history.first_seen or 'N/A' }}</td></tr>
           <tr><th>Latest Seen</th><td>{{ detail.history.last_seen or 'N/A' }}</td></tr>
           <tr><th>Active Months</th><td>{{ detail.history.active_months or 0 }}</td></tr>
-          <tr><th>Cumulative Revenue</th><td>₦{{ detail.history.cumulative_revenue | money2 }}</td></tr>
+          <tr><th>All-Time Total Revenue</th><td>₦{{ detail.history.cumulative_revenue | money2 }}</td></tr>
+          <tr><th>Comparison Basis</th><td>{{ detail.comparison_basis }}</td></tr>
           <tr><th>Peak Period</th><td>{{ detail.history.peak_period_label or 'N/A' }} · ₦{{ detail.history.peak_period_revenue | money2 }}</td></tr>
         </tbody>
       </table>
@@ -153,8 +155,9 @@
   <section class="grid-2">
     <div class="card">
       <div class="eyebrow">History Branch Appendix</div>
+      <div class="muted" style="margin:6px 0 10px;">Branch values below are all-time history totals, not current-period totals.</div>
       <table>
-        <thead><tr><th>Branch</th><th>Revenue</th><th>Share</th></tr></thead>
+        <thead><tr><th>Branch</th><th>All-Time Revenue</th><th>Share</th></tr></thead>
         <tbody>
           {% for row in detail.history.branch_rows[:16] %}
           <tr>
