@@ -468,6 +468,79 @@ def _mini_trend_svg(points: list[dict], value_key: str,
     )
 
 
+def _horizontal_bar_svg(rows: list[dict], value_key: str, label_key: str,
+                        value_fmt=None, color: str = '#1B2B5E',
+                        width: int = 640, bar_height: int = 30, max_rows: int = 6) -> str:
+    rows = rows[:max_rows]
+    if not rows:
+        return ''
+    values = []
+    labels = []
+    for row in rows:
+        try:
+            values.append(float(row.get(value_key) or 0))
+        except Exception:
+            values.append(0.0)
+        labels.append(str(row.get(label_key) or ''))
+    max_v = max(values) or 1.0
+    left = 180
+    right = 70
+    top = 14
+    usable_w = width - left - right
+    gap = 16
+    height = top + len(rows) * (bar_height + gap) + 16
+    parts = [
+        f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" style="display:block;width:100%;height:{height}px;">'
+    ]
+    for i, (label, value) in enumerate(zip(labels, values)):
+        y = top + i * (bar_height + gap)
+        w = max(10, usable_w * (value / max_v))
+        shown = value_fmt(value) if value_fmt else f'{value:,.0f}'
+        parts.append(f'<text x="0" y="{y + 19}" font-size="11" fill="#1B2B5E" font-weight="700">{label[:32]}</text>')
+        parts.append(f'<rect x="{left}" y="{y}" width="{usable_w}" height="{bar_height}" rx="10" fill="#EEF2F8"/>')
+        parts.append(f'<rect x="{left}" y="{y}" width="{w:.1f}" height="{bar_height}" rx="10" fill="{color}"/>')
+        parts.append(f'<text x="{width - 4}" y="{y + 19}" text-anchor="end" font-size="11" fill="#6F7B92" font-weight="700">{shown}</text>')
+    parts.append('</svg>')
+    return ''.join(parts)
+
+
+def _quadrant_svg(high_sales_low_activity: list[dict], high_activity_low_sales: list[dict],
+                  width: int = 640, height: int = 220) -> str:
+    def _dot(cx, cy, label, color):
+        return (
+            f'<circle cx="{cx}" cy="{cy}" r="7" fill="{color}" opacity="0.9"><title>{label}</title></circle>'
+            f'<text x="{cx + 10}" y="{cy + 4}" font-size="10" fill="#1B2B5E">{label[:22]}</text>'
+        )
+
+    mid_x = width / 2
+    mid_y = height / 2
+    parts = [
+        f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" style="display:block;width:100%;height:{height}px;">',
+        f'<rect x="0" y="0" width="{mid_x}" height="{mid_y}" fill="rgba(26,122,74,0.04)"/>',
+        f'<rect x="{mid_x}" y="0" width="{mid_x}" height="{mid_y}" fill="rgba(232,25,44,0.04)"/>',
+        f'<rect x="0" y="{mid_y}" width="{mid_x}" height="{mid_y}" fill="rgba(46,134,193,0.04)"/>',
+        f'<rect x="{mid_x}" y="{mid_y}" width="{mid_x}" height="{mid_y}" fill="rgba(192,146,42,0.05)"/>',
+        f'<line x1="{mid_x}" y1="0" x2="{mid_x}" y2="{height}" stroke="#DDE3ED" stroke-width="2"/>',
+        f'<line x1="0" y1="{mid_y}" x2="{width}" y2="{mid_y}" stroke="#DDE3ED" stroke-width="2"/>',
+        '<text x="14" y="20" font-size="11" fill="#1A7A4A" font-weight="700">Strong on both</text>',
+        f'<text x="{mid_x + 14}" y="20" font-size="11" fill="#E8192C" font-weight="700">High sales, low activity</text>',
+        f'<text x="14" y="{mid_y + 20}" font-size="11" fill="#2E86C1" font-weight="700">High activity, low sales</text>',
+        f'<text x="{mid_x + 14}" y="{mid_y + 20}" font-size="11" fill="#C0922A" font-weight="700">Low on both / watch</text>',
+    ]
+    hs = high_sales_low_activity[:4]
+    ha = high_activity_low_sales[:4]
+    for i, row in enumerate(hs):
+        cx = mid_x + 32 + (i * 54)
+        cy = 52 + (i % 2) * 40
+        parts.append(_dot(cx, cy, str(row.get('store') or ''), '#E8192C'))
+    for i, row in enumerate(ha):
+        cx = 32 + (i * 54)
+        cy = mid_y + 38 + (i % 2) * 40
+        parts.append(_dot(cx, cy, str(row.get('retailer_name') or ''), '#2E86C1'))
+    parts.append('</svg>')
+    return ''.join(parts)
+
+
 def _build_brand_activity_report(brand_name: str, report_id: int | None,
                                  kpis: dict | None = None) -> dict:
     brand_name = str(brand_name or '').strip()
@@ -742,6 +815,34 @@ def _build_brand_activity_report(brand_name: str, report_id: int | None,
         'recommended_actions': recommended_actions,
         'coverage_ratio': coverage_ratio,
         'matched_store_count': matched_store_count,
+        'issue_mix_svg': _horizontal_bar_svg(
+            issue_rows,
+            'count',
+            'issue_type',
+            value_fmt=lambda v: f'{int(v)}',
+            color='#E8192C',
+            width=620,
+            bar_height=24,
+        ),
+        'store_ranking_svg': _horizontal_bar_svg(
+            current_store_rows,
+            'mentions',
+            'retailer_name',
+            value_fmt=lambda v: f'{int(v)} men.',
+            color='#1B2B5E',
+            width=620,
+            bar_height=24,
+        ),
+        'salesperson_svg': _horizontal_bar_svg(
+            salesperson_table,
+            'mentions',
+            'salesman_name',
+            value_fmt=lambda v: f'{int(v)} men.',
+            color='#2E86C1',
+            width=620,
+            bar_height=24,
+        ),
+        'linkage_svg': _quadrant_svg(high_sales_low_activity, high_activity_low_sales),
     })
     return empty
 

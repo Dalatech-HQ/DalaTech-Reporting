@@ -1913,6 +1913,9 @@
 
     <div class="activity-card">
       <div class="activity-card-title">Issue Mix <span>Most frequent field issues for this brand</span></div>
+      {% if activity_report.issue_mix_svg %}
+      <div class="activity-svg-shell" style="margin-bottom:7px;">{{ activity_report.issue_mix_svg | safe }}</div>
+      {% endif %}
       {% if activity_report.issue_rows %}
       <table class="activity-table">
         <tr><th>Issue</th><th style="width:45px;">Count</th><th style="width:40px;">Share</th></tr>
@@ -1927,6 +1930,9 @@
 
     <div class="activity-card">
       <div class="activity-card-title">Store Activity Ranking <span>Where the brand was seen in trade</span></div>
+      {% if activity_report.store_ranking_svg %}
+      <div class="activity-svg-shell" style="margin-bottom:7px;">{{ activity_report.store_ranking_svg | safe }}</div>
+      {% endif %}
       {% if activity_report.store_rows %}
       <table class="activity-table">
         <tr><th>Retailer</th><th style="width:32px;">Men.</th><th style="width:32px;">Vis.</th><th style="width:32px;">Iss.</th><th style="width:32px;">SKU</th></tr>
@@ -1947,6 +1953,9 @@
 
     <div class="activity-card">
       <div class="activity-card-title">Field Team Coverage <span>Salespeople tied to brand mentions</span></div>
+      {% if activity_report.salesperson_svg %}
+      <div class="activity-svg-shell" style="margin-bottom:7px;">{{ activity_report.salesperson_svg | safe }}</div>
+      {% endif %}
       {% if activity_report.salesperson_rows %}
       <table class="activity-table">
         <tr><th>Salesperson</th><th style="width:40px;">Men.</th><th style="width:40px;">Stores</th><th style="width:40px;">Days</th></tr>
@@ -1961,6 +1970,9 @@
 
     <div class="activity-card">
       <div class="activity-card-title">Sales × Activity Link <span>Commercial exceptions from matching sales with field evidence</span></div>
+      {% if activity_report.linkage_svg %}
+      <div class="activity-svg-shell" style="margin-bottom:7px;">{{ activity_report.linkage_svg | safe }}</div>
+      {% endif %}
       <div class="activity-list">
         <div class="activity-list-item">
           <h4>High sales, low activity</h4>

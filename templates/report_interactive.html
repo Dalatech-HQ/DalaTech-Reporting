@@ -1561,6 +1561,9 @@
           <div class="card-title">Issue Mix
             <span class="card-title-sub">Most frequent issues logged for this brand in the current period</span>
           </div>
+          {% if activity_report.issue_mix_svg %}
+          <div class="activity-chart" style="margin-bottom:12px;">{{ activity_report.issue_mix_svg | safe }}</div>
+          {% endif %}
           {% if activity_report.issue_rows %}
           <table class="activity-table">
             <tr><th>Issue</th><th style="width:90px;">Count</th><th style="width:160px;">Share</th></tr>
@@ -1584,6 +1587,9 @@
           <div class="card-title">Field Team Coverage
             <span class="card-title-sub">Salespeople tied to brand mentions in this report period</span>
           </div>
+          {% if activity_report.salesperson_svg %}
+          <div class="activity-chart" style="margin-bottom:12px;">{{ activity_report.salesperson_svg | safe }}</div>
+          {% endif %}
           {% if activity_report.salesperson_rows %}
           <table class="activity-table">
             <tr><th>Salesperson</th><th style="width:90px;">Mentions</th><th style="width:90px;">Stores</th><th style="width:90px;">Days</th></tr>
@@ -1605,6 +1611,9 @@
           <div class="card-title">Store Activity Ranking
             <span class="card-title-sub">Where the brand was actually seen in trade during this report period</span>
           </div>
+          {% if activity_report.store_ranking_svg %}
+          <div class="activity-chart" style="margin-bottom:12px;">{{ activity_report.store_ranking_svg | safe }}</div>
+          {% endif %}
           {% if activity_report.store_rows %}
           <table class="activity-table">
             <tr><th>Retailer</th><th style="width:70px;">Mentions</th><th style="width:70px;">Visits</th><th style="width:70px;">Issues</th><th style="width:70px;">SKUs</th></tr>
@@ -1627,6 +1636,9 @@
           <div class="card-title">Sales × Activity Link
             <span class="card-title-sub">Commercial exceptions surfaced by comparing activity evidence to selling stores</span>
           </div>
+          {% if activity_report.linkage_svg %}
+          <div class="activity-chart" style="margin-bottom:12px;">{{ activity_report.linkage_svg | safe }}</div>
+          {% endif %}
           <div class="activity-list">
             <div class="activity-list-item">
               <h5>High sales, low activity</h5>
