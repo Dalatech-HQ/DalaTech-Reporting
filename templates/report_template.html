@@ -1168,6 +1168,204 @@
       color: rgba(255,255,255,0.35);
       letter-spacing: 0.5px;
     }
+
+    .activity-band {
+      margin: 0 14px 8px;
+      background: linear-gradient(145deg, #ffffff 0%, #f7fafd 100%);
+      border: 1px solid #DDE2EE;
+      border-radius: 6px;
+      padding: 10px 12px;
+      flex-shrink: 0;
+    }
+
+    .activity-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .activity-kicker {
+      font-size: 5pt;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.65px;
+      color: #7F8AA3;
+      margin-bottom: 3px;
+    }
+
+    .activity-title {
+      font-size: 13pt;
+      font-weight: 800;
+      color: #1B2B5E;
+      line-height: 1.15;
+    }
+
+    .activity-copy {
+      font-size: 5.4pt;
+      color: #6F7B92;
+      line-height: 1.55;
+      margin-top: 4px;
+      max-width: 480px;
+    }
+
+    .activity-chip-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      max-width: 220px;
+    }
+
+    .activity-chip {
+      padding: 3px 7px;
+      border-radius: 999px;
+      background: rgba(46,134,193,0.10);
+      color: #2E86C1;
+      font-size: 4.7pt;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+    }
+
+    .activity-stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .activity-stat {
+      border-radius: 8px;
+      background: #ffffff;
+      border: 1px solid #E4E9F3;
+      padding: 7px 8px;
+    }
+
+    .activity-stat-label {
+      font-size: 4.6pt;
+      color: #7F8AA3;
+      text-transform: uppercase;
+      letter-spacing: 0.45px;
+      font-weight: 800;
+    }
+
+    .activity-stat-value {
+      font-size: 12pt;
+      font-weight: 900;
+      color: #1B2B5E;
+      line-height: 1.05;
+      margin-top: 3px;
+    }
+
+    .activity-stat-sub {
+      font-size: 4.7pt;
+      color: #7A849E;
+      line-height: 1.4;
+      margin-top: 3px;
+    }
+
+    .activity-grid {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 10px;
+      margin: 0 14px 8px;
+      flex-shrink: 0;
+    }
+
+    .activity-card {
+      background: #fff;
+      border: 1px solid #E2E5EE;
+      border-radius: 5px;
+      padding: 9px 10px;
+      overflow: hidden;
+    }
+
+    .activity-card-title {
+      font-size: 5.4pt;
+      font-weight: 800;
+      color: #1B2B5E;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      margin-bottom: 7px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .activity-card-title span {
+      font-size: 4.5pt;
+      color: #7A849E;
+      font-weight: 600;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    .activity-svg-shell {
+      border: 1px solid #E5EAF4;
+      border-radius: 8px;
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(27,43,94,0.03) 0%, rgba(27,43,94,0) 100%);
+      min-height: 170px;
+    }
+
+    .activity-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 5.2pt;
+    }
+
+    .activity-table th {
+      text-align: left;
+      padding: 4px 0 5px;
+      border-bottom: 1px solid #E4E9F3;
+      color: #7F8AA3;
+      text-transform: uppercase;
+      letter-spacing: 0.45px;
+      font-size: 4.5pt;
+      font-weight: 800;
+    }
+
+    .activity-table td {
+      padding: 5px 0;
+      border-bottom: 1px solid #EEF2F7;
+      vertical-align: top;
+      color: #1A1A1A;
+    }
+
+    .activity-table tr:last-child td { border-bottom: 0; }
+
+    .activity-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .activity-list-item {
+      border-radius: 8px;
+      background: #F8FAFF;
+      border: 1px solid #E2E8F4;
+      padding: 7px 8px;
+    }
+
+    .activity-list-item h4 {
+      font-size: 5.3pt;
+      font-weight: 800;
+      color: #1B2B5E;
+      margin-bottom: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.45px;
+    }
+
+    .activity-list-item p,
+    .activity-list-item ul {
+      font-size: 5pt;
+      color: #6F7B92;
+      line-height: 1.5;
+    }
+
+    .activity-list-item ul {
+      margin-left: 12px;
+    }
   </style>
 </head>
 <body>
@@ -1350,7 +1548,7 @@
         <div class="footer-icon">&#127760;</div>
         <div class="footer-text">info@dalatechnologies.com<br>www.dalatechnologies.com</div>
       </div>
-      <div class="footer-page-num">1 / 2</div>
+      <div class="footer-page-num">1 / {% if activity_report %}3{% else %}2{% endif %}</div>
     </div>
   </div>
 
@@ -1634,11 +1832,196 @@
         <div class="footer-icon">&#127760;</div>
         <div class="footer-text">info@dalatechnologies.com<br>www.dalatechnologies.com</div>
       </div>
-      <div class="footer-page-num">2 / 2</div>
+      <div class="footer-page-num">2 / {% if activity_report %}3{% else %}2{% endif %}</div>
     </div>
   </div>
 
 </div><!-- /page 2 -->
+
+{% if activity_report %}
+<div class="page page-break">
+
+  <div class="page-header">
+    <div class="header-left">
+      <div class="red-accent-bar"></div>
+      {% if logo_path %}
+        <img class="dala-logo" src="{{ logo_path }}" alt="DALA Technologies">
+      {% else %}
+        <div class="dala-logo-ph">DALA</div>
+      {% endif %}
+    </div>
+    <div class="diamond-cluster">
+      <div class="d" style="width:32px;height:32px;background:#E8192C;top:2px;right:4px;"></div>
+      <div class="d" style="width:32px;height:32px;background:#1B2B5E;top:2px;right:30px;opacity:0.88;"></div>
+      <div class="d" style="width:32px;height:32px;background:#1B2B5E;top:26px;right:0px;opacity:0.92;"></div>
+      <div class="d" style="width:24px;height:24px;background:#E8192C;top:28px;right:28px;opacity:0.72;"></div>
+      <div class="d" style="width:18px;height:18px;background:#1B2B5E;top:46px;right:6px;opacity:0.6;"></div>
+      <div class="d" style="width:13px;height:13px;background:#E8192C;top:50px;right:28px;opacity:0.5;"></div>
+    </div>
+  </div>
+
+  <div class="tagline-bar">BOOSTING REVENUE AND ENHANCING BRAND VALUE</div>
+
+  <div class="activity-band">
+    <div class="activity-head">
+      <div>
+        <div class="activity-kicker">Activity Intelligence</div>
+        <div class="activity-title">{{ activity_report.headline }}</div>
+        <div class="activity-copy">{{ activity_report.summary }}</div>
+      </div>
+      <div class="activity-chip-row">
+        <span class="activity-chip">Coverage {{ activity_report.coverage_ratio }}%</span>
+        <span class="activity-chip">Matched stores {{ activity_report.matched_store_count }}</span>
+        {% if activity_report.history.first_seen %}
+        <span class="activity-chip">History from {{ activity_report.history.first_seen }}</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="activity-stat-grid">
+      <div class="activity-stat">
+        <div class="activity-stat-label">Current Visits</div>
+        <div class="activity-stat-value">{{ activity_report.current.visits }}</div>
+        <div class="activity-stat-sub">{{ activity_report.current.active_days }} active days · {{ activity_report.current.salespeople }} salespeople</div>
+      </div>
+      <div class="activity-stat">
+        <div class="activity-stat-label">Stores Touched</div>
+        <div class="activity-stat-value">{{ activity_report.current.stores }}</div>
+        <div class="activity-stat-sub">{{ activity_report.current.mentions }} mentions in current period</div>
+      </div>
+      <div class="activity-stat">
+        <div class="activity-stat-label">Issues Logged</div>
+        <div class="activity-stat-value">{{ activity_report.current.issues }}</div>
+        <div class="activity-stat-sub">{{ activity_report.current.opportunities }} opportunities · {{ activity_report.current.photos }} photos</div>
+      </div>
+      <div class="activity-stat">
+        <div class="activity-stat-label">History</div>
+        <div class="activity-stat-value">{{ activity_report.history.mentions }}</div>
+        <div class="activity-stat-sub">{{ activity_report.history.stores }} stores · {{ activity_report.history.all_time_salespeople }} salespeople all-time</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="activity-grid">
+    <div class="activity-card">
+      <div class="activity-card-title">Current Activity Trend <span>Brand mentions across the report period</span></div>
+      {% if activity_report.current_trend_svg %}
+      <div class="activity-svg-shell">{{ activity_report.current_trend_svg | safe }}</div>
+      {% else %}
+      <div class="activity-list-item"><p>No report-scoped activity trend is available for this brand.</p></div>
+      {% endif %}
+    </div>
+
+    <div class="activity-card">
+      <div class="activity-card-title">Issue Mix <span>Most frequent field issues for this brand</span></div>
+      {% if activity_report.issue_rows %}
+      <table class="activity-table">
+        <tr><th>Issue</th><th style="width:45px;">Count</th><th style="width:40px;">Share</th></tr>
+        {% for row in activity_report.issue_rows %}
+        <tr><td>{{ row.issue_type }}</td><td>{{ row.count }}</td><td>{{ row.pct }}%</td></tr>
+        {% endfor %}
+      </table>
+      {% else %}
+      <div class="activity-list-item"><p>No brand-specific issues were logged for this report period.</p></div>
+      {% endif %}
+    </div>
+
+    <div class="activity-card">
+      <div class="activity-card-title">Store Activity Ranking <span>Where the brand was seen in trade</span></div>
+      {% if activity_report.store_rows %}
+      <table class="activity-table">
+        <tr><th>Retailer</th><th style="width:32px;">Men.</th><th style="width:32px;">Vis.</th><th style="width:32px;">Iss.</th><th style="width:32px;">SKU</th></tr>
+        {% for row in activity_report.store_rows[:8] %}
+        <tr>
+          <td>{{ row.retailer_name }}<br><span style="font-size:4.6pt;color:#7A849E;">{{ row.active_days }} active day{% if row.active_days != 1 %}s{% endif %}</span></td>
+          <td>{{ row.mentions }}</td>
+          <td>{{ row.visits }}</td>
+          <td>{{ row.issues }}</td>
+          <td>{{ row.skus }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}
+      <div class="activity-list-item"><p>No store-level activity evidence is available for this brand in this report period.</p></div>
+      {% endif %}
+    </div>
+
+    <div class="activity-card">
+      <div class="activity-card-title">Field Team Coverage <span>Salespeople tied to brand mentions</span></div>
+      {% if activity_report.salesperson_rows %}
+      <table class="activity-table">
+        <tr><th>Salesperson</th><th style="width:40px;">Men.</th><th style="width:40px;">Stores</th><th style="width:40px;">Days</th></tr>
+        {% for row in activity_report.salesperson_rows[:8] %}
+        <tr><td>{{ row.salesman_name }}</td><td>{{ row.mentions }}</td><td>{{ row.stores }}</td><td>{{ row.active_days }}</td></tr>
+        {% endfor %}
+      </table>
+      {% else %}
+      <div class="activity-list-item"><p>No salesperson attribution is available for this brand yet.</p></div>
+      {% endif %}
+    </div>
+
+    <div class="activity-card">
+      <div class="activity-card-title">Sales × Activity Link <span>Commercial exceptions from matching sales with field evidence</span></div>
+      <div class="activity-list">
+        <div class="activity-list-item">
+          <h4>High sales, low activity</h4>
+          {% if activity_report.high_sales_low_activity %}
+          <p>
+            {% for row in activity_report.high_sales_low_activity %}
+              {{ row.store }} (₦{{ "{:,.0f}".format(row.revenue) }}){% if not loop.last %}, {% endif %}
+            {% endfor %}
+          </p>
+          {% else %}
+          <p>Every top-revenue store in this period has a matching activity record.</p>
+          {% endif %}
+        </div>
+        <div class="activity-list-item">
+          <h4>High activity, low sales visibility</h4>
+          {% if activity_report.high_activity_low_sales %}
+          <p>
+            {% for row in activity_report.high_activity_low_sales %}
+              {{ row.retailer_name }} ({{ row.mentions }} mentions, {{ row.visits }} visits){% if not loop.last %}, {% endif %}
+            {% endfor %}
+          </p>
+          {% else %}
+          <p>Activity was concentrated in stores already visible in the sales ranking.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="activity-card">
+      <div class="activity-card-title">Recommended Actions <span>Deterministic actions from activity and sales linkage</span></div>
+      <div class="activity-list-item">
+        <ul>
+          {% for action in activity_report.recommended_actions %}
+          <li>{{ action }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <div class="footer-red-strip"></div>
+    <div class="footer-contact">
+      <div class="footer-col">
+        <div class="footer-icon">&#128205;</div>
+        <div class="footer-text">Ija Ota, Ogun State,<br>Nigeria.</div>
+      </div>
+      <div class="footer-col">
+        <div class="footer-icon">&#128222;</div>
+        <div class="footer-text">+234 814 882 4115<br>+234 806 240 2350</div>
+      </div>
+      <div class="footer-col">
+        <div class="footer-icon">&#127760;</div>
+        <div class="footer-text">info@dalatechnologies.com<br>www.dalatechnologies.com</div>
+      </div>
+      <div class="footer-page-num">3 / 3</div>
+    </div>
+  </div>
+
+</div><!-- /page 3 -->
+{% endif %}
 
 </body>
 </html>

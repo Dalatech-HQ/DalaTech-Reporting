@@ -215,6 +215,160 @@
     .coach-signal-item:last-child { border-bottom: 0; padding-bottom: 0; }
     .coach-signal-item strong { display:block; margin-bottom:4px; }
 
+    .activity-shell {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .activity-card {
+      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+      border: 1px solid rgba(27,43,94,0.08);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+    .activity-hero {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+      gap: 16px;
+      align-items: stretch;
+    }
+    .activity-kicker {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .activity-title {
+      font-size: 24px;
+      line-height: 1.15;
+      color: var(--navy);
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+    .activity-copy {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.65;
+      max-width: 760px;
+    }
+    .activity-stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .activity-stat {
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #f8faff;
+      border: 1px solid #dde6f3;
+    }
+    .activity-stat-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .activity-stat-value {
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--navy);
+      line-height: 1;
+    }
+    .activity-stat-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 6px;
+      line-height: 1.45;
+    }
+    .activity-chart {
+      margin-top: 12px;
+      border: 1px solid #e3e9f4;
+      border-radius: 12px;
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(27,43,94,0.03) 0%, rgba(27,43,94,0) 100%);
+    }
+    .activity-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .activity-table th {
+      text-align: left;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.45px;
+      color: var(--muted);
+      padding: 10px 0;
+      border-bottom: 1px solid #e4e9f4;
+    }
+    .activity-table td {
+      padding: 10px 0;
+      border-bottom: 1px solid #edf1f7;
+      vertical-align: top;
+    }
+    .activity-table tr:last-child td { border-bottom: 0; }
+    .activity-bar-track {
+      height: 8px;
+      background: #edf1f8;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .activity-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--navy) 0%, var(--blue) 100%);
+      border-radius: 999px;
+    }
+    .activity-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .activity-list-item {
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #f8faff;
+      border: 1px solid #dde6f3;
+    }
+    .activity-list-item h5 {
+      font-size: 13px;
+      color: var(--navy);
+      margin-bottom: 5px;
+    }
+    .activity-list-item p {
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--muted);
+    }
+    .activity-chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .activity-chip {
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(46,134,193,0.10);
+      color: var(--blue);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .activity-empty {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+      padding: 12px 0;
+    }
+
     .card-title {
       font-size: 12px;
       font-weight: 700;
@@ -1338,6 +1492,175 @@
 
         <div class="gmv-chart-shell">
           {{ gmv_chart_svg | safe }}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if activity_report %}
+      <div class="activity-shell">
+        <div class="activity-card activity-hero">
+          <div>
+            <div class="activity-kicker">Activity Intelligence</div>
+            <div class="activity-title">{{ activity_report.headline }}</div>
+            <div class="activity-copy">{{ activity_report.summary }}</div>
+            <div class="activity-chip-row">
+              <span class="activity-chip">Coverage match: {{ activity_report.coverage_ratio }}%</span>
+              <span class="activity-chip">Matched selling stores: {{ activity_report.matched_store_count }}</span>
+              {% if activity_report.history.first_seen %}
+              <span class="activity-chip">History from {{ activity_report.history.first_seen }}</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="activity-stat-grid">
+            <div class="activity-stat">
+              <div class="activity-stat-label">Current Visits</div>
+              <div class="activity-stat-value">{{ activity_report.current.visits }}</div>
+              <div class="activity-stat-sub">{{ activity_report.current.active_days }} active days · {{ activity_report.current.salespeople }} salespeople</div>
+            </div>
+            <div class="activity-stat">
+              <div class="activity-stat-label">Stores Touched</div>
+              <div class="activity-stat-value">{{ activity_report.current.stores }}</div>
+              <div class="activity-stat-sub">{{ activity_report.current.mentions }} brand mentions in this report period</div>
+            </div>
+            <div class="activity-stat">
+              <div class="activity-stat-label">Issues Logged</div>
+              <div class="activity-stat-value">{{ activity_report.current.issues }}</div>
+              <div class="activity-stat-sub">{{ activity_report.current.opportunities }} opportunities · {{ activity_report.current.photos }} photos</div>
+            </div>
+            <div class="activity-stat">
+              <div class="activity-stat-label">All-Time History</div>
+              <div class="activity-stat-value">{{ activity_report.history.mentions }}</div>
+              <div class="activity-stat-sub">{{ activity_report.history.stores }} stores · {{ activity_report.history.all_time_salespeople }} salespeople since first activity</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="activity-card">
+          <div class="card-title">Current Activity Trend
+            <span class="card-title-sub">Brand mentions across the report period</span>
+          </div>
+          {% if activity_report.current_trend_svg %}
+          <div class="activity-chart">{{ activity_report.current_trend_svg | safe }}</div>
+          {% else %}
+          <div class="activity-empty">No report-scoped activity trend is available for this brand.</div>
+          {% endif %}
+        </div>
+
+        <div class="activity-card">
+          <div class="card-title">Activity History
+            <span class="card-title-sub">Monthly brand mentions from first activity import to now</span>
+          </div>
+          {% if activity_report.history_trend_svg %}
+          <div class="activity-chart">{{ activity_report.history_trend_svg | safe }}</div>
+          {% else %}
+          <div class="activity-empty">No historical activity trend is available yet.</div>
+          {% endif %}
+        </div>
+
+        <div class="activity-card">
+          <div class="card-title">Issue Mix
+            <span class="card-title-sub">Most frequent issues logged for this brand in the current period</span>
+          </div>
+          {% if activity_report.issue_rows %}
+          <table class="activity-table">
+            <tr><th>Issue</th><th style="width:90px;">Count</th><th style="width:160px;">Share</th></tr>
+            {% for row in activity_report.issue_rows %}
+            <tr>
+              <td>{{ row.issue_type }}</td>
+              <td>{{ row.count }}</td>
+              <td>
+                <div>{{ row.pct }}%</div>
+                <div class="activity-bar-track"><div class="activity-bar-fill" style="width: {{ row.pct }}%;"></div></div>
+              </td>
+            </tr>
+            {% endfor %}
+          </table>
+          {% else %}
+          <div class="activity-empty">No brand-specific issues were logged for this report period.</div>
+          {% endif %}
+        </div>
+
+        <div class="activity-card">
+          <div class="card-title">Field Team Coverage
+            <span class="card-title-sub">Salespeople tied to brand mentions in this report period</span>
+          </div>
+          {% if activity_report.salesperson_rows %}
+          <table class="activity-table">
+            <tr><th>Salesperson</th><th style="width:90px;">Mentions</th><th style="width:90px;">Stores</th><th style="width:90px;">Days</th></tr>
+            {% for row in activity_report.salesperson_rows %}
+            <tr>
+              <td>{{ row.salesman_name }}</td>
+              <td>{{ row.mentions }}</td>
+              <td>{{ row.stores }}</td>
+              <td>{{ row.active_days }}</td>
+            </tr>
+            {% endfor %}
+          </table>
+          {% else %}
+          <div class="activity-empty">No salesperson attribution is available for this brand yet.</div>
+          {% endif %}
+        </div>
+
+        <div class="activity-card">
+          <div class="card-title">Store Activity Ranking
+            <span class="card-title-sub">Where the brand was actually seen in trade during this report period</span>
+          </div>
+          {% if activity_report.store_rows %}
+          <table class="activity-table">
+            <tr><th>Retailer</th><th style="width:70px;">Mentions</th><th style="width:70px;">Visits</th><th style="width:70px;">Issues</th><th style="width:70px;">SKUs</th></tr>
+            {% for row in activity_report.store_rows %}
+            <tr>
+              <td>{{ row.retailer_name }}<div style="font-size:11px;color:var(--muted);margin-top:4px;">{{ row.active_days }} active day{% if row.active_days != 1 %}s{% endif %}</div></td>
+              <td>{{ row.mentions }}</td>
+              <td>{{ row.visits }}</td>
+              <td>{{ row.issues }}</td>
+              <td>{{ row.skus }}</td>
+            </tr>
+            {% endfor %}
+          </table>
+          {% else %}
+          <div class="activity-empty">No store-level activity evidence is available for this brand in this report period.</div>
+          {% endif %}
+        </div>
+
+        <div class="activity-card">
+          <div class="card-title">Sales × Activity Link
+            <span class="card-title-sub">Commercial exceptions surfaced by comparing activity evidence to selling stores</span>
+          </div>
+          <div class="activity-list">
+            <div class="activity-list-item">
+              <h5>High sales, low activity</h5>
+              {% if activity_report.high_sales_low_activity %}
+              <p>
+                {% for row in activity_report.high_sales_low_activity %}
+                  {{ row.store }} (₦{{ "{:,.0f}".format(row.revenue) }}){% if not loop.last %}, {% endif %}
+                {% endfor %}
+              </p>
+              {% else %}
+              <p>Every top-revenue store in this period has a matching activity record.</p>
+              {% endif %}
+            </div>
+            <div class="activity-list-item">
+              <h5>High activity, low sales visibility</h5>
+              {% if activity_report.high_activity_low_sales %}
+              <p>
+                {% for row in activity_report.high_activity_low_sales %}
+                  {{ row.retailer_name }} ({{ row.mentions }} mentions, {{ row.visits }} visits){% if not loop.last %}, {% endif %}
+                {% endfor %}
+              </p>
+              {% else %}
+              <p>Activity was concentrated in stores that are already visible in the sales ranking.</p>
+              {% endif %}
+            </div>
+            <div class="activity-list-item">
+              <h5>Recommended Actions</h5>
+              <ul style="margin-left:18px; color:var(--muted); line-height:1.7; font-size:12px;">
+                {% for action in activity_report.recommended_actions %}
+                <li>{{ action }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
       {% endif %}

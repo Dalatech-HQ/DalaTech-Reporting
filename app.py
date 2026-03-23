@@ -390,6 +390,362 @@ def _brand_report_context(brand_name: str, cutoff_date: str | None = None) -> di
     }
 
 
+def _mini_trend_svg(points: list[dict], value_key: str,
+                    label_key: str = 'label',
+                    stroke: str = '#1B2B5E',
+                    fill: str = 'rgba(27,43,94,0.10)') -> str:
+    if not points:
+        return ''
+
+    values = []
+    labels = []
+    for point in points:
+        try:
+            values.append(float(point.get(value_key) or 0))
+        except Exception:
+            values.append(0.0)
+        labels.append(str(point.get(label_key) or ''))
+
+    if len(values) == 1:
+        values = values + values
+        labels = labels + labels
+
+    width = 640
+    height = 210
+    pad_x = 28
+    pad_y = 18
+    inner_w = width - (pad_x * 2)
+    inner_h = height - (pad_y * 2) - 18
+    min_v = min(values)
+    max_v = max(values)
+    span = (max_v - min_v) or 1.0
+
+    coords = []
+    count = len(values)
+    for index, value in enumerate(values):
+        x = pad_x + (inner_w * index / max(count - 1, 1))
+        y = pad_y + inner_h - ((value - min_v) / span * inner_h)
+        coords.append((round(x, 1), round(y, 1), value, labels[index]))
+
+    path = ' '.join(f'{x},{y}' for x, y, _, _ in coords)
+    area = f'{pad_x},{pad_y + inner_h} ' + path + f' {pad_x + inner_w},{pad_y + inner_h}'
+
+    grid_lines = []
+    for step in range(5):
+        y = pad_y + (inner_h * step / 4)
+        grid_lines.append(
+            f'<line x1="{pad_x}" y1="{y:.1f}" x2="{pad_x + inner_w}" y2="{y:.1f}" '
+            f'stroke="#E3E8F3" stroke-width="1"/>'
+        )
+
+    label_nodes = []
+    if coords:
+        stride = max(1, len(coords) // 6)
+        for idx, (x, _, _, label) in enumerate(coords):
+            if idx % stride == 0 or idx == len(coords) - 1:
+                label_nodes.append(
+                    f'<text x="{x:.1f}" y="{height - 6}" text-anchor="middle" '
+                    f'font-size="10" fill="#70809D">{label}</text>'
+                )
+
+    point_nodes = []
+    for x, y, value, label in coords:
+        point_nodes.append(
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.5" fill="{stroke}" opacity="0.95">'
+            f'<title>{label}: {value:,.0f}</title></circle>'
+        )
+
+    return (
+        f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" '
+        f'preserveAspectRatio="none" style="display:block;width:100%;height:{height}px;">'
+        f'{"".join(grid_lines)}'
+        f'<polygon points="{area}" fill="{fill}" />'
+        f'<polyline points="{path}" fill="none" stroke="{stroke}" stroke-width="3" '
+        f'stroke-linecap="round" stroke-linejoin="round" />'
+        f'{"".join(point_nodes)}'
+        f'{"".join(label_nodes)}'
+        '</svg>'
+    )
+
+
+def _build_brand_activity_report(brand_name: str, report_id: int | None,
+                                 kpis: dict | None = None) -> dict:
+    brand_name = str(brand_name or '').strip()
+    empty = {
+        'available': False,
+        'current': {
+            'mentions': 0, 'stores': 0, 'active_days': 0, 'salespeople': 0,
+            'visits': 0, 'issues': 0, 'opportunities': 0, 'photos': 0,
+        },
+        'history': {
+            'mentions': 0, 'stores': 0, 'active_days': 0, 'all_time_salespeople': 0,
+            'first_seen': None, 'last_seen': None,
+        },
+        'headline': 'No structured activity record is available for this brand yet.',
+        'summary': 'Import activity reports to unlock retailer touchpoints, issue context, and field execution coverage.',
+        'current_trend_svg': '',
+        'history_trend_svg': '',
+        'daily_points': [],
+        'history_points': [],
+        'issue_rows': [],
+        'store_rows': [],
+        'salesperson_rows': [],
+        'high_sales_low_activity': [],
+        'high_activity_low_sales': [],
+        'recommended_actions': [],
+        'coverage_ratio': 0,
+        'matched_store_count': 0,
+    }
+    if not brand_name:
+        return empty
+
+    current_summary = ds.get_activity_summary(report_id=report_id, brand_name=brand_name)
+    history_summary = ds.get_activity_brand_summary(brand_name, limit=12)
+
+    report_clause = ''
+    report_params: list[object] = []
+    if report_id:
+        report_clause = ' AND abm.report_id=?'
+        report_params.append(report_id)
+
+    with ds._connect() as conn:
+        daily_rows = conn.execute(
+            f"""SELECT activity_date,
+                       COUNT(*) AS mentions,
+                       COUNT(DISTINCT retailer_code) AS stores
+                  FROM activity_brand_mentions
+                 WHERE LOWER(COALESCE(brand_name, ''))=LOWER(?){report_clause.replace('abm.', '')}
+                 GROUP BY activity_date
+                 ORDER BY activity_date ASC""",
+            (brand_name, *report_params),
+        ).fetchall()
+        history_rows = conn.execute(
+            """SELECT substr(activity_date, 1, 7) AS period,
+                      COUNT(*) AS mentions,
+                      COUNT(DISTINCT retailer_code) AS stores
+                 FROM activity_brand_mentions
+                WHERE LOWER(COALESCE(brand_name, ''))=LOWER(?)
+                GROUP BY substr(activity_date, 1, 7)
+                ORDER BY period ASC""",
+            (brand_name,),
+        ).fetchall()
+        bounds = conn.execute(
+            """SELECT MIN(activity_date) AS first_seen,
+                      MAX(activity_date) AS last_seen,
+                      COUNT(DISTINCT salesman_name) AS salespeople
+                 FROM activity_events
+                WHERE id IN (
+                    SELECT ae.id
+                      FROM activity_events ae
+                      JOIN activity_brand_mentions abm
+                        ON abm.retailer_code = ae.retailer_code
+                       AND abm.activity_date = ae.activity_date
+                     WHERE LOWER(COALESCE(abm.brand_name, ''))=LOWER(?)
+                )""",
+            (brand_name,),
+        ).fetchone()
+        store_rows = conn.execute(
+            f"""SELECT abm.retailer_code,
+                       COALESCE(NULLIF(abm.retailer_name, ''), abm.retailer_code) AS retailer_name,
+                       COUNT(DISTINCT abm.id) AS mentions,
+                       COUNT(DISTINCT abm.activity_date) AS active_days,
+                       COUNT(DISTINCT COALESCE(NULLIF(abm.sku_name, ''), NULL)) AS skus,
+                       COUNT(DISTINCT av.id) AS visits,
+                       COUNT(DISTINCT ai.id) AS issues
+                  FROM activity_brand_mentions abm
+             LEFT JOIN activity_visits av
+                    ON av.retailer_code = abm.retailer_code
+                   AND av.activity_date = abm.activity_date
+                   {'AND av.report_id = abm.report_id' if report_id else ''}
+             LEFT JOIN activity_issues ai
+                    ON ai.retailer_code = abm.retailer_code
+                   AND ai.activity_date = abm.activity_date
+                   AND LOWER(COALESCE(ai.brand_name, ''))=LOWER(abm.brand_name)
+                   {'AND ai.report_id = abm.report_id' if report_id else ''}
+                 WHERE LOWER(COALESCE(abm.brand_name, ''))=LOWER(?){report_clause}
+                 GROUP BY abm.retailer_code, COALESCE(NULLIF(abm.retailer_name, ''), abm.retailer_code)
+                 ORDER BY mentions DESC, retailer_name ASC
+                 LIMIT 12""",
+            (brand_name, *report_params),
+        ).fetchall()
+        salesperson_rows = conn.execute(
+            f"""SELECT COALESCE(NULLIF(ae.salesman_name, ''), 'Unassigned') AS salesman_name,
+                       COUNT(DISTINCT abm.id) AS mentions,
+                       COUNT(DISTINCT abm.retailer_code) AS stores,
+                       COUNT(DISTINCT abm.activity_date) AS active_days
+                  FROM activity_brand_mentions abm
+             LEFT JOIN activity_events ae
+                    ON ae.retailer_code = abm.retailer_code
+                   AND ae.activity_date = abm.activity_date
+                   {'AND ae.report_id = abm.report_id' if report_id else ''}
+                 WHERE LOWER(COALESCE(abm.brand_name, ''))=LOWER(?){report_clause}
+                 GROUP BY COALESCE(NULLIF(ae.salesman_name, ''), 'Unassigned')
+                 ORDER BY mentions DESC, salesman_name ASC
+                 LIMIT 10""",
+            (brand_name, *report_params),
+        ).fetchall()
+
+    current = {
+        'mentions': int(current_summary.get('totals', {}).get('events', 0)),
+        'stores': int(current_summary.get('totals', {}).get('stores', 0)),
+        'active_days': int(current_summary.get('totals', {}).get('active_days', 0)),
+        'salespeople': len([r for r in salesperson_rows if (r['salesman_name'] or '').strip()]),
+        'visits': int(current_summary.get('totals', {}).get('visits', 0)),
+        'issues': int(current_summary.get('totals', {}).get('issues', 0)),
+        'opportunities': int(current_summary.get('totals', {}).get('opportunities', 0)),
+        'photos': int(current_summary.get('totals', {}).get('photos', 0)),
+    }
+    history = {
+        'mentions': int(history_summary.get('mentions', 0)),
+        'stores': int(history_summary.get('stores', 0)),
+        'active_days': int(history_summary.get('active_days', 0)),
+        'all_time_salespeople': int((bounds['salespeople'] if bounds else 0) or 0),
+        'first_seen': bounds['first_seen'] if bounds else None,
+        'last_seen': bounds['last_seen'] if bounds else None,
+    }
+
+    daily_points = [
+        {
+            'label': datetime.strptime(str(row['activity_date']), '%Y-%m-%d').strftime('%d %b'),
+            'mentions': int(row['mentions'] or 0),
+            'stores': int(row['stores'] or 0),
+        }
+        for row in daily_rows
+    ]
+    history_points = []
+    for row in history_rows:
+        period = str(row['period'] or '')
+        label = period
+        if len(period) == 7:
+            try:
+                label = datetime.strptime(period + '-01', '%Y-%m-%d').strftime('%b %Y')
+            except Exception:
+                label = period
+        history_points.append({
+            'label': label,
+            'mentions': int(row['mentions'] or 0),
+            'stores': int(row['stores'] or 0),
+        })
+
+    issue_total = max(current['issues'], 1)
+    issue_rows = []
+    for row in current_summary.get('top_issues', []):
+        count = int(row.get('count') or 0)
+        issue_rows.append({
+            'issue_type': str(row.get('issue_type') or 'Unspecified').replace('_', ' ').title(),
+            'count': count,
+            'pct': round((count / issue_total) * 100, 1) if current['issues'] else 0,
+        })
+
+    current_store_rows = []
+    for row in store_rows:
+        current_store_rows.append({
+            'retailer_code': row['retailer_code'],
+            'retailer_name': row['retailer_name'],
+            'mentions': int(row['mentions'] or 0),
+            'active_days': int(row['active_days'] or 0),
+            'skus': int(row['skus'] or 0),
+            'visits': int(row['visits'] or 0),
+            'issues': int(row['issues'] or 0),
+        })
+
+    salesperson_table = [
+        {
+            'salesman_name': row['salesman_name'],
+            'mentions': int(row['mentions'] or 0),
+            'stores': int(row['stores'] or 0),
+            'active_days': int(row['active_days'] or 0),
+        }
+        for row in salesperson_rows
+    ]
+
+    sales_store_rows = []
+    if kpis and kpis.get('top_stores') is not None and not kpis['top_stores'].empty:
+        sales_store_rows = [
+            {
+                'store': str(row['Store']),
+                'revenue': float(row['Revenue'] or 0),
+            }
+            for _, row in kpis['top_stores'].sort_values('Revenue', ascending=False).head(8).iterrows()
+        ]
+
+    activity_store_names = {str(row['retailer_name']).strip().lower() for row in current_store_rows}
+    sales_store_names = {str(row['store']).strip().lower() for row in sales_store_rows}
+
+    high_sales_low_activity = [
+        row for row in sales_store_rows
+        if str(row['store']).strip().lower() not in activity_store_names
+    ][:4]
+    high_activity_low_sales = [
+        row for row in current_store_rows
+        if str(row['retailer_name']).strip().lower() not in sales_store_names
+    ][:4]
+
+    matched_store_count = len(activity_store_names & sales_store_names)
+    coverage_ratio = 0
+    if kpis and float(kpis.get('num_stores') or 0) > 0:
+        coverage_ratio = round((matched_store_count / float(kpis.get('num_stores') or 1)) * 100, 1)
+
+    if current['mentions'] and current['stores']:
+        headline = f'Field execution touched {current["stores"]} stores across {current["active_days"]} active days.'
+        summary = (
+            f'{brand_name} recorded {current["visits"]} structured visits, '
+            f'{current["issues"]} issues, and {current["mentions"]} brand mentions in the current report period. '
+            f'{matched_store_count} of the active selling stores are directly evidenced in the activity log.'
+        )
+    else:
+        headline = 'This period has sales activity but little or no linked field evidence.'
+        summary = (
+            f'No report-scoped activity evidence was found for {brand_name}. '
+            'The report still shows sales and inventory correctly, but field execution commentary is limited until activity imports are available for the same period.'
+        )
+
+    recommended_actions = []
+    if high_sales_low_activity:
+        stores = ', '.join(row['store'] for row in high_sales_low_activity[:3])
+        recommended_actions.append(
+            f'Protect revenue-heavy stores with no matched activity log this period: {stores}.'
+        )
+    if high_activity_low_sales:
+        stores = ', '.join(row['retailer_name'] for row in high_activity_low_sales[:3])
+        recommended_actions.append(
+            f'Convert field attention into orders at activity-heavy outlets not showing up in top sales: {stores}.'
+        )
+    if current['issues'] and issue_rows:
+        recommended_actions.append(
+            f'Prioritise the dominant field issue ({issue_rows[0]["issue_type"]}) which represents {issue_rows[0]["pct"]}% of logged issues.'
+        )
+    if kpis and current['stores'] < int(kpis.get('num_stores') or 0):
+        recommended_actions.append(
+            f'Lift execution coverage from {current["stores"]} activity-tagged stores against {int(kpis.get("num_stores") or 0)} selling stores in the same period.'
+        )
+    if not recommended_actions:
+        recommended_actions.append(
+            'Maintain the current execution cadence and keep the next visit focused on availability, merchandising, and repeat-order conversion.'
+        )
+
+    empty.update({
+        'available': bool(history['mentions'] or current['mentions']),
+        'current': current,
+        'history': history,
+        'headline': headline,
+        'summary': summary,
+        'daily_points': daily_points,
+        'history_points': history_points,
+        'current_trend_svg': _mini_trend_svg(daily_points, 'mentions', stroke='#E8192C', fill='rgba(232,25,44,0.10)'),
+        'history_trend_svg': _mini_trend_svg(history_points, 'mentions', stroke='#1B2B5E', fill='rgba(27,43,94,0.10)'),
+        'issue_rows': issue_rows,
+        'store_rows': current_store_rows,
+        'salesperson_rows': salesperson_table,
+        'high_sales_low_activity': high_sales_low_activity,
+        'high_activity_low_sales': high_activity_low_sales,
+        'recommended_actions': recommended_actions,
+        'coverage_ratio': coverage_ratio,
+        'matched_store_count': matched_store_count,
+    })
+    return empty
+
+
 def _attach_reorder_trend(brand_name: str, kpis: dict | None,
                           report_type: str | None = None,
                           cutoff_date: str | None = None) -> dict | None:
@@ -1672,6 +2028,7 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
                 try:
                     report_context = _brand_report_context(brand_name, cutoff_date=end_date)
                     coach = _report_summary_payload(brand_name, kpis, ds.get_report(report_id))
+                    activity_report = _build_brand_activity_report(brand_name, report_id, kpis)
                     result_path = generate_pdf_html(
                         output_path=pdf_path,
                         brand_name=brand_name,
@@ -1687,6 +2044,7 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
                         growth_outlook=report_context.get('growth_outlook'),
                         gmv_window=report_context.get('gmv_window'),
                         coach=coach,
+                        activity_report=activity_report,
                     )
                     is_pdf = result_path.endswith('.pdf') and os.path.exists(result_path)
                     is_html = result_path.endswith('.html') and os.path.exists(result_path)
@@ -1705,6 +2063,7 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
                 try:
                     report_context = _brand_report_context(brand_name, cutoff_date=end_date)
                     coach = _report_summary_payload(brand_name, kpis, ds.get_report(report_id))
+                    activity_report = _build_brand_activity_report(brand_name, report_id, kpis)
                     generate_html(
                         output_path=html_path,
                         brand_name=brand_name,
@@ -1718,6 +2077,7 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
                         growth_outlook=report_context.get('growth_outlook'),
                         gmv_window=report_context.get('gmv_window'),
                         coach=coach,
+                        activity_report=activity_report,
                     )
                     return True, None
                 except Exception as exc:
@@ -2624,6 +2984,7 @@ def generate():
                 growth_outlook=report_context.get('growth_outlook'),
                 gmv_window=report_context.get('gmv_window'),
                 coach=coach,
+                activity_report=_build_brand_activity_report(brand_name, report_id, kpis),
             )
             ok_pdf += 1
         except Exception as e:
@@ -2644,6 +3005,7 @@ def generate():
                 growth_outlook=report_context.get('growth_outlook'),
                 gmv_window=report_context.get('gmv_window'),
                 coach=coach,
+                activity_report=_build_brand_activity_report(brand_name, report_id, kpis),
             )
             ok_html += 1
         except Exception as e:
@@ -3451,6 +3813,7 @@ def _build_brand_report_pdf_bytes(report_id: int, brand_name: str,
     avg_portfolio   = total_portfolio / max(len(all_brand_kpis), 1)
     report_context = _brand_report_context(brand_name, cutoff_date=report.get('end_date'))
     coach = _report_summary_payload(brand_name, kpis, report)
+    activity_report = _build_brand_activity_report(brand_name, report_id, kpis)
 
     # Use the premium 2-page print template (report_template.html)
     html = render_pdf_report_html(
@@ -3465,6 +3828,7 @@ def _build_brand_report_pdf_bytes(report_id: int, brand_name: str,
         growth_outlook=report_context.get('growth_outlook'),
         gmv_window=report_context.get('gmv_window'),
         coach=coach,
+        activity_report=activity_report,
     )
     return render_pdf_bytes(html)
 
@@ -3668,6 +4032,7 @@ def api_report_html(report_id, brand_name):
     total_portfolio = sum(b['total_revenue'] for b in all_bk)
     avg_portfolio   = total_portfolio / max(len(all_bk), 1)
     report_context = _brand_report_context(brand_name, cutoff_date=report.get('end_date'))
+    activity_report = _build_brand_activity_report(brand_name, report_id, kpis)
 
     try:
         html_content = render_html_report(
@@ -3682,6 +4047,7 @@ def api_report_html(report_id, brand_name):
             growth_outlook=report_context.get('growth_outlook'),
             gmv_window=report_context.get('gmv_window'),
             coach=_report_summary_payload(brand_name, kpis, report),
+            activity_report=activity_report,
         )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
