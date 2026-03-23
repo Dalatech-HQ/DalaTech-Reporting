@@ -258,7 +258,7 @@
     }
     .activity-stat-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 12px;
       margin-top: 16px;
     }
@@ -1513,14 +1513,19 @@
           </div>
           <div class="activity-stat-grid">
             <div class="activity-stat">
-              <div class="activity-stat-label">Current Visits</div>
-              <div class="activity-stat-value">{{ activity_report.current.visits }}</div>
-              <div class="activity-stat-sub">{{ activity_report.current.active_days }} active days · {{ activity_report.current.salespeople }} salespeople</div>
+              <div class="activity-stat-label">Activity Responses</div>
+              <div class="activity-stat-value">{{ activity_report.current.activities }}</div>
+              <div class="activity-stat-sub">{{ activity_report.current.active_days }} active days · {{ activity_report.current.survey_types }} survey types</div>
             </div>
             <div class="activity-stat">
               <div class="activity-stat-label">Stores Touched</div>
               <div class="activity-stat-value">{{ activity_report.current.stores }}</div>
-              <div class="activity-stat-sub">{{ activity_report.current.mentions }} brand mentions in this report period</div>
+              <div class="activity-stat-sub">{{ activity_report.current.visits }} structured visits · {{ activity_report.current.states }} states</div>
+            </div>
+            <div class="activity-stat">
+              <div class="activity-stat-label">Distinct Salesmen</div>
+              <div class="activity-stat-value">{{ activity_report.current.salespeople }}</div>
+              <div class="activity-stat-sub">{{ activity_report.current.retailer_types }} retailer types covered</div>
             </div>
             <div class="activity-stat">
               <div class="activity-stat-label">Issues Logged</div>
@@ -1536,13 +1541,83 @@
         </div>
 
         <div class="activity-card">
-          <div class="card-title">Current Activity Trend
+          <div class="card-title">Top Salesmen by Activity
+            <span class="card-title-sub">Field team members driving the most tracked responses for this brand</span>
+          </div>
+          {% if activity_report.top_salesmen_svg %}
+          <div class="activity-chart" style="margin-bottom:12px;">{{ activity_report.top_salesmen_svg | safe }}</div>
+          {% endif %}
+          {% if activity_report.salesman_activity_rows %}
+          <table class="activity-table">
+            <tr><th>Salesman</th><th style="width:90px;">Activities</th><th style="width:70px;">Stores</th><th style="width:70px;">Days</th></tr>
+            {% for row in activity_report.salesman_activity_rows %}
+            <tr>
+              <td>{{ row.salesman_name }}</td>
+              <td>{{ row.activities }}</td>
+              <td>{{ row.stores }}</td>
+              <td>{{ row.active_days }}</td>
+            </tr>
+            {% endfor %}
+          </table>
+          {% else %}
+          <div class="activity-empty">No salesman-level activity evidence is available for this brand in this report period.</div>
+          {% endif %}
+        </div>
+
+        <div class="activity-card">
+          <div class="card-title">Geographic Coverage
+            <span class="card-title-sub">State footprint for the current period activity record</span>
+          </div>
+          {% if activity_report.state_mix_svg %}
+          <div class="activity-chart" style="margin-bottom:12px;">{{ activity_report.state_mix_svg | safe }}</div>
+          {% endif %}
+          {% if activity_report.state_rows %}
+          <table class="activity-table">
+            <tr><th>State</th><th style="width:90px;">Activities</th><th style="width:70px;">Stores</th></tr>
+            {% for row in activity_report.state_rows %}
+            <tr>
+              <td>{{ row.retailer_state }}</td>
+              <td>{{ row.activities }}</td>
+              <td>{{ row.stores }}</td>
+            </tr>
+            {% endfor %}
+          </table>
+          {% else %}
+          <div class="activity-empty">No state-level activity coverage is available yet.</div>
+          {% endif %}
+        </div>
+
+        <div class="activity-card">
+          <div class="card-title">Activity Trend Over Time
             <span class="card-title-sub">Brand mentions across the report period</span>
           </div>
           {% if activity_report.current_trend_svg %}
           <div class="activity-chart">{{ activity_report.current_trend_svg | safe }}</div>
           {% else %}
           <div class="activity-empty">No report-scoped activity trend is available for this brand.</div>
+          {% endif %}
+        </div>
+
+        <div class="activity-card">
+          <div class="card-title">Retailer Type Distribution
+            <span class="card-title-sub">How this brand’s activity is distributed across outlet types</span>
+          </div>
+          {% if activity_report.retailer_type_svg %}
+          <div class="activity-chart" style="padding:6px 0;">{{ activity_report.retailer_type_svg | safe }}</div>
+          {% endif %}
+          {% if activity_report.retailer_type_rows %}
+          <table class="activity-table">
+            <tr><th>Retailer Type</th><th style="width:90px;">Activities</th><th style="width:70px;">Stores</th></tr>
+            {% for row in activity_report.retailer_type_rows %}
+            <tr>
+              <td>{{ row.retailer_type }}</td>
+              <td>{{ row.activities }}</td>
+              <td>{{ row.stores }}</td>
+            </tr>
+            {% endfor %}
+          </table>
+          {% else %}
+          <div class="activity-empty">No retailer-type distribution is available yet.</div>
           {% endif %}
         </div>
 
@@ -1584,26 +1659,25 @@
         </div>
 
         <div class="activity-card">
-          <div class="card-title">Field Team Coverage
-            <span class="card-title-sub">Salespeople tied to brand mentions in this report period</span>
+          <div class="card-title">Survey Mix
+            <span class="card-title-sub">Survey names contributing to the current period activity file</span>
           </div>
-          {% if activity_report.salesperson_svg %}
-          <div class="activity-chart" style="margin-bottom:12px;">{{ activity_report.salesperson_svg | safe }}</div>
+          {% if activity_report.survey_mix_svg %}
+          <div class="activity-chart" style="margin-bottom:12px;">{{ activity_report.survey_mix_svg | safe }}</div>
           {% endif %}
-          {% if activity_report.salesperson_rows %}
+          {% if activity_report.survey_rows %}
           <table class="activity-table">
-            <tr><th>Salesperson</th><th style="width:90px;">Mentions</th><th style="width:90px;">Stores</th><th style="width:90px;">Days</th></tr>
-            {% for row in activity_report.salesperson_rows %}
+            <tr><th>Survey</th><th style="width:90px;">Activities</th><th style="width:90px;">Stores</th></tr>
+            {% for row in activity_report.survey_rows %}
             <tr>
-              <td>{{ row.salesman_name }}</td>
-              <td>{{ row.mentions }}</td>
+              <td>{{ row.survey_name }}</td>
+              <td>{{ row.activities }}</td>
               <td>{{ row.stores }}</td>
-              <td>{{ row.active_days }}</td>
             </tr>
             {% endfor %}
           </table>
           {% else %}
-          <div class="activity-empty">No salesperson attribution is available for this brand yet.</div>
+          <div class="activity-empty">No survey-name distribution is available for this brand yet.</div>
           {% endif %}
         </div>
 
@@ -1629,6 +1703,29 @@
           </table>
           {% else %}
           <div class="activity-empty">No store-level activity evidence is available for this brand in this report period.</div>
+          {% endif %}
+        </div>
+
+        <div class="activity-card">
+          <div class="card-title">Activity Details
+            <span class="card-title-sub">Recent field records supporting the activity story</span>
+          </div>
+          {% if activity_report.detail_rows %}
+          <table class="activity-table">
+            <tr><th style="width:88px;">Date</th><th>Salesman</th><th>Retailer</th><th>City</th><th>Survey</th><th>Question</th></tr>
+            {% for row in activity_report.detail_rows %}
+            <tr>
+              <td>{{ row.activity_date }}</td>
+              <td>{{ row.salesman_name }}</td>
+              <td>{{ row.retailer_name }}</td>
+              <td>{{ row.retailer_city }}</td>
+              <td>{{ row.survey_name }}</td>
+              <td>{{ row.question }}</td>
+            </tr>
+            {% endfor %}
+          </table>
+          {% else %}
+          <div class="activity-empty">No detailed activity records are available for this brand in the current period.</div>
           {% endif %}
         </div>
 

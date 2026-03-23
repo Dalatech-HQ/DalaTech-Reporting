@@ -228,13 +228,48 @@ def _iter_brand_lookup(ds) -> Iterable[tuple[str, str, int]]:
     return rows
 
 
-def _extract_brand_mentions(text: str, ds) -> list[dict]:
+def _build_brand_lookup(ds):
+    return list(_iter_brand_lookup(ds))
+
+
+def _build_brand_resolution_cache(ds) -> dict[str, dict]:
+    cache = {}
+    if not ds:
+        return cache
+    for brand in ds.get_all_brand_master(status='all'):
+        cache[brand['canonical_name'].lower()] = brand
+        for alias in ds.get_brand_aliases(brand['id']):
+            cache[str(alias['alias_name']).strip().lower()] = brand
+    return cache
+
+
+def _build_sku_lookup(ds) -> dict[int, list[tuple[str, str]]]:
+    lookup: dict[int, list[tuple[str, str]]] = {}
+    if not ds:
+        return lookup
+    for brand in ds.get_all_brand_master(status='all'):
+        brand_id = brand['id']
+        rows = []
+        for sku in ds.get_brand_skus(brand_id, status='all'):
+            sku_name = str(sku['sku_name']).strip()
+            rows.append((sku_name.lower(), sku_name))
+        for alias in ds.get_sku_aliases(brand_id):
+            alias_name = str(alias['alias_name']).strip()
+            sku = ds.get_sku_master(alias['sku_id'])
+            if sku:
+                rows.append((alias_name.lower(), sku['sku_name']))
+        rows.sort(key=lambda item: len(item[0]), reverse=True)
+        lookup[brand_id] = rows
+    return lookup
+
+
+def _extract_brand_mentions(text: str, brand_lookup: list[tuple[str, str, int]] | None) -> list[dict]:
     norm = _norm_text(text)
-    if not norm or not ds:
+    if not norm or not brand_lookup:
         return []
     matches = []
     seen = set()
-    for canonical_name, alias_text, brand_id in _iter_brand_lookup(ds):
+    for canonical_name, alias_text, brand_id in brand_lookup:
         if len(alias_text) < 3:
             continue
         if alias_text in norm and canonical_name not in seen:
@@ -243,28 +278,18 @@ def _extract_brand_mentions(text: str, ds) -> list[dict]:
     return matches
 
 
-def _extract_sku_mentions(text: str, ds, brand_id: int | None) -> list[str]:
-    if not ds or not brand_id:
+def _extract_sku_mentions(text: str, sku_lookup: dict[int, list[tuple[str, str]]] | None, brand_id: int | None) -> list[str]:
+    if not sku_lookup or not brand_id:
         return []
     norm = _norm_text(text)
     if not norm:
         return []
     matches = []
     seen = set()
-    for sku in ds.get_brand_skus(brand_id, status='all'):
-        sku_name = str(sku['sku_name']).strip()
-        key = sku_name.lower()
-        if len(key) >= 4 and key in norm and sku_name not in seen:
-            matches.append(sku_name)
-            seen.add(sku_name)
-    for alias in ds.get_sku_aliases(brand_id):
-        alias_name = str(alias['alias_name']).strip()
-        key = alias_name.lower()
-        if len(key) >= 4 and key in norm:
-            sku = ds.get_sku_master(alias['sku_id'])
-            if sku and sku['sku_name'] not in seen:
-                matches.append(sku['sku_name'])
-                seen.add(sku['sku_name'])
+    for key, canonical_name in sku_lookup.get(brand_id, []):
+        if len(key) >= 4 and key in norm and canonical_name not in seen:
+            matches.append(canonical_name)
+            seen.add(canonical_name)
     return matches
 
 
@@ -307,6 +332,10 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
     brand_mentions = []
     unmatched_brand_candidates = set()
     unmatched_sku_candidates = set()
+    brand_lookup = _build_brand_lookup(ds)
+    brand_resolution_cache = _build_brand_resolution_cache(ds)
+    sku_lookup = _build_sku_lookup(ds)
+    brand_guess_cache: dict[str, dict | None] = {}
 
     total_rows = max(len(df), 1)
     for idx, row in enumerate(df.to_dict(orient='records'), start=1):
@@ -320,7 +349,10 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
         survey_guess = _extract_brand_candidate_from_survey(clean.get('survey_name'))
         brand_rows = []
         if survey_guess and ds:
-            resolved = ds.resolve_brand_master(survey_guess)
+            guess_key = survey_guess.lower()
+            if guess_key not in brand_guess_cache:
+                brand_guess_cache[guess_key] = brand_resolution_cache.get(guess_key) or ds.resolve_brand_master(survey_guess)
+            resolved = brand_guess_cache.get(guess_key)
             if resolved:
                 brand_rows.append({'brand_name': resolved['canonical_name'], 'brand_id': resolved['id'], 'source_kind': 'survey_name'})
             else:
@@ -331,7 +363,7 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
             for k in ('survey_name', 'question', 'label', 'answer')
         )
         brand_rows.extend(
-            {**match, 'source_kind': 'text'} for match in _extract_brand_mentions(text_blob, ds)
+            {**match, 'source_kind': 'text'} for match in _extract_brand_mentions(text_blob, brand_lookup)
         )
 
         deduped_brands = []
@@ -350,7 +382,7 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
         )
 
         for match in deduped_brands:
-            sku_names = _extract_sku_mentions(text_blob, ds, match['brand_id'])
+            sku_names = _extract_sku_mentions(text_blob, sku_lookup, match['brand_id'])
             if not sku_names and clean.get('answer') and 'ml' in clean['answer'].lower():
                 unmatched_sku_candidates.add((match['brand_name'], clean['answer']))
             brand_mentions.append({

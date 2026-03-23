@@ -1230,7 +1230,7 @@
 
     .activity-stat-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 8px;
       margin-top: 8px;
     }
@@ -1832,7 +1832,7 @@
         <div class="footer-icon">&#127760;</div>
         <div class="footer-text">info@dalatechnologies.com<br>www.dalatechnologies.com</div>
       </div>
-      <div class="footer-page-num">2 / {% if activity_report %}3{% else %}2{% endif %}</div>
+      <div class="footer-page-num">2 / {% if activity_report %}4{% else %}2{% endif %}</div>
     </div>
   </div>
 
@@ -1877,37 +1877,93 @@
         {% endif %}
       </div>
     </div>
-    <div class="activity-stat-grid">
-      <div class="activity-stat">
-        <div class="activity-stat-label">Current Visits</div>
-        <div class="activity-stat-value">{{ activity_report.current.visits }}</div>
-        <div class="activity-stat-sub">{{ activity_report.current.active_days }} active days · {{ activity_report.current.salespeople }} salespeople</div>
-      </div>
-      <div class="activity-stat">
-        <div class="activity-stat-label">Stores Touched</div>
-        <div class="activity-stat-value">{{ activity_report.current.stores }}</div>
-        <div class="activity-stat-sub">{{ activity_report.current.mentions }} mentions in current period</div>
-      </div>
-      <div class="activity-stat">
-        <div class="activity-stat-label">Issues Logged</div>
-        <div class="activity-stat-value">{{ activity_report.current.issues }}</div>
-        <div class="activity-stat-sub">{{ activity_report.current.opportunities }} opportunities · {{ activity_report.current.photos }} photos</div>
-      </div>
-      <div class="activity-stat">
-        <div class="activity-stat-label">History</div>
-        <div class="activity-stat-value">{{ activity_report.history.mentions }}</div>
-        <div class="activity-stat-sub">{{ activity_report.history.stores }} stores · {{ activity_report.history.all_time_salespeople }} salespeople all-time</div>
-      </div>
+  <div class="activity-stat-grid">
+    <div class="activity-stat">
+      <div class="activity-stat-label">Activity Responses</div>
+      <div class="activity-stat-value">{{ activity_report.current.activities }}</div>
+      <div class="activity-stat-sub">{{ activity_report.current.active_days }} active days · {{ activity_report.current.survey_types }} survey types</div>
+    </div>
+    <div class="activity-stat">
+      <div class="activity-stat-label">Stores Touched</div>
+      <div class="activity-stat-value">{{ activity_report.current.stores }}</div>
+      <div class="activity-stat-sub">{{ activity_report.current.visits }} structured visits · {{ activity_report.current.states }} states</div>
+    </div>
+    <div class="activity-stat">
+      <div class="activity-stat-label">Distinct Salesmen</div>
+      <div class="activity-stat-value">{{ activity_report.current.salespeople }}</div>
+      <div class="activity-stat-sub">{{ activity_report.current.retailer_types }} retailer types covered</div>
+    </div>
+    <div class="activity-stat">
+      <div class="activity-stat-label">Issues Logged</div>
+      <div class="activity-stat-value">{{ activity_report.current.issues }}</div>
+      <div class="activity-stat-sub">{{ activity_report.current.opportunities }} opportunities · {{ activity_report.current.photos }} photos</div>
+    </div>
+    <div class="activity-stat">
+      <div class="activity-stat-label">History</div>
+      <div class="activity-stat-value">{{ activity_report.history.mentions }}</div>
+      <div class="activity-stat-sub">{{ activity_report.history.stores }} stores · {{ activity_report.history.all_time_salespeople }} salespeople all-time</div>
     </div>
   </div>
+</div>
 
-  <div class="activity-grid">
+<div class="activity-grid">
+  <div class="activity-card">
+      <div class="activity-card-title">Top Salesmen by Activity <span>Field reps with the highest tracked responses</span></div>
+      {% if activity_report.top_salesmen_svg %}
+      <div class="activity-svg-shell">{{ activity_report.top_salesmen_svg | safe }}</div>
+      {% endif %}
+      {% if activity_report.salesman_activity_rows %}
+      <table class="activity-table">
+        <tr><th>Salesman</th><th style="width:40px;">Act.</th><th style="width:40px;">Stores</th><th style="width:40px;">Days</th></tr>
+        {% for row in activity_report.salesman_activity_rows[:8] %}
+        <tr><td>{{ row.salesman_name }}</td><td>{{ row.activities }}</td><td>{{ row.stores }}</td><td>{{ row.active_days }}</td></tr>
+        {% endfor %}
+      </table>
+      {% else %}
+      <div class="activity-list-item"><p>No salesman-level activity evidence is available for this brand in this report period.</p></div>
+      {% endif %}
+    </div>
+
     <div class="activity-card">
-      <div class="activity-card-title">Current Activity Trend <span>Brand mentions across the report period</span></div>
+      <div class="activity-card-title">Geographic Coverage <span>State footprint for the current activity record</span></div>
+      {% if activity_report.state_mix_svg %}
+      <div class="activity-svg-shell">{{ activity_report.state_mix_svg | safe }}</div>
+      {% endif %}
+      {% if activity_report.state_rows %}
+      <table class="activity-table">
+        <tr><th>State</th><th style="width:45px;">Act.</th><th style="width:40px;">Stores</th></tr>
+        {% for row in activity_report.state_rows[:8] %}
+        <tr><td>{{ row.retailer_state }}</td><td>{{ row.activities }}</td><td>{{ row.stores }}</td></tr>
+        {% endfor %}
+      </table>
+      {% else %}
+      <div class="activity-list-item"><p>No state-level activity coverage is available yet.</p></div>
+      {% endif %}
+    </div>
+
+    <div class="activity-card">
+      <div class="activity-card-title">Activity Trend Over Time <span>Brand mentions across the report period</span></div>
       {% if activity_report.current_trend_svg %}
       <div class="activity-svg-shell">{{ activity_report.current_trend_svg | safe }}</div>
       {% else %}
       <div class="activity-list-item"><p>No report-scoped activity trend is available for this brand.</p></div>
+      {% endif %}
+    </div>
+
+    <div class="activity-card">
+      <div class="activity-card-title">Retailer Type Distribution <span>How activity is distributed across outlet types</span></div>
+      {% if activity_report.retailer_type_svg %}
+      <div class="activity-svg-shell">{{ activity_report.retailer_type_svg | safe }}</div>
+      {% endif %}
+      {% if activity_report.retailer_type_rows %}
+      <table class="activity-table">
+        <tr><th>Type</th><th style="width:45px;">Act.</th><th style="width:40px;">Stores</th></tr>
+        {% for row in activity_report.retailer_type_rows[:8] %}
+        <tr><td>{{ row.retailer_type }}</td><td>{{ row.activities }}</td><td>{{ row.stores }}</td></tr>
+        {% endfor %}
+      </table>
+      {% else %}
+      <div class="activity-list-item"><p>No retailer-type distribution is available yet.</p></div>
       {% endif %}
     </div>
 
@@ -1928,6 +1984,69 @@
       {% endif %}
     </div>
 
+    <div class="activity-card">
+      <div class="activity-card-title">Survey Mix <span>Survey names contributing to the current period activity file</span></div>
+      {% if activity_report.survey_mix_svg %}
+      <div class="activity-svg-shell" style="margin-bottom:7px;">{{ activity_report.survey_mix_svg | safe }}</div>
+      {% endif %}
+      {% if activity_report.survey_rows %}
+      <table class="activity-table">
+        <tr><th>Survey</th><th style="width:45px;">Act.</th><th style="width:40px;">Stores</th></tr>
+        {% for row in activity_report.survey_rows[:8] %}
+        <tr><td>{{ row.survey_name }}</td><td>{{ row.activities }}</td><td>{{ row.stores }}</td></tr>
+        {% endfor %}
+      </table>
+      {% else %}
+      <div class="activity-list-item"><p>No survey-name distribution is available for this brand yet.</p></div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <div class="footer-red-strip"></div>
+    <div class="footer-contact">
+      <div class="footer-col">
+        <div class="footer-icon">&#128205;</div>
+        <div class="footer-text">Ija Ota, Ogun State,<br>Nigeria.</div>
+      </div>
+      <div class="footer-col">
+        <div class="footer-icon">&#128222;</div>
+        <div class="footer-text">+234 814 882 4115<br>+234 806 240 2350</div>
+      </div>
+      <div class="footer-col">
+        <div class="footer-icon">&#127760;</div>
+        <div class="footer-text">info@dalatechnologies.com<br>www.dalatechnologies.com</div>
+      </div>
+      <div class="footer-page-num">3 / 4</div>
+    </div>
+  </div>
+
+</div><!-- /page 3 -->
+
+<div class="page page-break">
+
+  <div class="page-header">
+    <div class="header-left">
+      <div class="red-accent-bar"></div>
+      {% if logo_path %}
+        <img class="dala-logo" src="{{ logo_path }}" alt="DALA Technologies">
+      {% else %}
+        <div class="dala-logo-ph">DALA</div>
+      {% endif %}
+    </div>
+    <div class="diamond-cluster">
+      <div class="d" style="width:32px;height:32px;background:#E8192C;top:2px;right:4px;"></div>
+      <div class="d" style="width:32px;height:32px;background:#1B2B5E;top:2px;right:30px;opacity:0.88;"></div>
+      <div class="d" style="width:32px;height:32px;background:#1B2B5E;top:26px;right:0px;opacity:0.92;"></div>
+      <div class="d" style="width:24px;height:24px;background:#E8192C;top:28px;right:28px;opacity:0.72;"></div>
+      <div class="d" style="width:18px;height:18px;background:#1B2B5E;top:46px;right:6px;opacity:0.6;"></div>
+      <div class="d" style="width:13px;height:13px;background:#E8192C;top:50px;right:28px;opacity:0.5;"></div>
+    </div>
+  </div>
+
+  <div class="tagline-bar">BOOSTING REVENUE AND ENHANCING BRAND VALUE</div>
+
+  <div class="activity-grid">
     <div class="activity-card">
       <div class="activity-card-title">Store Activity Ranking <span>Where the brand was seen in trade</span></div>
       {% if activity_report.store_ranking_svg %}
@@ -1965,6 +2084,27 @@
       </table>
       {% else %}
       <div class="activity-list-item"><p>No salesperson attribution is available for this brand yet.</p></div>
+      {% endif %}
+    </div>
+
+    <div class="activity-card">
+      <div class="activity-card-title">Activity Details <span>Recent raw field records supporting the report</span></div>
+      {% if activity_report.detail_rows %}
+      <table class="activity-table">
+        <tr><th style="width:48px;">Date</th><th>Salesman</th><th>Retailer</th><th>City</th><th>Survey</th><th>Question</th></tr>
+        {% for row in activity_report.detail_rows[:10] %}
+        <tr>
+          <td>{{ row.activity_date[5:] if row.activity_date else '' }}</td>
+          <td>{{ row.salesman_name }}</td>
+          <td>{{ row.retailer_name }}</td>
+          <td>{{ row.retailer_city }}</td>
+          <td>{{ row.survey_name }}</td>
+          <td>{{ row.question }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}
+      <div class="activity-list-item"><p>No detailed activity records are available for this brand in the current period.</p></div>
       {% endif %}
     </div>
 
@@ -2028,11 +2168,11 @@
         <div class="footer-icon">&#127760;</div>
         <div class="footer-text">info@dalatechnologies.com<br>www.dalatechnologies.com</div>
       </div>
-      <div class="footer-page-num">3 / 3</div>
+      <div class="footer-page-num">4 / 4</div>
     </div>
   </div>
 
-</div><!-- /page 3 -->
+</div><!-- /page 4 -->
 {% endif %}
 
 </body>

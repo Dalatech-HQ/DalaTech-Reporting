@@ -22,7 +22,7 @@ Routes:
   GET  /api/reports         JSON list of all reports
 """
 
-import os, io, json, traceback, shutil, uuid, threading, tempfile, zipfile, hashlib
+import os, io, json, traceback, shutil, uuid, threading, tempfile, zipfile, hashlib, math
 from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
 from datetime import datetime
@@ -541,6 +541,66 @@ def _quadrant_svg(high_sales_low_activity: list[dict], high_activity_low_sales: 
     return ''.join(parts)
 
 
+def _donut_svg(rows: list[dict], value_key: str, label_key: str,
+               width: int = 420, height: int = 250,
+               colors: list[str] | None = None) -> str:
+    rows = [row for row in (rows or []) if float(row.get(value_key) or 0) > 0]
+    if not rows:
+        return ''
+
+    palette = colors or ['#E8192C', '#1B2B5E', '#2E86C1', '#1A7A4A', '#C0922A', '#8E44AD', '#5D6D7E']
+    total = sum(float(row.get(value_key) or 0) for row in rows) or 1.0
+    cx = 110
+    cy = height / 2
+    outer_r = 74
+    inner_r = 42
+    legend_x = 220
+    legend_y = 36
+
+    def _polar(radius: float, angle_deg: float) -> tuple[float, float]:
+        angle_rad = math.radians(angle_deg - 90)
+        return cx + radius * math.cos(angle_rad), cy + radius * math.sin(angle_rad)
+
+    parts = [
+        f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" style="display:block;width:100%;height:{height}px;">',
+        f'<circle cx="{cx}" cy="{cy}" r="{outer_r}" fill="#F4F7FC" />',
+    ]
+
+    start_angle = 0.0
+    legend_rows = []
+    for index, row in enumerate(rows[:6]):
+        value = float(row.get(value_key) or 0)
+        if value <= 0:
+            continue
+        sweep = (value / total) * 360.0
+        end_angle = start_angle + sweep
+        x1, y1 = _polar(outer_r, start_angle)
+        x2, y2 = _polar(outer_r, end_angle)
+        large_arc = 1 if sweep > 180 else 0
+        color = palette[index % len(palette)]
+        path = (
+            f'M {cx},{cy} '
+            f'L {x1:.2f},{y1:.2f} '
+            f'A {outer_r},{outer_r} 0 {large_arc} 1 {x2:.2f},{y2:.2f} Z'
+        )
+        parts.append(f'<path d="{path}" fill="{color}" opacity="0.94"><title>{row.get(label_key)}: {value:,.0f}</title></path>')
+        pct = (value / total) * 100.0
+        label = str(row.get(label_key) or '')
+        legend_rows.append(
+            f'<rect x="{legend_x}" y="{legend_y + index * 28}" width="12" height="12" rx="3" fill="{color}"/>'
+            f'<text x="{legend_x + 18}" y="{legend_y + 10 + index * 28}" font-size="11" fill="#1B2B5E" font-weight="700">{label[:28]}</text>'
+            f'<text x="{width - 8}" y="{legend_y + 10 + index * 28}" text-anchor="end" font-size="11" fill="#6F7B92">{pct:.1f}%</text>'
+        )
+        start_angle = end_angle
+
+    parts.append(f'<circle cx="{cx}" cy="{cy}" r="{inner_r}" fill="#FFFFFF"/>')
+    parts.append(f'<text x="{cx}" y="{cy - 6}" text-anchor="middle" font-size="12" fill="#7A849E" font-weight="700">Total</text>')
+    parts.append(f'<text x="{cx}" y="{cy + 16}" text-anchor="middle" font-size="22" fill="#1B2B5E" font-weight="800">{int(total):,}</text>')
+    parts.extend(legend_rows)
+    parts.append('</svg>')
+    return ''.join(parts)
+
+
 def _build_brand_activity_report(brand_name: str, report_id: int | None,
                                  kpis: dict | None = None) -> dict:
     brand_name = str(brand_name or '').strip()
@@ -563,11 +623,20 @@ def _build_brand_activity_report(brand_name: str, report_id: int | None,
         'issue_rows': [],
         'store_rows': [],
         'salesperson_rows': [],
+        'salesman_activity_rows': [],
+        'survey_rows': [],
+        'retailer_type_rows': [],
+        'state_rows': [],
+        'detail_rows': [],
         'high_sales_low_activity': [],
         'high_activity_low_sales': [],
         'recommended_actions': [],
         'coverage_ratio': 0,
         'matched_store_count': 0,
+        'top_salesmen_svg': '',
+        'survey_mix_svg': '',
+        'retailer_type_svg': '',
+        'state_mix_svg': '',
     }
     if not brand_name:
         return empty
@@ -580,6 +649,22 @@ def _build_brand_activity_report(brand_name: str, report_id: int | None,
     if report_id:
         report_clause = ' AND abm.report_id=?'
         report_params.append(report_id)
+
+    brand_scope_cte = """
+        WITH brand_scope AS (
+            SELECT DISTINCT
+                abm.report_id,
+                abm.activity_date,
+                abm.retailer_code,
+                COALESCE(NULLIF(abm.retailer_name, ''), abm.retailer_code) AS retailer_name,
+                LOWER(COALESCE(abm.brand_name, '')) AS brand_key
+            FROM activity_brand_mentions abm
+            WHERE LOWER(COALESCE(abm.brand_name, ''))=LOWER(?)"""
+    brand_scope_params: list[object] = [brand_name]
+    if report_id:
+        brand_scope_cte += " AND abm.report_id=?"
+        brand_scope_params.append(report_id)
+    brand_scope_cte += "\n        )\n"
 
     with ds._connect() as conn:
         daily_rows = conn.execute(
@@ -618,28 +703,50 @@ def _build_brand_activity_report(brand_name: str, report_id: int | None,
             (brand_name,),
         ).fetchone()
         store_rows = conn.execute(
-            f"""SELECT abm.retailer_code,
-                       COALESCE(NULLIF(abm.retailer_name, ''), abm.retailer_code) AS retailer_name,
-                       COUNT(DISTINCT abm.id) AS mentions,
-                       COUNT(DISTINCT abm.activity_date) AS active_days,
-                       COUNT(DISTINCT COALESCE(NULLIF(abm.sku_name, ''), NULL)) AS skus,
-                       COUNT(DISTINCT av.id) AS visits,
-                       COUNT(DISTINCT ai.id) AS issues
-                  FROM activity_brand_mentions abm
-             LEFT JOIN activity_visits av
-                    ON av.retailer_code = abm.retailer_code
-                   AND av.activity_date = abm.activity_date
-                   {'AND av.report_id = abm.report_id' if report_id else ''}
-             LEFT JOIN activity_issues ai
-                    ON ai.retailer_code = abm.retailer_code
-                   AND ai.activity_date = abm.activity_date
-                   AND LOWER(COALESCE(ai.brand_name, ''))=LOWER(abm.brand_name)
-                   {'AND ai.report_id = abm.report_id' if report_id else ''}
-                 WHERE LOWER(COALESCE(abm.brand_name, ''))=LOWER(?){report_clause}
-                 GROUP BY abm.retailer_code, COALESCE(NULLIF(abm.retailer_name, ''), abm.retailer_code)
-                 ORDER BY mentions DESC, retailer_name ASC
+            f"""{brand_scope_cte}
+                SELECT s.retailer_code,
+                       s.retailer_name,
+                       s.mentions,
+                       s.active_days,
+                       s.skus,
+                       COALESCE(v.visits, 0) AS visits,
+                       COALESCE(i.issues, 0) AS issues
+                  FROM (
+                        SELECT abm.retailer_code,
+                               COALESCE(NULLIF(abm.retailer_name, ''), abm.retailer_code) AS retailer_name,
+                               COUNT(*) AS mentions,
+                               COUNT(DISTINCT abm.activity_date) AS active_days,
+                               COUNT(DISTINCT COALESCE(NULLIF(abm.sku_name, ''), NULL)) AS skus
+                          FROM activity_brand_mentions abm
+                         WHERE LOWER(COALESCE(abm.brand_name, ''))=LOWER(?){report_clause}
+                         GROUP BY abm.retailer_code, COALESCE(NULLIF(abm.retailer_name, ''), abm.retailer_code)
+                    ) s
+             LEFT JOIN (
+                        SELECT bs.retailer_code,
+                               COUNT(DISTINCT av.id) AS visits
+                          FROM brand_scope bs
+                          JOIN activity_visits av
+                            ON av.retailer_code = bs.retailer_code
+                           AND av.activity_date = bs.activity_date
+                           AND av.report_id = bs.report_id
+                         GROUP BY bs.retailer_code
+                    ) v
+                    ON v.retailer_code = s.retailer_code
+             LEFT JOIN (
+                        SELECT bs.retailer_code,
+                               COUNT(DISTINCT ai.id) AS issues
+                          FROM brand_scope bs
+                          JOIN activity_issues ai
+                            ON ai.retailer_code = bs.retailer_code
+                           AND ai.activity_date = bs.activity_date
+                           AND ai.report_id = bs.report_id
+                           AND LOWER(COALESCE(ai.brand_name, '')) = bs.brand_key
+                         GROUP BY bs.retailer_code
+                    ) i
+                    ON i.retailer_code = s.retailer_code
+                 ORDER BY s.mentions DESC, s.retailer_name ASC
                  LIMIT 12""",
-            (brand_name, *report_params),
+            (*brand_scope_params, brand_name, *report_params),
         ).fetchall()
         salesperson_rows = conn.execute(
             f"""SELECT COALESCE(NULLIF(ae.salesman_name, ''), 'Unassigned') AS salesman_name,
@@ -657,8 +764,78 @@ def _build_brand_activity_report(brand_name: str, report_id: int | None,
                  LIMIT 10""",
             (brand_name, *report_params),
         ).fetchall()
+        brand_event_from = f"""{brand_scope_cte}
+            SELECT ae.*
+              FROM brand_scope bs
+              JOIN activity_events ae
+                ON ae.retailer_code = bs.retailer_code
+               AND ae.activity_date = bs.activity_date
+               AND ae.report_id = bs.report_id"""
+        brand_event_params = list(brand_scope_params)
+
+        survey_rows = conn.execute(
+            f"""WITH scoped_events AS ({brand_event_from})
+                SELECT COALESCE(NULLIF(survey_name, ''), 'Unspecified') AS survey_name,
+                       COUNT(*) AS activities,
+                       COUNT(DISTINCT retailer_code) AS stores
+                  FROM scoped_events
+                 GROUP BY COALESCE(NULLIF(survey_name, ''), 'Unspecified')
+                 ORDER BY activities DESC, survey_name ASC
+                 LIMIT 10""",
+            brand_event_params,
+        ).fetchall()
+        retailer_type_rows = conn.execute(
+            f"""WITH scoped_events AS ({brand_event_from})
+                SELECT COALESCE(NULLIF(retailer_type, ''), 'Unspecified') AS retailer_type,
+                       COUNT(*) AS activities,
+                       COUNT(DISTINCT retailer_code) AS stores
+                  FROM scoped_events
+                 GROUP BY COALESCE(NULLIF(retailer_type, ''), 'Unspecified')
+                 ORDER BY activities DESC, retailer_type ASC
+                 LIMIT 8""",
+            brand_event_params,
+        ).fetchall()
+        state_rows = conn.execute(
+            f"""WITH scoped_events AS ({brand_event_from})
+                SELECT COALESCE(NULLIF(retailer_state, ''), 'Unspecified') AS retailer_state,
+                       COUNT(*) AS activities,
+                       COUNT(DISTINCT retailer_code) AS stores
+                  FROM scoped_events
+                 GROUP BY COALESCE(NULLIF(retailer_state, ''), 'Unspecified')
+                 ORDER BY activities DESC, retailer_state ASC
+                 LIMIT 8""",
+            brand_event_params,
+        ).fetchall()
+        salesman_activity_rows = conn.execute(
+            f"""WITH scoped_events AS ({brand_event_from})
+                SELECT COALESCE(NULLIF(salesman_name, ''), 'Unassigned') AS salesman_name,
+                       COUNT(*) AS activities,
+                       COUNT(DISTINCT retailer_code) AS stores,
+                       COUNT(DISTINCT activity_date) AS active_days
+                  FROM scoped_events
+                 GROUP BY COALESCE(NULLIF(salesman_name, ''), 'Unassigned')
+                 ORDER BY activities DESC, salesman_name ASC
+                 LIMIT 10""",
+            brand_event_params,
+        ).fetchall()
+        detail_rows = conn.execute(
+            f"""WITH scoped_events AS ({brand_event_from})
+                SELECT activity_date,
+                       COALESCE(NULLIF(salesman_name, ''), 'Unassigned') AS salesman_name,
+                       COALESCE(NULLIF(retailer_name, ''), retailer_code) AS retailer_name,
+                       COALESCE(NULLIF(retailer_city, ''), retailer_state, 'Unknown') AS retailer_city,
+                       COALESCE(NULLIF(survey_name, ''), 'Unspecified') AS survey_name,
+                       question,
+                       label,
+                       answer
+                  FROM scoped_events
+                 ORDER BY activity_date DESC, id DESC
+                 LIMIT 14""",
+            brand_event_params,
+        ).fetchall()
 
     current = {
+        'activities': int(current_summary.get('totals', {}).get('events', 0)),
         'mentions': int(current_summary.get('totals', {}).get('events', 0)),
         'stores': int(current_summary.get('totals', {}).get('stores', 0)),
         'active_days': int(current_summary.get('totals', {}).get('active_days', 0)),
@@ -667,6 +844,9 @@ def _build_brand_activity_report(brand_name: str, report_id: int | None,
         'issues': int(current_summary.get('totals', {}).get('issues', 0)),
         'opportunities': int(current_summary.get('totals', {}).get('opportunities', 0)),
         'photos': int(current_summary.get('totals', {}).get('photos', 0)),
+        'survey_types': len(survey_rows),
+        'states': len(state_rows),
+        'retailer_types': len(retailer_type_rows),
     }
     history = {
         'mentions': int(history_summary.get('mentions', 0)),
@@ -731,6 +911,52 @@ def _build_brand_activity_report(brand_name: str, report_id: int | None,
         }
         for row in salesperson_rows
     ]
+    salesman_activity_table = [
+        {
+            'salesman_name': row['salesman_name'],
+            'activities': int(row['activities'] or 0),
+            'stores': int(row['stores'] or 0),
+            'active_days': int(row['active_days'] or 0),
+        }
+        for row in salesman_activity_rows
+    ]
+    survey_table = [
+        {
+            'survey_name': row['survey_name'],
+            'activities': int(row['activities'] or 0),
+            'stores': int(row['stores'] or 0),
+        }
+        for row in survey_rows
+    ]
+    retailer_type_table = [
+        {
+            'retailer_type': row['retailer_type'],
+            'activities': int(row['activities'] or 0),
+            'stores': int(row['stores'] or 0),
+        }
+        for row in retailer_type_rows
+    ]
+    state_table = [
+        {
+            'retailer_state': row['retailer_state'],
+            'activities': int(row['activities'] or 0),
+            'stores': int(row['stores'] or 0),
+        }
+        for row in state_rows
+    ]
+    detail_table = [
+        {
+            'activity_date': row['activity_date'],
+            'salesman_name': row['salesman_name'],
+            'retailer_name': row['retailer_name'],
+            'retailer_city': row['retailer_city'],
+            'survey_name': row['survey_name'],
+            'question': str(row['question'] or '')[:82],
+            'label': str(row['label'] or '')[:40],
+            'answer': str(row['answer'] or '')[:56],
+        }
+        for row in detail_rows
+    ]
 
     sales_store_rows = []
     if kpis and kpis.get('top_stores') is not None and not kpis['top_stores'].empty:
@@ -759,12 +985,12 @@ def _build_brand_activity_report(brand_name: str, report_id: int | None,
     if kpis and float(kpis.get('num_stores') or 0) > 0:
         coverage_ratio = round((matched_store_count / float(kpis.get('num_stores') or 1)) * 100, 1)
 
-    if current['mentions'] and current['stores']:
-        headline = f'Field execution touched {current["stores"]} stores across {current["active_days"]} active days.'
+    if current['activities'] and current['stores']:
+        headline = f'Field execution covered {current["stores"]} retailers across {current["active_days"]} active days.'
         summary = (
-            f'{brand_name} recorded {current["visits"]} structured visits, '
-            f'{current["issues"]} issues, and {current["mentions"]} brand mentions in the current report period. '
-            f'{matched_store_count} of the active selling stores are directly evidenced in the activity log.'
+            f'{brand_name} logged {current["activities"]} activity responses, {current["visits"]} structured visits, '
+            f'{current["issues"]} issues, and {current["survey_types"]} survey types in the current report period. '
+            f'{matched_store_count} active selling stores are directly evidenced in the activity log, across {current["states"]} states.'
         )
     else:
         headline = 'This period has sales activity but little or no linked field evidence.'
@@ -788,6 +1014,16 @@ def _build_brand_activity_report(brand_name: str, report_id: int | None,
         recommended_actions.append(
             f'Prioritise the dominant field issue ({issue_rows[0]["issue_type"]}) which represents {issue_rows[0]["pct"]}% of logged issues.'
         )
+    if salesman_activity_table:
+        lead_rep = salesman_activity_table[0]
+        recommended_actions.append(
+            f'Use {lead_rep["salesman_name"]} as the reference playbook: {lead_rep["activities"]} activity responses across {lead_rep["stores"]} retailers.'
+        )
+    if retailer_type_table:
+        lead_type = retailer_type_table[0]
+        recommended_actions.append(
+            f'Keep execution weighted toward {lead_type["retailer_type"]}: it accounts for {lead_type["activities"]} tracked responses this period.'
+        )
     if kpis and current['stores'] < int(kpis.get('num_stores') or 0):
         recommended_actions.append(
             f'Lift execution coverage from {current["stores"]} activity-tagged stores against {int(kpis.get("num_stores") or 0)} selling stores in the same period.'
@@ -810,9 +1046,14 @@ def _build_brand_activity_report(brand_name: str, report_id: int | None,
         'issue_rows': issue_rows,
         'store_rows': current_store_rows,
         'salesperson_rows': salesperson_table,
+        'salesman_activity_rows': salesman_activity_table,
+        'survey_rows': survey_table,
+        'retailer_type_rows': retailer_type_table,
+        'state_rows': state_table,
+        'detail_rows': detail_table,
         'high_sales_low_activity': high_sales_low_activity,
         'high_activity_low_sales': high_activity_low_sales,
-        'recommended_actions': recommended_actions,
+        'recommended_actions': recommended_actions[:6],
         'coverage_ratio': coverage_ratio,
         'matched_store_count': matched_store_count,
         'issue_mix_svg': _horizontal_bar_svg(
@@ -839,6 +1080,40 @@ def _build_brand_activity_report(brand_name: str, report_id: int | None,
             'salesman_name',
             value_fmt=lambda v: f'{int(v)} men.',
             color='#2E86C1',
+            width=620,
+            bar_height=24,
+        ),
+        'top_salesmen_svg': _horizontal_bar_svg(
+            salesman_activity_table,
+            'activities',
+            'salesman_name',
+            value_fmt=lambda v: f'{int(v)} act.',
+            color='#8E111B',
+            width=620,
+            bar_height=24,
+        ),
+        'survey_mix_svg': _horizontal_bar_svg(
+            survey_table,
+            'activities',
+            'survey_name',
+            value_fmt=lambda v: f'{int(v)}',
+            color='#C8191E',
+            width=620,
+            bar_height=24,
+        ),
+        'retailer_type_svg': _donut_svg(
+            retailer_type_table,
+            'activities',
+            'retailer_type',
+            width=420,
+            height=250,
+        ),
+        'state_mix_svg': _horizontal_bar_svg(
+            state_table,
+            'activities',
+            'retailer_state',
+            value_fmt=lambda v: f'{int(v)}',
+            color='#1A7A4A',
             width=620,
             bar_height=24,
         ),
