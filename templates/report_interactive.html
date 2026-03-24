@@ -214,6 +214,60 @@
     }
     .coach-signal-item:last-child { border-bottom: 0; padding-bottom: 0; }
     .coach-signal-item strong { display:block; margin-bottom:4px; }
+    .executive-brief {
+      margin: 16px 20px 0;
+      display:grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .brief-card {
+      background:#fff;
+      border-radius: 14px;
+      border:1px solid rgba(27,43,94,0.08);
+      box-shadow: var(--shadow);
+      padding: 14px 16px;
+    }
+    .brief-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .brief-value {
+      font-size: 24px;
+      line-height: 1.05;
+      font-weight: 800;
+      color: var(--navy);
+      margin-bottom: 6px;
+    }
+    .brief-copy {
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--muted);
+    }
+    .brief-copy strong { color: var(--text); }
+    .section-divider {
+      display:flex;
+      align-items:flex-end;
+      justify-content:space-between;
+      gap: 12px;
+      margin: 18px 0 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--gray);
+    }
+    .section-divider h3 {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--navy);
+    }
+    .section-divider span {
+      font-size: 11px;
+      color: var(--muted);
+      max-width: 360px;
+      text-align: right;
+    }
 
     .activity-shell {
       display: grid;
@@ -306,14 +360,17 @@
       text-transform: uppercase;
       letter-spacing: 0.45px;
       color: var(--muted);
-      padding: 10px 0;
+      padding: 7px 8px;
       border-bottom: 1px solid #e4e9f4;
+      background: #f7f9fc;
     }
     .activity-table td {
-      padding: 10px 0;
+      padding: 7px 8px;
       border-bottom: 1px solid #edf1f7;
       vertical-align: top;
+      font-size: 11.5px;
     }
+    .activity-table tr:nth-child(even) td { background:#fbfcfe; }
     .activity-table tr:last-child td { border-bottom: 0; }
     .activity-bar-track {
       height: 8px;
@@ -991,19 +1048,20 @@
     .detail-table th {
       background: var(--navy);
       color: white;
-      font-size: 10.5px;
+      font-size: 10px;
       font-weight: 600;
-      padding: 7px 10px;
+      padding: 6px 9px;
       text-align: left;
     }
 
     .detail-table td {
-      font-size: 11px;
-      padding: 6px 10px;
+      font-size: 10.8px;
+      padding: 5px 9px;
       border-bottom: 1px solid var(--bg);
       color: var(--text);
     }
 
+    .detail-table tr:nth-child(even) td { background:#FBFCFE; }
     .detail-table tr:hover td { background: var(--bg); }
     .detail-table td.num { text-align: right; font-weight: 600; color: var(--navy); }
 
@@ -1051,6 +1109,7 @@
     @media (max-width: 900px) {
       .main-grid { grid-template-columns: 1fr; }
       .kpi-row   { grid-template-columns: 1fr; }
+      .executive-brief { grid-template-columns: 1fr; }
       .two-col   { grid-template-columns: 1fr; }
       .detail-grid { grid-template-columns: 1fr; }
       .score-bars { grid-template-columns: repeat(2, 1fr); }
@@ -1133,9 +1192,37 @@
   </section>
   {% endif %}
 
+  <section class="executive-brief">
+    <div class="brief-card">
+      <div class="brief-label">Revenue Position</div>
+      <div class="brief-value">₦{{ "{:,.0f}".format(kpis.total_revenue) }}</div>
+      <div class="brief-copy">Current period revenue across <strong>{{ kpis.num_stores }}</strong> selling stores. Average revenue per store closed at <strong>₦{{ "{:,.0f}".format(kpis.avg_revenue_per_store or 0) }}</strong>.</div>
+    </div>
+    <div class="brief-card">
+      <div class="brief-label">Repeat Purchase</div>
+      <div class="brief-value">{{ "{:.1f}%".format(kpis.repeat_pct or 0) }}</div>
+      <div class="brief-copy"><strong>{{ kpis.repeat_stores or 0 }}</strong> of <strong>{{ kpis.num_stores or 0 }}</strong> tracked stores reordered in the period. Single-order stores remain the immediate conversion pool.</div>
+    </div>
+    <div class="brief-card">
+      <div class="brief-label">Inventory Watch</div>
+      <div class="brief-value">{{ "{:.1f}".format(kpis.stock_days_cover or 0) }} days</div>
+      <div class="brief-copy">Closing stock ended at <strong>{{ "{:,.1f}".format(kpis.total_closing_stock or 0) }}</strong> packs with health status marked <strong>{{ kpis.inv_health_status }}</strong>.</div>
+    </div>
+    <div class="brief-card">
+      <div class="brief-label">Immediate Focus</div>
+      <div class="brief-value" style="font-size:18px;">{% if coach and coach.summary and coach.summary.recommended_actions %}{{ coach.summary.recommended_actions[0] }}{% else %}Maintain availability and push repeat conversion in the next cycle.{% endif %}</div>
+      <div class="brief-copy">This is the lead action based on the current sales, inventory, and activity evidence.</div>
+    </div>
+  </section>
+
   <!-- ════════════════════ SECTION 1: OVERVIEW ════════════════════════════ -->
   <div id="section-overview" class="section active">
     <div class="page-body">
+
+      <div class="section-divider">
+        <h3>Commercial Overview</h3>
+        <span>Current period performance, exception signals, and supporting field evidence for {{ brand_name }}.</span>
+      </div>
 
       <!-- KPI Cards -->
       <div class="kpi-row">
@@ -1800,7 +1887,7 @@
 
       <!-- Business Narrative -->
       <div class="narrative">
-        <strong>Analysis:</strong> {{ narrative }}
+        <strong>Commercial Readout:</strong> {{ narrative }}
       </div>
 
     </div><!-- /page-body -->
@@ -1900,11 +1987,6 @@
         </div>
 
       </div><!-- /detail-grid -->
-
-      <!-- Business Narrative -->
-      <div class="narrative">
-        <strong>Analysis:</strong> {{ narrative }}
-      </div>
 
     </div>
   </div><!-- /section-detail -->

@@ -199,6 +199,42 @@
     .coach-signal:last-child { border-bottom: 0; padding-bottom: 0; }
     .coach-signal strong { display: block; margin-bottom: 2px; }
 
+    .brief-grid {
+      margin: 0 14px 8px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .brief-card {
+      background:#fff;
+      border:1px solid #E2E5EE;
+      border-radius: 6px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+      padding: 8px 9px;
+    }
+    .brief-label {
+      font-size: 4.8pt;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .55px;
+      color: #7F8AA3;
+      margin-bottom: 4px;
+    }
+    .brief-value {
+      font-size: 11.5pt;
+      font-weight: 900;
+      color: #1B2B5E;
+      line-height: 1.05;
+      margin-bottom: 3px;
+    }
+    .brief-copy {
+      font-size: 5pt;
+      line-height: 1.45;
+      color: #6F7B92;
+    }
+    .brief-copy strong { color:#1A1A1A; }
+
     .snap-row {
       display: flex;
       gap: 5px;
@@ -1317,22 +1353,24 @@
 
     .activity-table th {
       text-align: left;
-      padding: 4px 0 5px;
+      padding: 4px 6px 5px;
       border-bottom: 1px solid #E4E9F3;
       color: #7F8AA3;
       text-transform: uppercase;
       letter-spacing: 0.45px;
       font-size: 4.5pt;
       font-weight: 800;
+      background: #F7F9FC;
     }
 
     .activity-table td {
-      padding: 5px 0;
+      padding: 4px 6px;
       border-bottom: 1px solid #EEF2F7;
       vertical-align: top;
       color: #1A1A1A;
     }
 
+    .activity-table tr:nth-child(even) td { background:#FBFCFE; }
     .activity-table tr:last-child td { border-bottom: 0; }
 
     .activity-list {
@@ -1507,6 +1545,29 @@
     </div>
   </div>
   {% endif %}
+
+  <div class="brief-grid">
+    <div class="brief-card">
+      <div class="brief-label">Revenue Position</div>
+      <div class="brief-value">₦{{ "{:,.0f}".format(kpis.total_revenue) }}</div>
+      <div class="brief-copy">Current period revenue across <strong>{{ kpis.num_stores }}</strong> selling stores. Average revenue per store closed at <strong>₦{{ "{:,.0f}".format(kpis.avg_revenue_per_store or 0) }}</strong>.</div>
+    </div>
+    <div class="brief-card">
+      <div class="brief-label">Repeat Purchase</div>
+      <div class="brief-value">{{ "{:.1f}%".format(kpis.repeat_pct or 0) }}</div>
+      <div class="brief-copy"><strong>{{ kpis.repeat_stores or 0 }}</strong> of <strong>{{ kpis.num_stores or 0 }}</strong> tracked stores reordered in the period.</div>
+    </div>
+    <div class="brief-card">
+      <div class="brief-label">Inventory Watch</div>
+      <div class="brief-value">{{ "{:.1f}".format(kpis.stock_days_cover or 0) }} days</div>
+      <div class="brief-copy">Closing stock ended at <strong>{{ "{:,.1f}".format(kpis.total_closing_stock or 0) }}</strong> packs with status <strong>{{ kpis.inv_health_status }}</strong>.</div>
+    </div>
+    <div class="brief-card">
+      <div class="brief-label">Immediate Focus</div>
+      <div class="brief-value" style="font-size:8.2pt;line-height:1.25;">{% if coach and coach.summary and coach.summary.recommended_actions %}{{ coach.summary.recommended_actions[0] }}{% else %}Maintain availability and push repeat conversion in the next cycle.{% endif %}</div>
+      <div class="brief-copy">Lead action drawn from the current sales, inventory, and activity evidence.</div>
+    </div>
+  </div>
 
   <!-- ── Narrative ───────────────────────────────────────────────────────── -->
   <div class="content-area">
