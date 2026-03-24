@@ -505,46 +505,130 @@ def _horizontal_bar_svg(rows: list[dict], value_key: str, label_key: str,
 
 
 def _quadrant_svg(high_sales_low_activity: list[dict], high_activity_low_sales: list[dict],
-                  width: int = 640, height: int = 220) -> str:
+                  width: int = 640, height: int = 310) -> str:
+    """Balanced 4-quadrant scatter for the Sales × Activity Link section.
+
+    Layout:
+      - 28px left/right margins for rotated axis labels (kept inside viewBox)
+      - 22px top/bottom margins for horizontal axis labels
+      - Quadrant labels are centred in each quadrant and made translucent so
+        they never obscure the numbered dots
+      - Dots are placed on an auto-scaling 2-column grid within each quadrant,
+        with 24px top reserve for the quadrant label and 10px edge padding
+    """
+    DOT_R = 12
+    PAD_L, PAD_R = 28, 28   # left/right margin for y-axis labels
+    PAD_T, PAD_B = 22, 22   # top/bottom margin for x-axis labels
+
+    px0, px1 = PAD_L, width - PAD_R
+    py0, py1 = PAD_T, height - PAD_B
+    mid_x = (px0 + px1) / 2   # 320 with defaults
+    mid_y = (py0 + py1) / 2   # 155
+
     def _dot(cx, cy, label, color, index):
         return (
-            f'<circle cx="{cx}" cy="{cy}" r="11" fill="{color}" opacity="0.94"><title>{label}</title></circle>'
-            f'<text x="{cx}" y="{cy + 4}" text-anchor="middle" font-size="10" fill="#FFFFFF" font-weight="700">{index}</text>'
+            f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{DOT_R}" fill="{color}" '
+            f'opacity="0.92" stroke="#fff" stroke-width="1.5"><title>{label}</title></circle>'
+            f'<text x="{cx:.1f}" y="{cy + 4:.1f}" text-anchor="middle" '
+            f'font-size="10" fill="#FFFFFF" font-weight="700">{index}</text>'
         )
 
-    margin = 18
-    mid_x = width / 2
-    mid_y = height / 2
+    def _grid_positions(n, qx0, qy0, qx1, qy1, top_reserve=26):
+        """Return (cx, cy) pairs for n dots in a 2-col grid within the quadrant."""
+        if n == 0:
+            return []
+        gap = 10
+        ax0 = qx0 + gap + DOT_R
+        ax1 = qx1 - gap - DOT_R
+        ay0 = qy0 + top_reserve + DOT_R
+        ay1 = qy1 - gap - DOT_R
+        ncols = 2 if n > 1 else 1
+        nrows = (n + ncols - 1) // ncols
+        cw = (ax1 - ax0) / ncols
+        rh = max((ay1 - ay0) / nrows, DOT_R * 2 + 4)
+        return [
+            (ax0 + cw * (i % ncols + 0.5), ay0 + rh * (i // ncols + 0.5))
+            for i in range(n)
+        ]
+
+    # ── SVG open + quadrant fills ────────────────────────────────────────────
     parts = [
-        f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" style="display:block;width:100%;height:{height}px;">',
-        f'<rect x="0" y="0" width="{mid_x}" height="{mid_y}" fill="rgba(26,122,74,0.04)"/>',
-        f'<rect x="{mid_x}" y="0" width="{mid_x}" height="{mid_y}" fill="rgba(232,25,44,0.04)"/>',
-        f'<rect x="0" y="{mid_y}" width="{mid_x}" height="{mid_y}" fill="rgba(46,134,193,0.04)"/>',
-        f'<rect x="{mid_x}" y="{mid_y}" width="{mid_x}" height="{mid_y}" fill="rgba(192,146,42,0.05)"/>',
-        f'<line x1="{mid_x}" y1="0" x2="{mid_x}" y2="{height}" stroke="#DDE3ED" stroke-width="2"/>',
-        f'<line x1="0" y1="{mid_y}" x2="{width}" y2="{mid_y}" stroke="#DDE3ED" stroke-width="2"/>',
-        f'<text x="{width / 2}" y="14" text-anchor="middle" font-size="10" fill="#7A849E" font-weight="700">Higher Sales Impact</text>',
-        f'<text x="{width / 2}" y="{height - 8}" text-anchor="middle" font-size="10" fill="#7A849E" font-weight="700">Lower Sales Impact</text>',
-        f'<text x="10" y="{height / 2 + 4}" transform="rotate(-90 10 {height / 2 + 4})" font-size="10" fill="#7A849E" font-weight="700">Lower Activity Evidence</text>',
-        f'<text x="{width - 10}" y="{height / 2 + 4}" transform="rotate(90 {width - 10} {height / 2 + 4})" font-size="10" fill="#7A849E" font-weight="700">Higher Activity Evidence</text>',
-        '<text x="14" y="20" font-size="11" fill="#1A7A4A" font-weight="700">Strong on both</text>',
-        f'<text x="{mid_x + 14}" y="20" font-size="11" fill="#E8192C" font-weight="700">High sales, low activity</text>',
-        f'<text x="14" y="{mid_y + 20}" font-size="11" fill="#2E86C1" font-weight="700">High activity, low sales</text>',
-        f'<text x="{mid_x + 14}" y="{mid_y + 20}" font-size="11" fill="#C0922A" font-weight="700">Low on both / watch</text>',
+        f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" '
+        f'preserveAspectRatio="xMidYMid meet" '
+        f'style="display:block;width:100%;height:{height}px;max-height:{height}px;">',
+        # quadrant bg fills
+        f'<rect x="{px0}" y="{py0}" width="{mid_x-px0:.1f}" height="{mid_y-py0:.1f}" fill="rgba(26,122,74,0.05)"/>',
+        f'<rect x="{mid_x:.1f}" y="{py0}" width="{px1-mid_x:.1f}" height="{mid_y-py0:.1f}" fill="rgba(232,25,44,0.05)"/>',
+        f'<rect x="{px0}" y="{mid_y:.1f}" width="{mid_x-px0:.1f}" height="{py1-mid_y:.1f}" fill="rgba(46,134,193,0.05)"/>',
+        f'<rect x="{mid_x:.1f}" y="{mid_y:.1f}" width="{px1-mid_x:.1f}" height="{py1-mid_y:.1f}" fill="rgba(192,146,42,0.05)"/>',
+        # dividers
+        f'<line x1="{mid_x:.1f}" y1="{py0}" x2="{mid_x:.1f}" y2="{py1}" stroke="#C8D2E0" stroke-width="1.5" stroke-dasharray="5 4"/>',
+        f'<line x1="{px0}" y1="{mid_y:.1f}" x2="{px1}" y2="{mid_y:.1f}" stroke="#C8D2E0" stroke-width="1.5" stroke-dasharray="5 4"/>',
+        # outer border
+        f'<rect x="{px0}" y="{py0}" width="{px1-px0}" height="{py1-py0}" fill="none" stroke="#DDE3ED" stroke-width="1"/>',
     ]
+
+    # ── Axis labels ──────────────────────────────────────────────────────────
+    # Horizontal (top / bottom) — standard text, centred
+    cx_label = (px0 + px1) / 2
+    parts += [
+        f'<text x="{cx_label:.1f}" y="{py0 - 6}" text-anchor="middle" '
+        f'font-size="9" fill="#8A96AE" font-weight="600" letter-spacing="0.4">Higher Sales Impact</text>',
+        f'<text x="{cx_label:.1f}" y="{py1 + 15}" text-anchor="middle" '
+        f'font-size="9" fill="#8A96AE" font-weight="600" letter-spacing="0.4">Lower Sales Impact</text>',
+    ]
+    # Vertical (left / right) — rotated, anchored at the margin centre
+    cy_label = (py0 + py1) / 2
+    parts += [
+        # left: "Lower Activity Evidence" (activity increases going right)
+        f'<text x="{PAD_L - 8}" y="{cy_label:.1f}" text-anchor="middle" '
+        f'font-size="9" fill="#8A96AE" font-weight="600" letter-spacing="0.4" '
+        f'transform="rotate(-90 {PAD_L - 8} {cy_label:.1f})">Lower Activity Evidence</text>',
+        # right: "Higher Activity Evidence"
+        f'<text x="{width - PAD_R + 8}" y="{cy_label:.1f}" text-anchor="middle" '
+        f'font-size="9" fill="#8A96AE" font-weight="600" letter-spacing="0.4" '
+        f'transform="rotate(90 {width - PAD_R + 8} {cy_label:.1f})">Higher Activity Evidence</text>',
+    ]
+
+    # ── Quadrant labels — centred, subtle, never touch the dot zone ──────────
+    # "Strong on both": upper-left, no dots → full opacity, centred
+    parts.append(
+        f'<text x="{(px0+mid_x)/2:.1f}" y="{(py0+mid_y)/2:.1f}" text-anchor="middle" '
+        f'dominant-baseline="middle" font-size="11" fill="#1A7A4A" font-weight="700" opacity="0.20">Strong on both</text>'
+    )
+    # "High sales, low activity": upper-right — dots live here; push label to top, small
+    parts.append(
+        f'<text x="{(mid_x+px1)/2:.1f}" y="{py0+15}" text-anchor="middle" '
+        f'font-size="10" fill="#E8192C" font-weight="700">High sales, low activity</text>'
+    )
+    # "High activity, low sales": lower-left — dots live here; push label to bottom, small
+    parts.append(
+        f'<text x="{(px0+mid_x)/2:.1f}" y="{py1-8}" text-anchor="middle" '
+        f'font-size="10" fill="#2E86C1" font-weight="700">High activity, low sales</text>'
+    )
+    # "Low on both / watch": lower-right, no dots → full opacity, centred
+    parts.append(
+        f'<text x="{(mid_x+px1)/2:.1f}" y="{(mid_y+py1)/2:.1f}" text-anchor="middle" '
+        f'dominant-baseline="middle" font-size="11" fill="#C0922A" font-weight="700" opacity="0.20">Low on both / watch</text>'
+    )
+
+    # ── Dots ─────────────────────────────────────────────────────────────────
     hs = high_sales_low_activity[:4]
     ha = high_activity_low_sales[:4]
-    for i, row in enumerate(hs):
-        x_slots = max(len(hs), 1)
-        cx = mid_x + margin + ((mid_x - (margin * 2)) * (i + 0.5) / x_slots)
-        cy = 56 + (i % 2) * 42
-        parts.append(_dot(cx, cy, str(row.get('store') or ''), '#E8192C', i + 1))
-    for i, row in enumerate(ha):
-        x_slots = max(len(ha), 1)
-        cx = margin + ((mid_x - (margin * 2)) * (i + 0.5) / x_slots)
-        cy = mid_y + 40 + (i % 2) * 42
-        parts.append(_dot(cx, cy, str(row.get('retailer_name') or ''), '#2E86C1', i + 1))
-    parts.append(f'<text x="{width - 12}" y="{height - 10}" text-anchor="end" font-size="9" fill="#98A1B3">Numbered points map to the exception lists below.</text>')
+
+    # Red: upper-right quadrant (high sales, low activity)
+    for i, (cx, cy) in enumerate(_grid_positions(len(hs), mid_x, py0, px1, mid_y, top_reserve=26)):
+        parts.append(_dot(cx, cy, str(hs[i].get('store') or ''), '#E8192C', i + 1))
+
+    # Blue: lower-left quadrant (high activity, low sales)
+    for i, (cx, cy) in enumerate(_grid_positions(len(ha), px0, mid_y, mid_x, py1, top_reserve=8)):
+        parts.append(_dot(cx, cy, str(ha[i].get('retailer_name') or ''), '#2E86C1', i + 1))
+
+    # Footer note
+    parts.append(
+        f'<text x="{px1}" y="{py1 + 15}" text-anchor="end" '
+        f'font-size="8" fill="#B0BAC8">Numbers map to exception lists below.</text>'
+    )
     parts.append('</svg>')
     return ''.join(parts)
 

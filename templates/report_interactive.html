@@ -316,7 +316,8 @@
       gap: 12px;
       margin-top: 16px;
     }
-    .activity-stat {
+    .activity-stat,
+    .activity-stat-card {
       padding: 12px 14px;
       border-radius: 12px;
       background: #f8faff;
@@ -346,7 +347,7 @@
       margin-top: 12px;
       border: 1px solid #e3e9f4;
       border-radius: 12px;
-      overflow: hidden;
+      overflow: visible;
       background: linear-gradient(180deg, rgba(27,43,94,0.03) 0%, rgba(27,43,94,0) 100%);
     }
     .activity-table {
@@ -1852,7 +1853,7 @@
               <p style="margin-bottom:8px;">Stores converting commercially without matching field coverage in the same period.</p>
               <p>
                 {% for row in activity_report.high_sales_low_activity %}
-                  <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:999px;background:#E8192C;color:#fff;font-size:11px;font-weight:700;margin-right:6px;">{{ loop.index }}</span>{{ row.store }} (₦{{ "{:,.0f}".format(row.revenue) }}){% if not loop.last %}, {% endif %}
+                  <span style="display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 3px;border-radius:999px;background:#E8192C;color:#fff;font-size:11px;font-weight:700;margin-right:6px;white-space:nowrap;">{{ loop.index }}</span>{{ row.store }} (₦{{ "{:,.0f}".format(row.revenue) }}){% if not loop.last %}, {% endif %}
                 {% endfor %}
               </p>
               {% else %}
@@ -1865,7 +1866,7 @@
               <p style="margin-bottom:8px;">Stores getting field attention but not yet showing up strongly in the sales ranking.</p>
               <p>
                 {% for row in activity_report.high_activity_low_sales %}
-                  <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:999px;background:#2E86C1;color:#fff;font-size:11px;font-weight:700;margin-right:6px;">{{ loop.index }}</span>{{ row.retailer_name }} ({{ row.mentions }} mentions, {{ row.visits }} visits){% if not loop.last %}, {% endif %}
+                  <span style="display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 3px;border-radius:999px;background:#2E86C1;color:#fff;font-size:11px;font-weight:700;margin-right:6px;white-space:nowrap;">{{ loop.index }}</span>{{ row.retailer_name }} ({{ row.mentions }} mentions, {{ row.visits }} visits){% if not loop.last %}, {% endif %}
                 {% endfor %}
               </p>
               {% else %}
