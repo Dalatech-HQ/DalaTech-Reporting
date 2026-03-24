@@ -14,6 +14,7 @@ from __future__ import annotations
 import io
 import os
 import re
+import zipfile
 from datetime import datetime
 from typing import Iterable
 
@@ -155,6 +156,88 @@ def _read_activity_file(raw: bytes, filename: str = '') -> tuple[pd.DataFrame, s
     return _read_text_table(raw), 'text'
 
 
+def _infer_zip_survey_name(member_name: str) -> str:
+    base = os.path.splitext(os.path.basename(member_name or ''))[0]
+    cleaned = re.sub(r'^[\-\s]+|[\-\s]+$', '', base)
+    cleaned = cleaned.replace('_', ' ')
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    if not cleaned:
+        return 'Unspecified'
+    return cleaned
+
+
+def _infer_zip_source_category(survey_name: str) -> str:
+    name = str(survey_name or '').lower()
+    if 'credit notes' in name or 'complaints' in name or 'product issues' in name:
+        return 'issues'
+    if 'corporate' in name:
+        return 'corporate'
+    if 'general' in name:
+        return 'general'
+    if 'outlet' in name:
+        return 'outlet'
+    return 'brand_feedback'
+
+
+def _is_zip_root_member(member: str) -> bool:
+    """Return True only for files in the top-level folder of the zip (no subdirectories)."""
+    parts = [p for p in member.replace('\\', '/').split('/') if p]
+    # parts[0] is the root folder name, parts[1] is the file — depth == 2 is root level
+    return len(parts) == 2 and not parts[-1].startswith('__')
+
+
+def _read_activity_zip(raw: bytes, filename: str = '') -> tuple[pd.DataFrame, dict]:
+    frames: list[pd.DataFrame] = []
+    manifest: list[dict] = []
+    skipped: list[str] = []
+    with zipfile.ZipFile(io.BytesIO(raw), 'r') as archive:
+        all_members = [name for name in archive.namelist() if name.lower().endswith(('.xlsx', '.xls', '.csv', '.txt', '.tsv'))]
+        members = [m for m in all_members if _is_zip_root_member(m)]
+        for m in all_members:
+            if not _is_zip_root_member(m):
+                skipped.append(os.path.basename(m))
+        for member in members:
+            with archive.open(member) as fh:
+                member_raw = fh.read()
+            member_df, member_source_type = _read_activity_file(member_raw, member)
+            member_df = _normalise_columns(member_df)
+            for col in member_df.columns:
+                member_df[col] = member_df[col].fillna('').astype(str).str.strip()
+            member_df['activity_date'] = member_df['activity_date'].apply(_to_iso_date)
+            member_df['survey_start_date'] = member_df['survey_start_date'].apply(_to_iso_date)
+            member_df['survey_end_date'] = member_df['survey_end_date'].apply(_to_iso_date)
+            member_df = member_df[member_df['activity_date'].notna()].copy()
+            survey_name = _infer_zip_survey_name(member)
+            if 'survey_name' not in member_df.columns or not member_df['survey_name'].astype(str).str.strip().replace({'nan': ''}).any():
+                member_df['survey_name'] = survey_name
+            else:
+                member_df['survey_name'] = member_df['survey_name'].replace('', survey_name)
+            if 'survey_code' not in member_df.columns:
+                member_df['survey_code'] = ''
+            member_df['survey_code'] = member_df['survey_code'].replace('', survey_name)
+            member_df['answer_type'] = member_df['answer_type'].replace('', 'zip_bundle')
+            member_df['reporting_person_name'] = member_df['reporting_person_name'].replace('', os.path.basename(member))
+            frames.append(member_df)
+            manifest.append({
+                'file_name': os.path.basename(member),
+                'survey_name': survey_name,
+                'source_category': _infer_zip_source_category(survey_name),
+                'row_count': int(len(member_df)),
+                'source_type': member_source_type,
+            })
+
+    combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=list(EXPECTED_COLUMNS))
+    meta = {
+        'filename': os.path.basename(filename or ''),
+        'source_type': 'zip_bundle',
+        'row_count': int(len(combined)),
+        'bundle_file_count': len(manifest),
+        'bundle_manifest': manifest,
+        'bundle_skipped': skipped,
+    }
+    return combined, meta
+
+
 def _clean_colname(name: str) -> str:
     return re.sub(r'\s+', ' ', str(name or '').strip().replace('\ufeff', '')).lower()
 
@@ -185,6 +268,9 @@ def _to_iso_date(value) -> str | None:
 
 def load_activity_dataframe(file_source) -> tuple[pd.DataFrame, dict]:
     raw, filename = _coerce_bytes(file_source)
+    ext = os.path.splitext(filename or '')[1].lower()
+    if ext == '.zip' or raw[:4] == b'PK\x03\x04':
+        return _read_activity_zip(raw, filename)
     df, source_type = _read_activity_file(raw, filename)
     df = _normalise_columns(df)
     for col in df.columns:
@@ -316,7 +402,8 @@ def _photo_count(answer_type: str, answer: str) -> int:
 
 
 def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
-                           report_id: int = None, progress_cb=None) -> dict:
+                           report_id: int = None, progress_cb=None,
+                           source_meta: dict | None = None) -> dict:
     df = df.copy()
     if df.empty:
         return {
@@ -508,6 +595,8 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
         'issue_count': len(issues),
         'visit_count': len(visit_rows),
     }
+    if source_meta:
+        summary['source_meta'] = source_meta
 
     return {
         'summary': summary,

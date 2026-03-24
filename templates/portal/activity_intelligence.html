@@ -263,16 +263,47 @@
   <div class="card">
     <h3 class="text-navy fw-bold mb-2">Imported Batches</h3>
     <table class="data-table">
-      <thead><tr><th>File</th><th>Period</th><th>Rows</th></tr></thead>
+      <thead><tr><th>File</th><th>Type</th><th>Period</th><th>Rows</th></tr></thead>
       <tbody>
         {% for batch in batches %}
+        {% set meta = batch._summary.get('source_meta', {}) %}
+        {% set is_zip = batch.source_type == 'zip_bundle' %}
+        {% set manifest = meta.get('bundle_manifest', []) %}
         <tr>
-          <td>{{ batch.source_filename }}</td>
-          <td>{{ batch.start_date or '-' }}{% if batch.end_date and batch.end_date != batch.start_date %} to {{ batch.end_date }}{% endif %}</td>
-          <td>{{ batch.row_count }}</td>
+          <td>
+            <div class="fw-bold">{{ batch.source_filename }}</div>
+            {% if is_zip and manifest %}
+            <button class="btn btn-outline btn-sm mt-1" onclick="toggleManifest({{ batch.id }})">
+              {{ manifest|length }} files
+            </button>
+            <div id="manifest-{{ batch.id }}" style="display:none;margin-top:6px;">
+              <table class="data-table fs-sm" style="margin:0;">
+                <thead><tr><th>File</th><th>Survey</th><th>Rows</th></tr></thead>
+                <tbody>
+                  {% for f in manifest %}
+                  <tr>
+                    <td>{{ f.file_name }}</td>
+                    <td><span class="badge badge-{% if f.source_category == 'issues' %}red{% elif f.source_category == 'corporate' %}navy{% else %}green{% endif %}">{{ f.source_category }}</span></td>
+                    <td>{{ f.row_count }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% endif %}
+          </td>
+          <td>
+            {% if is_zip %}
+            <span class="badge badge-navy">ZIP bundle</span>
+            {% else %}
+            <span class="badge badge-green">{{ batch.source_type or 'file' }}</span>
+            {% endif %}
+          </td>
+          <td>{{ batch.start_date or '-' }}{% if batch.end_date and batch.end_date != batch.start_date %} → {{ batch.end_date }}{% endif %}</td>
+          <td>{{ batch.row_count | int | string }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="3" class="text-muted">No activity batches imported yet.</td></tr>
+        <tr><td colspan="4" class="text-muted">No activity batches imported yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -282,6 +313,11 @@
 
 {% block scripts %}
 <script>
+function toggleManifest(batchId) {
+  const el = document.getElementById('manifest-' + batchId);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
 document.getElementById('activityImportForm')?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget;

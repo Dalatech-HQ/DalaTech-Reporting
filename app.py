@@ -5004,7 +5004,15 @@ def activity_intelligence():
     else:
         summary = ds.get_activity_summary(batch_id=batch_id, report_id=report_id, brand_name=brand_name)
 
-    batches = ds.get_activity_batches(limit=30)
+    batches_raw = ds.get_activity_batches(limit=30)
+    batches = []
+    for b in batches_raw:
+        b = dict(b)
+        try:
+            b['_summary'] = json.loads(b.get('summary_json') or '{}')
+        except Exception:
+            b['_summary'] = {}
+        batches.append(b)
     available_stores = ds.list_activity_retailers(report_id=report_id, limit=500)
     return render_template(
         'portal/activity_intelligence.html',
@@ -5224,6 +5232,7 @@ def api_activity_import():
                 source_filename=filename,
                 report_id=report_id,
                 progress_cb=_progress,
+                source_meta=meta,
             )
 
             ds.update_job(job_id, progress=92, current_brand='Saving activity summary', report_id=report_id)
