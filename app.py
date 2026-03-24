@@ -506,12 +506,13 @@ def _horizontal_bar_svg(rows: list[dict], value_key: str, label_key: str,
 
 def _quadrant_svg(high_sales_low_activity: list[dict], high_activity_low_sales: list[dict],
                   width: int = 640, height: int = 220) -> str:
-    def _dot(cx, cy, label, color):
+    def _dot(cx, cy, label, color, index):
         return (
-            f'<circle cx="{cx}" cy="{cy}" r="7" fill="{color}" opacity="0.9"><title>{label}</title></circle>'
-            f'<text x="{cx + 10}" y="{cy + 4}" font-size="10" fill="#1B2B5E">{label[:22]}</text>'
+            f'<circle cx="{cx}" cy="{cy}" r="11" fill="{color}" opacity="0.94"><title>{label}</title></circle>'
+            f'<text x="{cx}" y="{cy + 4}" text-anchor="middle" font-size="10" fill="#FFFFFF" font-weight="700">{index}</text>'
         )
 
+    margin = 18
     mid_x = width / 2
     mid_y = height / 2
     parts = [
@@ -522,6 +523,10 @@ def _quadrant_svg(high_sales_low_activity: list[dict], high_activity_low_sales: 
         f'<rect x="{mid_x}" y="{mid_y}" width="{mid_x}" height="{mid_y}" fill="rgba(192,146,42,0.05)"/>',
         f'<line x1="{mid_x}" y1="0" x2="{mid_x}" y2="{height}" stroke="#DDE3ED" stroke-width="2"/>',
         f'<line x1="0" y1="{mid_y}" x2="{width}" y2="{mid_y}" stroke="#DDE3ED" stroke-width="2"/>',
+        f'<text x="{width / 2}" y="14" text-anchor="middle" font-size="10" fill="#7A849E" font-weight="700">Higher Sales Impact</text>',
+        f'<text x="{width / 2}" y="{height - 8}" text-anchor="middle" font-size="10" fill="#7A849E" font-weight="700">Lower Sales Impact</text>',
+        f'<text x="10" y="{height / 2 + 4}" transform="rotate(-90 10 {height / 2 + 4})" font-size="10" fill="#7A849E" font-weight="700">Lower Activity Evidence</text>',
+        f'<text x="{width - 10}" y="{height / 2 + 4}" transform="rotate(90 {width - 10} {height / 2 + 4})" font-size="10" fill="#7A849E" font-weight="700">Higher Activity Evidence</text>',
         '<text x="14" y="20" font-size="11" fill="#1A7A4A" font-weight="700">Strong on both</text>',
         f'<text x="{mid_x + 14}" y="20" font-size="11" fill="#E8192C" font-weight="700">High sales, low activity</text>',
         f'<text x="14" y="{mid_y + 20}" font-size="11" fill="#2E86C1" font-weight="700">High activity, low sales</text>',
@@ -530,13 +535,16 @@ def _quadrant_svg(high_sales_low_activity: list[dict], high_activity_low_sales: 
     hs = high_sales_low_activity[:4]
     ha = high_activity_low_sales[:4]
     for i, row in enumerate(hs):
-        cx = mid_x + 32 + (i * 54)
-        cy = 52 + (i % 2) * 40
-        parts.append(_dot(cx, cy, str(row.get('store') or ''), '#E8192C'))
+        x_slots = max(len(hs), 1)
+        cx = mid_x + margin + ((mid_x - (margin * 2)) * (i + 0.5) / x_slots)
+        cy = 56 + (i % 2) * 42
+        parts.append(_dot(cx, cy, str(row.get('store') or ''), '#E8192C', i + 1))
     for i, row in enumerate(ha):
-        cx = 32 + (i * 54)
-        cy = mid_y + 38 + (i % 2) * 40
-        parts.append(_dot(cx, cy, str(row.get('retailer_name') or ''), '#2E86C1'))
+        x_slots = max(len(ha), 1)
+        cx = margin + ((mid_x - (margin * 2)) * (i + 0.5) / x_slots)
+        cy = mid_y + 40 + (i % 2) * 42
+        parts.append(_dot(cx, cy, str(row.get('retailer_name') or ''), '#2E86C1', i + 1))
+    parts.append(f'<text x="{width - 12}" y="{height - 10}" text-anchor="end" font-size="9" fill="#98A1B3">Numbered points map to the exception lists below.</text>')
     parts.append('</svg>')
     return ''.join(parts)
 

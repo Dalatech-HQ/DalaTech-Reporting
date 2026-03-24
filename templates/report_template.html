@@ -2110,6 +2110,28 @@
 
     <div class="activity-card">
       <div class="activity-card-title">Sales × Activity Link <span>Commercial exceptions from matching sales with field evidence</span></div>
+      <div class="activity-stat-grid" style="grid-template-columns:repeat(4,minmax(0,1fr)); margin-bottom:8px;">
+        <div class="activity-stat-card">
+          <div class="activity-stat-label">Matched Stores</div>
+          <div class="activity-stat-value">{{ activity_report.matched_store_count }}</div>
+          <div class="activity-stat-sub">Selling stores seen in activity</div>
+        </div>
+        <div class="activity-stat-card">
+          <div class="activity-stat-label">Coverage Ratio</div>
+          <div class="activity-stat-value">{{ "{:.1f}%".format(activity_report.coverage_ratio or 0) }}</div>
+          <div class="activity-stat-sub">Matched stores vs selling stores</div>
+        </div>
+        <div class="activity-stat-card">
+          <div class="activity-stat-label">Sales Exceptions</div>
+          <div class="activity-stat-value">{{ activity_report.high_sales_low_activity|length }}</div>
+          <div class="activity-stat-sub">High sales, weak activity</div>
+        </div>
+        <div class="activity-stat-card">
+          <div class="activity-stat-label">Activity Exceptions</div>
+          <div class="activity-stat-value">{{ activity_report.high_activity_low_sales|length }}</div>
+          <div class="activity-stat-sub">High activity, weak sales</div>
+        </div>
+      </div>
       {% if activity_report.linkage_svg %}
       <div class="activity-svg-shell" style="margin-bottom:7px;">{{ activity_report.linkage_svg | safe }}</div>
       {% endif %}
@@ -2117,9 +2139,10 @@
         <div class="activity-list-item">
           <h4>High sales, low activity</h4>
           {% if activity_report.high_sales_low_activity %}
+          <p style="margin-bottom:6px;">Stores converting commercially without matching field coverage in the same period.</p>
           <p>
             {% for row in activity_report.high_sales_low_activity %}
-              {{ row.store }} (₦{{ "{:,.0f}".format(row.revenue) }}){% if not loop.last %}, {% endif %}
+              [{{ loop.index }}] {{ row.store }} (₦{{ "{:,.0f}".format(row.revenue) }}){% if not loop.last %}, {% endif %}
             {% endfor %}
           </p>
           {% else %}
@@ -2129,9 +2152,10 @@
         <div class="activity-list-item">
           <h4>High activity, low sales visibility</h4>
           {% if activity_report.high_activity_low_sales %}
+          <p style="margin-bottom:6px;">Stores getting field attention but not yet showing up strongly in the sales ranking.</p>
           <p>
             {% for row in activity_report.high_activity_low_sales %}
-              {{ row.retailer_name }} ({{ row.mentions }} mentions, {{ row.visits }} visits){% if not loop.last %}, {% endif %}
+              [{{ loop.index }}] {{ row.retailer_name }} ({{ row.mentions }} mentions, {{ row.visits }} visits){% if not loop.last %}, {% endif %}
             {% endfor %}
           </p>
           {% else %}
