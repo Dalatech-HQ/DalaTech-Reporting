@@ -214,218 +214,6 @@
     }
     .coach-signal-item:last-child { border-bottom: 0; padding-bottom: 0; }
     .coach-signal-item strong { display:block; margin-bottom:4px; }
-    .executive-brief {
-      margin: 16px 20px 0;
-      display:grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 14px;
-    }
-    .brief-card {
-      background:#fff;
-      border-radius: 14px;
-      border:1px solid rgba(27,43,94,0.08);
-      box-shadow: var(--shadow);
-      padding: 14px 16px;
-    }
-    .brief-label {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: .5px;
-      color: var(--muted);
-      font-weight: 700;
-      margin-bottom: 8px;
-    }
-    .brief-value {
-      font-size: 24px;
-      line-height: 1.05;
-      font-weight: 800;
-      color: var(--navy);
-      margin-bottom: 6px;
-    }
-    .brief-copy {
-      font-size: 12px;
-      line-height: 1.55;
-      color: var(--muted);
-    }
-    .brief-copy strong { color: var(--text); }
-    .section-divider {
-      display:flex;
-      align-items:flex-end;
-      justify-content:space-between;
-      gap: 12px;
-      margin: 18px 0 12px;
-      padding-bottom: 10px;
-      border-bottom: 1px solid var(--gray);
-    }
-    .section-divider h3 {
-      font-size: 18px;
-      font-weight: 800;
-      color: var(--navy);
-    }
-    .section-divider span {
-      font-size: 11px;
-      color: var(--muted);
-      max-width: 360px;
-      text-align: right;
-    }
-
-    .activity-shell {
-      display: grid;
-      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-      gap: 16px;
-      margin-top: 16px;
-    }
-    .activity-card {
-      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
-      border: 1px solid rgba(27,43,94,0.08);
-      border-radius: 14px;
-      padding: 16px;
-      box-shadow: var(--shadow);
-    }
-    .activity-hero {
-      grid-column: 1 / -1;
-      display: grid;
-      grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
-      gap: 16px;
-      align-items: stretch;
-    }
-    .activity-kicker {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: var(--muted);
-      font-weight: 700;
-      margin-bottom: 6px;
-    }
-    .activity-title {
-      font-size: 24px;
-      line-height: 1.15;
-      color: var(--navy);
-      font-weight: 800;
-      margin-bottom: 8px;
-    }
-    .activity-copy {
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.65;
-      max-width: 760px;
-    }
-    .activity-stat-grid {
-      display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 12px;
-      margin-top: 16px;
-    }
-    .activity-stat,
-    .activity-stat-card {
-      padding: 12px 14px;
-      border-radius: 12px;
-      background: #f8faff;
-      border: 1px solid #dde6f3;
-    }
-    .activity-stat-label {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--muted);
-      font-weight: 700;
-      margin-bottom: 6px;
-    }
-    .activity-stat-value {
-      font-size: 26px;
-      font-weight: 800;
-      color: var(--navy);
-      line-height: 1;
-    }
-    .activity-stat-sub {
-      font-size: 12px;
-      color: var(--muted);
-      margin-top: 6px;
-      line-height: 1.45;
-    }
-    .activity-chart {
-      margin-top: 12px;
-      border: 1px solid #e3e9f4;
-      border-radius: 12px;
-      overflow: visible;
-      background: linear-gradient(180deg, rgba(27,43,94,0.03) 0%, rgba(27,43,94,0) 100%);
-    }
-    .activity-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-    }
-    .activity-table th {
-      text-align: left;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.45px;
-      color: var(--muted);
-      padding: 7px 8px;
-      border-bottom: 1px solid #e4e9f4;
-      background: #f7f9fc;
-    }
-    .activity-table td {
-      padding: 7px 8px;
-      border-bottom: 1px solid #edf1f7;
-      vertical-align: top;
-      font-size: 11.5px;
-    }
-    .activity-table tr:nth-child(even) td { background:#fbfcfe; }
-    .activity-table tr:last-child td { border-bottom: 0; }
-    .activity-bar-track {
-      height: 8px;
-      background: #edf1f8;
-      border-radius: 999px;
-      overflow: hidden;
-      margin-top: 4px;
-    }
-    .activity-bar-fill {
-      height: 100%;
-      background: linear-gradient(90deg, var(--navy) 0%, var(--blue) 100%);
-      border-radius: 999px;
-    }
-    .activity-list {
-      display: grid;
-      gap: 10px;
-      margin-top: 12px;
-    }
-    .activity-list-item {
-      padding: 12px 14px;
-      border-radius: 12px;
-      background: #f8faff;
-      border: 1px solid #dde6f3;
-    }
-    .activity-list-item h5 {
-      font-size: 13px;
-      color: var(--navy);
-      margin-bottom: 5px;
-    }
-    .activity-list-item p {
-      font-size: 12px;
-      line-height: 1.55;
-      color: var(--muted);
-    }
-    .activity-chip-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 10px;
-    }
-    .activity-chip {
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: rgba(46,134,193,0.10);
-      color: var(--blue);
-      font-size: 11px;
-      font-weight: 700;
-    }
-    .activity-empty {
-      font-size: 12px;
-      color: var(--muted);
-      line-height: 1.6;
-      padding: 12px 0;
-    }
 
     .card-title {
       font-size: 12px;
@@ -1049,20 +837,19 @@
     .detail-table th {
       background: var(--navy);
       color: white;
-      font-size: 10px;
+      font-size: 10.5px;
       font-weight: 600;
-      padding: 6px 9px;
+      padding: 7px 10px;
       text-align: left;
     }
 
     .detail-table td {
-      font-size: 10.8px;
-      padding: 5px 9px;
+      font-size: 11px;
+      padding: 6px 10px;
       border-bottom: 1px solid var(--bg);
       color: var(--text);
     }
 
-    .detail-table tr:nth-child(even) td { background:#FBFCFE; }
     .detail-table tr:hover td { background: var(--bg); }
     .detail-table td.num { text-align: right; font-weight: 600; color: var(--navy); }
 
@@ -1110,7 +897,6 @@
     @media (max-width: 900px) {
       .main-grid { grid-template-columns: 1fr; }
       .kpi-row   { grid-template-columns: 1fr; }
-      .executive-brief { grid-template-columns: 1fr; }
       .two-col   { grid-template-columns: 1fr; }
       .detail-grid { grid-template-columns: 1fr; }
       .score-bars { grid-template-columns: repeat(2, 1fr); }
@@ -1193,37 +979,9 @@
   </section>
   {% endif %}
 
-  <section class="executive-brief">
-    <div class="brief-card">
-      <div class="brief-label">Revenue Position</div>
-      <div class="brief-value">₦{{ "{:,.0f}".format(kpis.total_revenue) }}</div>
-      <div class="brief-copy">Current period revenue across <strong>{{ kpis.num_stores }}</strong> selling stores. Average revenue per store closed at <strong>₦{{ "{:,.0f}".format(kpis.avg_revenue_per_store or 0) }}</strong>.</div>
-    </div>
-    <div class="brief-card">
-      <div class="brief-label">Repeat Purchase</div>
-      <div class="brief-value">{{ "{:.1f}%".format(kpis.repeat_pct or 0) }}</div>
-      <div class="brief-copy"><strong>{{ kpis.repeat_stores or 0 }}</strong> of <strong>{{ kpis.num_stores or 0 }}</strong> tracked stores reordered in the period. Single-order stores remain the immediate conversion pool.</div>
-    </div>
-    <div class="brief-card">
-      <div class="brief-label">Inventory Watch</div>
-      <div class="brief-value">{{ "{:.1f}".format(kpis.stock_days_cover or 0) }} days</div>
-      <div class="brief-copy">Closing stock ended at <strong>{{ "{:,.1f}".format(kpis.total_closing_stock or 0) }}</strong> packs with health status marked <strong>{{ kpis.inv_health_status }}</strong>.</div>
-    </div>
-    <div class="brief-card">
-      <div class="brief-label">Immediate Focus</div>
-      <div class="brief-value" style="font-size:18px;">{% if coach and coach.summary and coach.summary.recommended_actions %}{{ coach.summary.recommended_actions[0] }}{% else %}Maintain availability and push repeat conversion in the next cycle.{% endif %}</div>
-      <div class="brief-copy">This is the lead action based on the current sales, inventory, and activity evidence.</div>
-    </div>
-  </section>
-
   <!-- ════════════════════ SECTION 1: OVERVIEW ════════════════════════════ -->
   <div id="section-overview" class="section active">
     <div class="page-body">
-
-      <div class="section-divider">
-        <h3>Commercial Overview</h3>
-        <span>Current period performance, exception signals, and supporting field evidence for {{ brand_name }}.</span>
-      </div>
 
       <!-- KPI Cards -->
       <div class="kpi-row">
@@ -1584,311 +1342,9 @@
       </div>
       {% endif %}
 
-      {% if activity_report %}
-      <div class="activity-shell">
-        <div class="activity-card activity-hero">
-          <div>
-            <div class="activity-kicker">Activity Intelligence</div>
-            <div class="activity-title">{{ activity_report.headline }}</div>
-            <div class="activity-copy">{{ activity_report.summary }}</div>
-            <div class="activity-chip-row">
-              <span class="activity-chip">Coverage match: {{ activity_report.coverage_ratio }}%</span>
-              <span class="activity-chip">Matched selling stores: {{ activity_report.matched_store_count }}</span>
-              {% if activity_report.history.first_seen %}
-              <span class="activity-chip">History from {{ activity_report.history.first_seen }}</span>
-              {% endif %}
-            </div>
-          </div>
-          <div class="activity-stat-grid">
-            <div class="activity-stat">
-              <div class="activity-stat-label">Activity Responses</div>
-              <div class="activity-stat-value">{{ activity_report.current.activities }}</div>
-              <div class="activity-stat-sub">{{ activity_report.current.active_days }} active days · {{ activity_report.current.survey_types }} survey types</div>
-            </div>
-            <div class="activity-stat">
-              <div class="activity-stat-label">Stores Touched</div>
-              <div class="activity-stat-value">{{ activity_report.current.stores }}</div>
-              <div class="activity-stat-sub">{{ activity_report.current.visits }} structured visits · {{ activity_report.current.states }} states</div>
-            </div>
-            <div class="activity-stat">
-              <div class="activity-stat-label">Distinct Salesmen</div>
-              <div class="activity-stat-value">{{ activity_report.current.salespeople }}</div>
-              <div class="activity-stat-sub">{{ activity_report.current.retailer_types }} retailer types covered</div>
-            </div>
-            <div class="activity-stat">
-              <div class="activity-stat-label">Issues Logged</div>
-              <div class="activity-stat-value">{{ activity_report.current.issues }}</div>
-              <div class="activity-stat-sub">{{ activity_report.current.opportunities }} opportunities · {{ activity_report.current.photos }} photos</div>
-            </div>
-            <div class="activity-stat">
-              <div class="activity-stat-label">All-Time History</div>
-              <div class="activity-stat-value">{{ activity_report.history.mentions }}</div>
-              <div class="activity-stat-sub">{{ activity_report.history.stores }} stores · {{ activity_report.history.all_time_salespeople }} salespeople since first activity</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="activity-card">
-          <div class="card-title">Top Salesmen by Activity
-            <span class="card-title-sub">Field team members driving the most tracked responses for this brand</span>
-          </div>
-          {% if activity_report.top_salesmen_svg %}
-          <div class="activity-chart" style="margin-bottom:12px;">{{ activity_report.top_salesmen_svg | safe }}</div>
-          {% endif %}
-          {% if activity_report.salesman_activity_rows %}
-          <table class="activity-table">
-            <tr><th>Salesman</th><th style="width:90px;">Activities</th><th style="width:70px;">Stores</th><th style="width:70px;">Days</th></tr>
-            {% for row in activity_report.salesman_activity_rows %}
-            <tr>
-              <td>{{ row.salesman_name }}</td>
-              <td>{{ row.activities }}</td>
-              <td>{{ row.stores }}</td>
-              <td>{{ row.active_days }}</td>
-            </tr>
-            {% endfor %}
-          </table>
-          {% else %}
-          <div class="activity-empty">No salesman-level activity evidence is available for this brand in this report period.</div>
-          {% endif %}
-        </div>
-
-        <div class="activity-card">
-          <div class="card-title">Geographic Coverage
-            <span class="card-title-sub">State footprint for the current period activity record</span>
-          </div>
-          {% if activity_report.state_mix_svg %}
-          <div class="activity-chart" style="margin-bottom:12px;">{{ activity_report.state_mix_svg | safe }}</div>
-          {% endif %}
-          {% if activity_report.state_rows %}
-          <table class="activity-table">
-            <tr><th>State</th><th style="width:90px;">Activities</th><th style="width:70px;">Stores</th></tr>
-            {% for row in activity_report.state_rows %}
-            <tr>
-              <td>{{ row.retailer_state }}</td>
-              <td>{{ row.activities }}</td>
-              <td>{{ row.stores }}</td>
-            </tr>
-            {% endfor %}
-          </table>
-          {% else %}
-          <div class="activity-empty">No state-level activity coverage is available yet.</div>
-          {% endif %}
-        </div>
-
-        <div class="activity-card">
-          <div class="card-title">Activity Trend Over Time
-            <span class="card-title-sub">Brand mentions across the report period</span>
-          </div>
-          {% if activity_report.current_trend_svg %}
-          <div class="activity-chart">{{ activity_report.current_trend_svg | safe }}</div>
-          {% else %}
-          <div class="activity-empty">No report-scoped activity trend is available for this brand.</div>
-          {% endif %}
-        </div>
-
-        <div class="activity-card">
-          <div class="card-title">Retailer Type Distribution
-            <span class="card-title-sub">How this brand’s activity is distributed across outlet types</span>
-          </div>
-          {% if activity_report.retailer_type_svg %}
-          <div class="activity-chart" style="padding:6px 0;">{{ activity_report.retailer_type_svg | safe }}</div>
-          {% endif %}
-          {% if activity_report.retailer_type_rows %}
-          <table class="activity-table">
-            <tr><th>Retailer Type</th><th style="width:90px;">Activities</th><th style="width:70px;">Stores</th></tr>
-            {% for row in activity_report.retailer_type_rows %}
-            <tr>
-              <td>{{ row.retailer_type }}</td>
-              <td>{{ row.activities }}</td>
-              <td>{{ row.stores }}</td>
-            </tr>
-            {% endfor %}
-          </table>
-          {% else %}
-          <div class="activity-empty">No retailer-type distribution is available yet.</div>
-          {% endif %}
-        </div>
-
-        <div class="activity-card">
-          <div class="card-title">Activity History
-            <span class="card-title-sub">Monthly brand mentions from first activity import to now</span>
-          </div>
-          {% if activity_report.history_trend_svg %}
-          <div class="activity-chart">{{ activity_report.history_trend_svg | safe }}</div>
-          {% else %}
-          <div class="activity-empty">No historical activity trend is available yet.</div>
-          {% endif %}
-        </div>
-
-        <div class="activity-card">
-          <div class="card-title">Issue Mix
-            <span class="card-title-sub">Most frequent issues logged for this brand in the current period</span>
-          </div>
-          {% if activity_report.issue_mix_svg %}
-          <div class="activity-chart" style="margin-bottom:12px;">{{ activity_report.issue_mix_svg | safe }}</div>
-          {% endif %}
-          {% if activity_report.issue_rows %}
-          <table class="activity-table">
-            <tr><th>Issue</th><th style="width:90px;">Count</th><th style="width:160px;">Share</th></tr>
-            {% for row in activity_report.issue_rows %}
-            <tr>
-              <td>{{ row.issue_type }}</td>
-              <td>{{ row.count }}</td>
-              <td>
-                <div>{{ row.pct }}%</div>
-                <div class="activity-bar-track"><div class="activity-bar-fill" style="width: {{ row.pct }}%;"></div></div>
-              </td>
-            </tr>
-            {% endfor %}
-          </table>
-          {% else %}
-          <div class="activity-empty">No brand-specific issues were logged for this report period.</div>
-          {% endif %}
-        </div>
-
-        <div class="activity-card">
-          <div class="card-title">Survey Mix
-            <span class="card-title-sub">Survey names contributing to the current period activity file</span>
-          </div>
-          {% if activity_report.survey_mix_svg %}
-          <div class="activity-chart" style="margin-bottom:12px;">{{ activity_report.survey_mix_svg | safe }}</div>
-          {% endif %}
-          {% if activity_report.survey_rows %}
-          <table class="activity-table">
-            <tr><th>Survey</th><th style="width:90px;">Activities</th><th style="width:90px;">Stores</th></tr>
-            {% for row in activity_report.survey_rows %}
-            <tr>
-              <td>{{ row.survey_name }}</td>
-              <td>{{ row.activities }}</td>
-              <td>{{ row.stores }}</td>
-            </tr>
-            {% endfor %}
-          </table>
-          {% else %}
-          <div class="activity-empty">No survey-name distribution is available for this brand yet.</div>
-          {% endif %}
-        </div>
-
-        <div class="activity-card">
-          <div class="card-title">Store Activity Ranking
-            <span class="card-title-sub">Where the brand was actually seen in trade during this report period</span>
-          </div>
-          {% if activity_report.store_ranking_svg %}
-          <div class="activity-chart" style="margin-bottom:12px;">{{ activity_report.store_ranking_svg | safe }}</div>
-          {% endif %}
-          {% if activity_report.store_rows %}
-          <table class="activity-table">
-            <tr><th>Retailer</th><th style="width:70px;">Mentions</th><th style="width:70px;">Visits</th><th style="width:70px;">Issues</th><th style="width:70px;">SKUs</th></tr>
-            {% for row in activity_report.store_rows %}
-            <tr>
-              <td>{{ row.retailer_name }}<div style="font-size:11px;color:var(--muted);margin-top:4px;">{{ row.active_days }} active day{% if row.active_days != 1 %}s{% endif %}</div></td>
-              <td>{{ row.mentions }}</td>
-              <td>{{ row.visits }}</td>
-              <td>{{ row.issues }}</td>
-              <td>{{ row.skus }}</td>
-            </tr>
-            {% endfor %}
-          </table>
-          {% else %}
-          <div class="activity-empty">No store-level activity evidence is available for this brand in this report period.</div>
-          {% endif %}
-        </div>
-
-        <div class="activity-card">
-          <div class="card-title">Activity Details
-            <span class="card-title-sub">Recent field records supporting the activity story</span>
-          </div>
-          {% if activity_report.detail_rows %}
-          <table class="activity-table">
-            <tr><th style="width:88px;">Date</th><th>Salesman</th><th>Retailer</th><th>City</th><th>Survey</th><th>Question</th></tr>
-            {% for row in activity_report.detail_rows %}
-            <tr>
-              <td>{{ row.activity_date }}</td>
-              <td>{{ row.salesman_name }}</td>
-              <td>{{ row.retailer_name }}</td>
-              <td>{{ row.retailer_city }}</td>
-              <td>{{ row.survey_name }}</td>
-              <td>{{ row.question }}</td>
-            </tr>
-            {% endfor %}
-          </table>
-          {% else %}
-          <div class="activity-empty">No detailed activity records are available for this brand in the current period.</div>
-          {% endif %}
-        </div>
-
-        <div class="activity-card">
-          <div class="card-title">Sales × Activity Link
-            <span class="card-title-sub">Commercial exceptions surfaced by comparing activity evidence to selling stores</span>
-          </div>
-          <div class="activity-stat-grid" style="grid-template-columns:repeat(4,minmax(0,1fr)); margin-bottom:14px;">
-            <div class="activity-stat-card">
-              <div class="activity-stat-label">Matched Stores</div>
-              <div class="activity-stat-value">{{ activity_report.matched_store_count }}</div>
-              <div class="activity-stat-sub">Selling stores seen in activity</div>
-            </div>
-            <div class="activity-stat-card">
-              <div class="activity-stat-label">Coverage Ratio</div>
-              <div class="activity-stat-value">{{ "{:.1f}%".format(activity_report.coverage_ratio or 0) }}</div>
-              <div class="activity-stat-sub">Matched stores vs selling stores</div>
-            </div>
-            <div class="activity-stat-card">
-              <div class="activity-stat-label">Sales Exceptions</div>
-              <div class="activity-stat-value">{{ activity_report.high_sales_low_activity|length }}</div>
-              <div class="activity-stat-sub">High sales, weak activity</div>
-            </div>
-            <div class="activity-stat-card">
-              <div class="activity-stat-label">Activity Exceptions</div>
-              <div class="activity-stat-value">{{ activity_report.high_activity_low_sales|length }}</div>
-              <div class="activity-stat-sub">High activity, weak sales</div>
-            </div>
-          </div>
-          {% if activity_report.linkage_svg %}
-          <div class="activity-chart" style="margin-bottom:12px;">{{ activity_report.linkage_svg | safe }}</div>
-          {% endif %}
-          <div class="activity-list">
-            <div class="activity-list-item">
-              <h5>High sales, low activity</h5>
-              {% if activity_report.high_sales_low_activity %}
-              <p style="margin-bottom:8px;">Stores converting commercially without matching field coverage in the same period.</p>
-              <p>
-                {% for row in activity_report.high_sales_low_activity %}
-                  <span style="display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 3px;border-radius:999px;background:#E8192C;color:#fff;font-size:11px;font-weight:700;margin-right:6px;white-space:nowrap;">{{ loop.index }}</span>{{ row.store }} (₦{{ "{:,.0f}".format(row.revenue) }}){% if not loop.last %}, {% endif %}
-                {% endfor %}
-              </p>
-              {% else %}
-              <p>Every top-revenue store in this period has a matching activity record.</p>
-              {% endif %}
-            </div>
-            <div class="activity-list-item">
-              <h5>High activity, low sales visibility</h5>
-              {% if activity_report.high_activity_low_sales %}
-              <p style="margin-bottom:8px;">Stores getting field attention but not yet showing up strongly in the sales ranking.</p>
-              <p>
-                {% for row in activity_report.high_activity_low_sales %}
-                  <span style="display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 3px;border-radius:999px;background:#2E86C1;color:#fff;font-size:11px;font-weight:700;margin-right:6px;white-space:nowrap;">{{ loop.index }}</span>{{ row.retailer_name }} ({{ row.mentions }} mentions, {{ row.visits }} visits){% if not loop.last %}, {% endif %}
-                {% endfor %}
-              </p>
-              {% else %}
-              <p>Activity was concentrated in stores that are already visible in the sales ranking.</p>
-              {% endif %}
-            </div>
-            <div class="activity-list-item">
-              <h5>Recommended Actions</h5>
-              <ul style="margin-left:18px; color:var(--muted); line-height:1.7; font-size:12px;">
-                {% for action in activity_report.recommended_actions %}
-                <li>{{ action }}</li>
-                {% endfor %}
-              </ul>
-            </div>
-          </div>
-        </div>
-      </div>
-      {% endif %}
-
       <!-- Business Narrative -->
       <div class="narrative">
-        <strong>Commercial Readout:</strong> {{ narrative }}
+        <strong>Analysis:</strong> {{ narrative }}
       </div>
 
     </div><!-- /page-body -->
@@ -1988,6 +1444,11 @@
         </div>
 
       </div><!-- /detail-grid -->
+
+      <!-- Business Narrative -->
+      <div class="narrative">
+        <strong>Analysis:</strong> {{ narrative }}
+      </div>
 
     </div>
   </div><!-- /section-detail -->
