@@ -5263,6 +5263,210 @@ def _build_copilot_state_payload(context):
     return payload
 
 
+@app.route('/api/activity/dashboard_data')
+def api_activity_dashboard_data():
+    """Return all data needed for the activity intelligence dashboard."""
+    batch_id = request.args.get('batch_id', type=int)
+    report_id = request.args.get('report_id', type=int)
+    salesman = (request.args.get('salesman') or '').strip() or None
+    state = (request.args.get('state') or '').strip() or None
+    survey = (request.args.get('survey') or '').strip() or None
+    date_from = (request.args.get('date_from') or '').strip() or None
+    date_to = (request.args.get('date_to') or '').strip() or None
+
+    # Resolve batch if not given
+    if not batch_id and report_id:
+        batches = ds.get_activity_batches(limit=1)
+        if batches:
+            batch_id = batches[0]['id']
+    if not batch_id:
+        batches = ds.get_activity_batches(limit=1)
+        if batches:
+            batch_id = batches[0]['id']
+
+    if not batch_id:
+        return jsonify({'error': 'no_batch', 'data': {}})
+
+    with ds._connect() as conn:
+        # Build WHERE clause
+        filters = ['ae.batch_id = ?']
+        params = [batch_id]
+        if salesman:
+            filters.append('ae.salesman_name = ?')
+            params.append(salesman)
+        if state:
+            filters.append('ae.retailer_state = ?')
+            params.append(state)
+        if survey:
+            filters.append('ae.survey_name = ?')
+            params.append(survey)
+        if date_from:
+            filters.append('ae.activity_date >= ?')
+            params.append(date_from)
+        if date_to:
+            filters.append('ae.activity_date <= ?')
+            params.append(date_to)
+        where = ' AND '.join(filters)
+
+        # KPIs
+        kpi = conn.execute(f'''
+            SELECT COUNT(*) total_activities,
+                   COUNT(DISTINCT ae.retailer_code) retailers_visited,
+                   COUNT(DISTINCT ae.salesman_name) distinct_salesmen
+            FROM activity_events ae WHERE {where}
+        ''', params).fetchone()
+
+        visits_kpi = conn.execute(f'''
+            SELECT COUNT(DISTINCT av.visit_key) surveys_completed
+            FROM activity_events ae
+            JOIN activity_visits av ON av.batch_id=ae.batch_id
+                AND av.retailer_code=ae.retailer_code
+                AND av.activity_date=ae.activity_date
+            WHERE {where}
+        ''', params).fetchone()
+
+        # Top 10 salesmen
+        salesmen_rows = conn.execute(f'''
+            SELECT ae.salesman_name, COUNT(*) activities,
+                   COUNT(DISTINCT ae.retailer_code) stores
+            FROM activity_events ae WHERE {where} AND ae.salesman_name != ''
+            GROUP BY ae.salesman_name ORDER BY activities DESC LIMIT 10
+        ''', params).fetchall()
+
+        # Daily trend
+        trend_rows = conn.execute(f'''
+            SELECT ae.activity_date,
+                   COUNT(*) daily_count,
+                   COUNT(DISTINCT ae.retailer_code || ae.salesman_name) visit_count
+            FROM activity_events ae WHERE {where} AND ae.activity_date != ''
+            GROUP BY ae.activity_date ORDER BY ae.activity_date
+        ''', params).fetchall()
+
+        # Survey completion by survey name
+        survey_rows = conn.execute(f'''
+            SELECT ae.survey_name,
+                   COUNT(*) completions,
+                   COUNT(DISTINCT ae.retailer_code) stores
+            FROM activity_events ae WHERE {where} AND ae.survey_name != ''
+            GROUP BY ae.survey_name ORDER BY completions DESC LIMIT 12
+        ''', params).fetchall()
+
+        # Retailer type distribution
+        type_rows = conn.execute(f'''
+            SELECT ae.retailer_type, COUNT(*) cnt
+            FROM activity_events ae WHERE {where} AND ae.retailer_type != ''
+            GROUP BY ae.retailer_type ORDER BY cnt DESC
+        ''', params).fetchall()
+
+        # City data for map (top 40 cities)
+        city_rows = conn.execute(f'''
+            SELECT ae.retailer_city, ae.retailer_state,
+                   COUNT(*) activities,
+                   COUNT(DISTINCT ae.retailer_code) stores
+            FROM activity_events ae WHERE {where} AND ae.retailer_city != ''
+            GROUP BY ae.retailer_city, ae.retailer_state ORDER BY activities DESC LIMIT 40
+        ''', params).fetchall()
+
+        # Activity details (latest 200 rows)
+        detail_rows = conn.execute(f'''
+            SELECT ae.activity_date, ae.salesman_name, ae.retailer_name,
+                   ae.retailer_city, ae.retailer_state, ae.survey_name,
+                   ae.question, ae.label, ae.answer
+            FROM activity_events ae WHERE {where}
+            ORDER BY ae.activity_date DESC, ae.id DESC LIMIT 200
+        ''', params).fetchall()
+
+        # Filter options
+        opt_salesmen = conn.execute(
+            'SELECT DISTINCT salesman_name FROM activity_events WHERE batch_id=? AND salesman_name!="" ORDER BY salesman_name',
+            [batch_id]
+        ).fetchall()
+        opt_states = conn.execute(
+            'SELECT DISTINCT retailer_state FROM activity_events WHERE batch_id=? AND retailer_state!="" ORDER BY retailer_state',
+            [batch_id]
+        ).fetchall()
+        opt_surveys = conn.execute(
+            'SELECT DISTINCT survey_name FROM activity_events WHERE batch_id=? AND survey_name!="" ORDER BY survey_name',
+            [batch_id]
+        ).fetchall()
+
+    # City -> lat/lon lookup (Nigerian cities)
+    CITY_COORDS = {
+        'ikorodu': (6.6194, 3.5106), 'lekki': (6.4698, 3.5852),
+        'ogudu': (6.5694, 3.3964), 'abulegba': (6.6073, 3.2867),
+        'sangotedo': (6.4449, 3.6432), 'alakuko': (6.6209, 3.2105),
+        'jakande': (6.4667, 3.5667), 'ajah': (6.4653, 3.5923),
+        'ipaja': (6.6028, 3.2594), 'ikotun': (6.5309, 3.2918),
+        'victoria island': (6.4281, 3.4219), 'ikeja': (6.5958, 3.3478),
+        'surulere': (6.4969, 3.3581), 'yaba': (6.5091, 3.3770),
+        'apapa': (6.4484, 3.3604), 'mushin': (6.5264, 3.3481),
+        'oshodi': (6.5488, 3.3511), 'alimosho': (6.6109, 3.2551),
+        'ajegunle': (6.4706, 3.3511), 'gbagada': (6.5551, 3.3889),
+        'ojota': (6.5803, 3.3894), 'ketu': (6.5879, 3.3864),
+        'mile 12': (6.6014, 3.3941), 'owode': (6.8744, 3.4428),
+        'ota': (6.6869, 3.2347), 'abeokuta': (7.1557, 3.3451),
+        'abuja': (9.0765, 7.3986), 'ibadan': (7.3775, 3.9470),
+        'kano': (12.0022, 8.5919), 'port harcourt': (4.8156, 7.0498),
+        'oshogbo': (7.7827, 4.5418), 'benin city': (6.3350, 5.6268),
+        'enugu': (6.4584, 7.5464), 'calabar': (4.9517, 8.3220),
+        'jos': (9.8965, 8.8583), 'maiduguri': (11.8311, 13.1510),
+        'kaduna': (10.5264, 7.4385), 'zaria': (11.0667, 7.7000),
+        'warri': (5.5167, 5.7500), 'asaba': (6.2500, 6.7500),
+        'owerri': (5.4836, 7.0333), 'uyo': (5.0333, 7.9167),
+        'lafia': (8.4869, 8.5219), 'minna': (9.6139, 6.5569),
+        'ilorin': (8.4966, 4.5426), 'akure': (7.2526, 5.1944),
+        'ado ekiti': (7.6167, 5.2167), 'osogbo': (7.7827, 4.5418),
+        'oyo': (7.8490, 3.9350), 'kwara': (8.9000, 4.5500),
+        'nigeria': (9.0820, 8.6753),
+    }
+
+    def _coords(city, state):
+        c = (city or '').strip().lower()
+        s = (state or '').strip().lower()
+        if c in CITY_COORDS:
+            return CITY_COORDS[c]
+        if s in CITY_COORDS:
+            return CITY_COORDS[s]
+        for key, coords in CITY_COORDS.items():
+            if key in c or c in key:
+                return coords
+        return None
+
+    map_points = []
+    for row in city_rows:
+        coords = _coords(row['retailer_city'], row['retailer_state'])
+        if coords:
+            map_points.append({
+                'city': row['retailer_city'],
+                'state': row['retailer_state'],
+                'activities': row['activities'],
+                'stores': row['stores'],
+                'lat': coords[0],
+                'lon': coords[1],
+            })
+
+    return jsonify({
+        'batch_id': batch_id,
+        'kpis': {
+            'total_activities': kpi['total_activities'] if kpi else 0,
+            'retailers_visited': kpi['retailers_visited'] if kpi else 0,
+            'surveys_completed': visits_kpi['surveys_completed'] if visits_kpi else 0,
+            'distinct_salesmen': kpi['distinct_salesmen'] if kpi else 0,
+        },
+        'top_salesmen': [dict(r) for r in salesmen_rows],
+        'daily_trend': [dict(r) for r in trend_rows],
+        'survey_completion': [dict(r) for r in survey_rows],
+        'retailer_types': [dict(r) for r in type_rows],
+        'map_points': map_points,
+        'activity_details': [dict(r) for r in detail_rows],
+        'filter_options': {
+            'salesmen': [r[0] for r in opt_salesmen],
+            'states': [r[0] for r in opt_states],
+            'surveys': [r[0] for r in opt_surveys],
+        },
+    })
+
+
 @app.route('/api/activity')
 def api_activity():
     limit = min(int(request.args.get('limit', 50)), 200)
