@@ -958,3 +958,547 @@ def generate_pdf_html(output_path: str, brand_name: str, kpis: dict,
         print(f"PDF generation failed: {e}")
         print(f"HTML report saved to: {html_output_path}")
         return html_output_path
+
+
+# ── Activity Report Generation ─────────────────────────────────────────────────
+
+def generate_activity_report_html(output_path: str, brand_name: str, activity_data: dict,
+                                  period_label: str = None, report_id: int = None) -> str:
+    """
+    Generate an enhanced activity report (PDF + HTML) with charts and insights.
+    
+    Args:
+        output_path: Path where PDF should be saved
+        brand_name: Brand name for the report
+        activity_data: Dictionary containing all activity metrics
+        period_label: Period label (e.g., "March Week 2, 2026")
+        report_id: Optional report ID for linking
+    
+    Returns:
+        Path to generated PDF or HTML file
+    """
+    from datetime import datetime
+    
+    template = jinja_env.get_template('activity_report.html')
+    
+    # Prepare context for template
+    context = {
+        'brand_name': brand_name,
+        'period': period_label or 'Current Period',
+        'generated_at': datetime.now().strftime('%B %d, %Y at %I:%M %p'),
+        'summary': activity_data.get('summary', {}),
+        'week_over_week': activity_data.get('week_over_week', {}),
+        'correlation': activity_data.get('correlation', {}),
+        'issues': activity_data.get('issues', {}),
+        'opportunities': activity_data.get('opportunities', {}),
+        'daily_trend': activity_data.get('daily_trend', {}),
+        'categories': activity_data.get('categories', {}),
+        'geographic': activity_data.get('geographic', []),
+        'narrative': activity_data.get('narrative', ''),
+        'report_id': report_id,
+        'zip': zip,  # Allow zip function in template
+        'int': int,  # Allow int function in template
+    }
+    
+    # Render HTML
+    html_content = template.render(**context)
+    
+    # Save HTML version
+    html_output_path = output_path.replace('.pdf', '.html')
+    with open(html_output_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+    
+    # Try to generate PDF with Playwright
+    try:
+        pdf_bytes = render_pdf_bytes(html_content)
+        with open(output_path, 'wb') as f:
+            f.write(pdf_bytes)
+        return output_path
+    except Exception as e:
+        print(f"Activity PDF generation failed: {e}")
+        print(f"HTML report saved to: {html_output_path}")
+        return html_output_path
+
+
+def prepare_activity_report_data(ds, brand_name: str, report_id: int = None,
+                                  start_date: str = None, end_date: str = None) -> dict:
+    """
+    Prepare comprehensive activity report data from DataStore.
+    
+    Args:
+        ds: DataStore instance
+        brand_name: Brand name to filter by
+        report_id: Optional report ID to filter by
+        start_date: Start date for period (ISO format)
+        end_date: End date for period (ISO format)
+    
+    Returns:
+        Dictionary with all activity metrics for report generation
+    """
+    from datetime import datetime, timedelta
+    import json
+    
+    # Get activity summary
+    summary = ds.get_activity_summary(report_id=report_id, brand_name=brand_name)
+    
+    # Build week-over-week comparison
+    week_over_week = _build_week_over_week(ds, brand_name, report_id, start_date, end_date)
+    
+    # Build activity-to-sales correlation
+    correlation = _build_activity_correlation(ds, brand_name, report_id, summary)
+    
+    # Build issues and opportunities
+    issues_opps = _build_issues_opportunities(ds, brand_name, report_id, summary)
+    
+    # Build daily trend
+    daily_trend = _build_daily_trend(ds, brand_name, report_id, start_date, end_date)
+    
+    # Build category distribution
+    categories = _build_category_distribution(ds, brand_name, report_id, summary)
+    
+    # Build geographic distribution
+    geographic = _build_geographic_distribution(ds, brand_name, report_id, summary)
+    
+    # Generate narrative
+    narrative = _generate_activity_narrative(summary, week_over_week, correlation, issues_opps)
+    
+    return {
+        'summary': summary.get('totals', {}),
+        'week_over_week': week_over_week,
+        'correlation': correlation,
+        'issues': issues_opps.get('issues', {}),
+        'opportunities': issues_opps.get('opportunities', {}),
+        'daily_trend': daily_trend,
+        'categories': categories,
+        'geographic': geographic,
+        'narrative': narrative,
+    }
+
+
+def _build_week_over_week(ds, brand_name: str, report_id: int,
+                          current_start: str, current_end: str) -> dict:
+    """Calculate week-over-week comparison metrics with smart previous week detection."""
+    # Get current period metrics
+    current_summary = ds.get_activity_summary(report_id=report_id, brand_name=brand_name)
+    current_totals = current_summary.get('totals', {})
+    
+    # Get previous week's report by looking at start_date
+    prev_report = None
+    prev_report_id = None
+    
+    if report_id and current_start:
+        from datetime import datetime, timedelta
+        try:
+            current_start_dt = datetime.strptime(current_start, '%Y-%m-%d')
+            # Previous week is 7 days before
+            prev_week_start = (current_start_dt - timedelta(days=7)).strftime('%Y-%m-%d')
+            
+            # Find report that matches previous week
+            all_reports = ds.get_all_reports()
+            for r in all_reports:
+                if r.get('start_date') == prev_week_start:
+                    prev_report = r
+                    prev_report_id = r['id']
+                    break
+            
+            # Fallback: if no exact match, use the chronologically previous report
+            if not prev_report:
+                for i, r in enumerate(all_reports):
+                    if r['id'] == report_id and i + 1 < len(all_reports):
+                        prev_report = all_reports[i + 1]
+                        prev_report_id = prev_report['id']
+                        break
+        except Exception:
+            pass
+    
+    # Get previous week's activity data
+    prev_totals = {}
+    if prev_report_id:
+        prev_summary = ds.get_activity_summary(report_id=prev_report_id, brand_name=brand_name)
+        prev_totals = prev_summary.get('totals', {})
+    
+    # Get previous week's batch info for labels
+    prev_week_label = "Previous Week"
+    if prev_report:
+        prev_week_label = prev_report.get('month_label', 'Previous Week')
+    
+    # Calculate changes
+    def calc_change(current, previous):
+        if not previous or previous == 0:
+            return None
+        return round(((current - previous) / previous) * 100, 1)
+    
+    # Calculate absolute changes too
+    def calc_abs_change(current, previous):
+        if previous is None:
+            return None
+        return current - previous
+    
+    current_stores = current_totals.get('stores', 0) or 0
+    current_visits = current_totals.get('visits', 0) or 0
+    current_events = current_totals.get('events', 0) or 0
+    current_issues = current_totals.get('issues', 0) or 0
+    
+    prev_stores = prev_totals.get('stores', 0) or 0
+    prev_visits = prev_totals.get('visits', 0) or 0
+    prev_events = prev_totals.get('events', 0) or 0
+    prev_issues = prev_totals.get('issues', 0) or 0
+    
+    # Determine trend direction and insights
+    stores_change = calc_change(current_stores, prev_stores)
+    visits_change = calc_change(current_visits, prev_visits)
+    events_change = calc_change(current_events, prev_events)
+    issues_change = calc_change(current_issues, prev_issues)
+    
+    # Generate insight text
+    insights = []
+    if visits_change is not None:
+        if visits_change > 20:
+            insights.append(f"Activity increased significantly (+{visits_change}% visits)")
+        elif visits_change > 5:
+            insights.append(f"Activity increased (+{visits_change}% visits)")
+        elif visits_change < -20:
+            insights.append(f"Activity decreased significantly ({visits_change}% visits)")
+        elif visits_change < -5:
+            insights.append(f"Activity decreased ({visits_change}% visits)")
+        else:
+            insights.append("Activity remained stable")
+    
+    if stores_change is not None and abs(stores_change) > 10:
+        if stores_change > 0:
+            insights.append(f"store coverage expanded (+{stores_change}%)")
+        else:
+            insights.append(f"store coverage reduced ({stores_change}%)")
+    
+    if issues_change is not None:
+        if issues_change > 30:
+            insights.append(f"issues increased (+{issues_change}%)")
+        elif issues_change < -30:
+            insights.append(f"issues reduced ({issues_change}%)")
+    
+    return {
+        'has_previous_week': prev_totals != {},
+        'previous_week_label': prev_week_label,
+        'stores_visited_change': stores_change,
+        'stores_visited_abs_change': calc_abs_change(current_stores, prev_stores),
+        'visits_change': visits_change,
+        'visits_abs_change': calc_abs_change(current_visits, prev_visits),
+        'images_change': events_change,
+        'images_abs_change': calc_abs_change(current_events, prev_events),
+        'issues_change': issues_change,
+        'issues_abs_change': calc_abs_change(current_issues, prev_issues),
+        'insights': insights,
+        'comparison_data': {
+            'labels': ['Stores', 'Visits', 'Events', 'Issues'],
+            'current_data': [current_stores, current_visits, current_events, current_issues],
+            'previous_data': [prev_stores, prev_visits, prev_events, prev_issues],
+            'current_label': 'This Week',
+            'previous_label': prev_week_label
+        },
+        'previous_week_summary': {
+            'stores': prev_stores,
+            'visits': prev_visits,
+            'events': prev_events,
+            'issues': prev_issues
+        } if prev_totals else None
+    }
+
+
+def _build_activity_correlation(ds, brand_name: str, report_id: int, summary: dict) -> dict:
+    """Build activity-to-sales correlation metrics."""
+    totals = summary.get('totals', {})
+    
+    stores_visited = totals.get('stores', 0)
+    
+    # Get sales data if available for this brand
+    orders_generated = 0
+    stores_no_orders = stores_visited  # Default assumption
+    
+    if report_id and brand_name:
+        try:
+            # Try to get actual sales data from report
+            report_data = ds.get_report_brand_data(report_id, brand_name)
+            if report_data:
+                orders_generated = report_data.get('order_count', 0)
+                stores_no_orders = max(0, stores_visited - orders_generated)
+        except:
+            pass
+    
+    visit_to_order_rate = 0
+    if stores_visited > 0:
+        visit_to_order_rate = round((orders_generated / stores_visited) * 100, 1)
+    
+    return {
+        'stores_visited': stores_visited,
+        'orders_generated': orders_generated,
+        'stores_no_orders': stores_no_orders,
+        'visit_to_order_rate': visit_to_order_rate
+    }
+
+
+def _build_issues_opportunities(ds, brand_name: str, report_id: int, summary: dict) -> dict:
+    """Extract and categorize issues and opportunities from activity data."""
+    totals = summary.get('totals', {})
+    issue_count = totals.get('issues', 0)
+    
+    # Get recent issues
+    recent_issues = summary.get('recent_issues', [])
+    
+    # Categorize issues
+    issue_breakdown = []
+    issue_types = {}
+    
+    for issue in recent_issues:
+        issue_type = issue.get('issue_type', 'unknown')
+        severity = issue.get('severity', 'medium')
+        
+        if issue_type not in issue_types:
+            issue_types[issue_type] = {'count': 0, 'severity': severity}
+        issue_types[issue_type]['count'] += 1
+    
+    for issue_type, data in sorted(issue_types.items(), key=lambda x: x[1]['count'], reverse=True):
+        issue_breakdown.append({
+            'type': issue_type,
+            'count': data['count'],
+            'severity': data['severity']
+        })
+    
+    # Extract opportunities from issue types
+    opportunities = []
+    opportunity_keywords = ['opportunity', 'restock', 'display', 'new_shelf']
+    
+    for issue in recent_issues:
+        issue_type = issue.get('issue_type', '')
+        answer = issue.get('answer', '')
+        
+        # Check for opportunity keywords
+        if any(kw in issue_type.lower() or kw in str(answer).lower() for kw in opportunity_keywords):
+            opportunities.append({
+                'description': answer[:100] if answer else issue_type,
+                'store_count': 1
+            })
+    
+    return {
+        'issues': {
+            'total': issue_count,
+            'breakdown': issue_breakdown[:5]
+        },
+        'opportunities': {
+            'total': len(opportunities),
+            'list': opportunities[:5]
+        }
+    }
+
+
+def _build_daily_trend(ds, brand_name: str, report_id: int,
+                       start_date: str, end_date: str) -> dict:
+    """Build daily visit trend data."""
+    # Get activity events grouped by date
+    with ds._connect() as conn:
+        query = """
+            SELECT activity_date, COUNT(DISTINCT retailer_code) as store_count
+            FROM activity_visits
+            WHERE 1=1
+        """
+        params = []
+        
+        if report_id:
+            query += " AND report_id=?"
+            params.append(report_id)
+        
+        if brand_name:
+            query += " AND survey_name LIKE ?"
+            params.append(f"%{brand_name}%")
+        
+        query += " GROUP BY activity_date ORDER BY activity_date"
+        
+        rows = conn.execute(query, params).fetchall()
+    
+    labels = []
+    values = []
+    
+    for row in rows:
+        date_str = row['activity_date']
+        if date_str:
+            # Format date nicely
+            try:
+                dt = datetime.strptime(date_str, '%Y-%m-%d')
+                labels.append(dt.strftime('%a %d'))
+            except:
+                labels.append(date_str)
+            values.append(row['store_count'])
+    
+    return {
+        'labels': labels,
+        'data': values
+    }
+
+
+def _build_category_distribution(ds, brand_name: str, report_id: int, summary: dict) -> dict:
+    """Build store category distribution by querying actual retailer types from activity_events."""
+    with ds._connect() as conn:
+        query = """
+            SELECT retailer_type, COUNT(DISTINCT retailer_code) as store_count
+            FROM activity_events
+            WHERE retailer_type IS NOT NULL AND retailer_type != ''
+        """
+        params = []
+        
+        if report_id:
+            query += " AND report_id=?"
+            params.append(report_id)
+        
+        if brand_name:
+            query += " AND (survey_name LIKE ? OR retailer_name LIKE ?)"
+            params.extend([f"%{brand_name}%", f"%{brand_name}%"])
+        
+        query += " GROUP BY retailer_type ORDER BY store_count DESC"
+        
+        rows = conn.execute(query, params).fetchall()
+    
+    # Map retailer types to readable names
+    type_mapping = {
+        'RTL': 'Retail',
+        'CORP': 'Corporate', 
+        'DALA': 'Dala',
+        'DLR': 'Distributor',
+        'RETAIL': 'Retail',
+        'CORPORATE': 'Corporate',
+        'DISTRIBUTOR': 'Distributor',
+    }
+    
+    categories = {}
+    for row in rows:
+        rtype = row['retailer_type'] or 'Other'
+        display_name = type_mapping.get(rtype.upper(), rtype)
+        categories[display_name] = row['store_count']
+    
+    # Fallback if no data
+    if not categories:
+        total_stores = summary.get('totals', {}).get('stores', 0)
+        if total_stores:
+            categories = {'Retail': total_stores}
+        else:
+            categories = {'Retail': 1}
+    
+    return {
+        'labels': list(categories.keys()),
+        'data': list(categories.values())
+    }
+
+
+def _build_geographic_distribution(ds, brand_name: str, report_id: int, summary: dict) -> list:
+    """Build geographic distribution by city."""
+    with ds._connect() as conn:
+        query = """
+            SELECT retailer_city, retailer_state, COUNT(DISTINCT retailer_code) as store_count
+            FROM activity_visits
+            WHERE retailer_city IS NOT NULL AND retailer_city != ''
+        """
+        params = []
+        
+        if report_id:
+            query += " AND report_id=?"
+            params.append(report_id)
+        
+        if brand_name:
+            query += " AND survey_name LIKE ?"
+            params.append(f"%{brand_name}%")
+        
+        query += " GROUP BY retailer_city, retailer_state ORDER BY store_count DESC LIMIT 10"
+        
+        rows = conn.execute(query, params).fetchall()
+    
+    # Calculate total for percentages
+    total = sum(r['store_count'] for r in rows) or 1
+    
+    geographic = []
+    for row in rows:
+        geographic.append({
+            'name': row['retailer_city'],
+            'state': row['retailer_state'] or 'Unknown',
+            'store_count': row['store_count'],
+            'percentage': round((row['store_count'] / total) * 100, 1)
+        })
+    
+    return geographic
+
+
+def _generate_activity_narrative(summary: dict, wow: dict, correlation: dict, issues_opps: dict) -> str:
+    """Generate a narrative summary of the activity report with week-over-week insights."""
+    totals = summary.get('totals', {})
+    
+    stores = totals.get('stores', 0)
+    visits = totals.get('visits', 0)
+    issues = totals.get('issues', 0)
+    
+    visit_rate = correlation.get('visit_to_order_rate', 0)
+    stores_no_orders = correlation.get('stores_no_orders', 0)
+    orders = correlation.get('orders_generated', 0)
+    
+    # Build narrative
+    parts = []
+    
+    # Opening - always show stores and visits
+    if stores and visits:
+        parts.append(f"This period shows {stores} store{'s' if stores != 1 else ''} visited across {visits} field visit{'s' if visits != 1 else ''}.")
+    elif stores:
+        parts.append(f"This period shows {stores} store{'s' if stores != 1 else ''} visited.")
+    elif visits:
+        parts.append(f"This period shows {visits} field visit{'s' if visits != 1 else ''}.")
+    
+    # Week-over-week insights (add early for impact)
+    if wow.get('has_previous_week'):
+        wow_insights = wow.get('insights', [])
+        if wow_insights:
+            parts.append(" ".join(wow_insights) + " compared to " + wow.get('previous_week_label', 'the previous period') + ".")
+        
+        # Add specific comparisons if significant
+        stores_change = wow.get('stores_visited_change')
+        visits_change = wow.get('visits_change')
+        issues_change = wow.get('issues_change')
+        
+        # Build comparison sentence
+        comp_parts = []
+        if visits_change is not None and abs(visits_change) >= 5:
+            if visits_change > 0:
+                comp_parts.append(f"{visits_change}% more visits")
+            else:
+                comp_parts.append(f"{abs(visits_change)}% fewer visits")
+        
+        if stores_change is not None and abs(stores_change) >= 10:
+            if stores_change > 0:
+                comp_parts.append(f"{stores_change}% more stores reached")
+            else:
+                comp_parts.append(f"{abs(stores_change)}% fewer stores")
+        
+        if comp_parts:
+            parts.append("This represents " + ", ".join(comp_parts) + ".")
+    
+    # Performance - only mention if we have meaningful data
+    if visit_rate and visit_rate > 0:
+        if visit_rate >= 50:
+            parts.append(f"Strong conversion rate at {visit_rate}% of visits generating orders.")
+        elif visit_rate >= 25:
+            parts.append(f"Moderate conversion with {visit_rate}% of visits resulting in orders.")
+        else:
+            if stores_no_orders and stores_no_orders > 0:
+                parts.append(f"Opportunity for improvement: only {visit_rate}% of visits generated orders, with {stores_no_orders} stores not ordering.")
+            else:
+                parts.append(f"Opportunity for improvement: only {visit_rate}% of visits generated orders.")
+    elif orders and orders > 0:
+        parts.append(f"{orders} order{'s' if orders != 1 else ''} were generated from field activity.")
+    
+    # Issues - only mention if there are issues
+    if issues and issues > 0:
+        parts.append(f"{issues} issue{'s' if issues != 1 else ''} were identified in the field requiring attention.")
+        
+        # Add context about issue trend
+        issues_change = wow.get('issues_change')
+        if issues_change is not None:
+            if issues_change > 30:
+                parts.append(f"This is a {issues_change}% increase in issues compared to last week.")
+            elif issues_change < -30:
+                parts.append(f"This is a {abs(issues_change)}% decrease in issues compared to last week.")
+    
+    return " ".join(parts) if parts else "Activity data for this period is being processed."
