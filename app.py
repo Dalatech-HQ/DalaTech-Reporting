@@ -4037,13 +4037,45 @@ def api_activity_report_bulk():
         except Exception as e:
             errors.append({'brand': brand_name, 'error': str(e)})
     
+    # Generate ZIP file if requested and files were created
+    zip_url = None
+    if data.get('return_zip') and results:
+        try:
+            import zipfile
+            from datetime import datetime
+            
+            zip_filename = f"Activity_Reports_{period_label.replace(' ', '_').replace(',', '')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+            zip_path = os.path.join(OUTPUT_DIR, zip_filename)
+            
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for result in results:
+                    if not result.get('success'):
+                        continue
+                    # Add Excel files
+                    if result.get('excel_url'):
+                        excel_filename = os.path.basename(result['excel_url'])
+                        excel_path = os.path.join(OUTPUT_DIR, excel_filename)
+                        if os.path.exists(excel_path):
+                            zipf.write(excel_path, f"Excel/{excel_filename}")
+                    # Add PDF files
+                    if result.get('pdf_url'):
+                        pdf_filename = os.path.basename(result['pdf_url'])
+                        pdf_path = os.path.join(PDF_DIR, pdf_filename)
+                        if os.path.exists(pdf_path):
+                            zipf.write(pdf_path, f"PDF/{pdf_filename}")
+            
+            zip_url = f"/download/{zip_filename}"
+        except Exception as zip_err:
+            print(f"ZIP generation failed: {zip_err}")
+    
     return jsonify({
         'success': len(results) > 0,
         'period_label': period_label,
         'reports': results,
         'errors': errors,
         'total': len(brand_names),
-        'success_count': len([r for r in results if r.get('success')])
+        'success_count': len([r for r in results if r.get('success')]),
+        'zip_url': zip_url
     })
 
 
