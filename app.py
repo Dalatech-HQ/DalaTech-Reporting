@@ -4839,6 +4839,55 @@ def api_activity_import():
     return jsonify({'success': True, 'job_id': job_id})
 
 
+@app.route('/api/activity/detect-brands', methods=['POST'])
+def api_activity_detect_brands():
+    """Detect brand partners from uploaded activity file."""
+    uploaded = request.files.get('file')
+    if not uploaded or uploaded.filename == '':
+        return jsonify({'success': False, 'error': 'No file uploaded'}), 400
+    
+    try:
+        import pandas as pd
+        from modules.activity_intelligence import load_activity_dataframe
+        
+        file_bytes = uploaded.read()
+        df, meta = load_activity_dataframe(file_bytes)
+        
+        if df.empty:
+            return jsonify({'success': False, 'error': 'Could not read file or file is empty'}), 400
+        
+        # Extract unique brand names from survey_name column
+        brand_surveys = df['survey_name'].dropna().unique() if 'survey_name' in df.columns else []
+        
+        # Clean up brand names (remove "Feedback" suffix)
+        brands = []
+        for survey in brand_surveys:
+            brand = survey.replace(' Feedback', '').strip()
+            if brand and brand not in brands:
+                brands.append(brand)
+        
+        # Sort alphabetically
+        brands.sort()
+        
+        return jsonify({
+            'success': True,
+            'brands': brands,
+            'count': len(brands),
+            'filename': uploaded.filename,
+            'row_count': len(df)
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/activity/batches')
+def api_activity_batches():
+    """Get list of activity import batches for history."""
+    limit = request.args.get('limit', 5, type=int)
+    batches = ds.get_activity_batches(limit=limit)
+    return jsonify({'success': True, 'batches': batches})
+
+
 @app.route('/api/activity/summary')
 def api_activity_summary():
     batch_id = request.args.get('batch_id', type=int)

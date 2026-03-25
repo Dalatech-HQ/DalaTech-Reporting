@@ -36,7 +36,7 @@
         🔥 Generate Activity Reports
       </button>
       <div class="text-muted fs-sm" style="margin-top:10px;">
-        Generates Excel + PDF reports for all 27 brand partners in the exact Week 1/2 format.
+        Auto-detects brand partners from your file and generates Excel + PDF reports for each.
       </div>
     </form>
 
@@ -116,8 +116,9 @@
     </div>
     {% endif %}
 
+    <!-- Sales Report History -->
     <div class="card-sm">
-      <div style="font-weight:600;color:var(--navy);margin-bottom:10px;">Report History</div>
+      <div style="font-weight:600;color:var(--navy);margin-bottom:10px;">📊 Sales Report History</div>
       {% for r in reports[:5] %}
       {% set rt = r.get('report_type', 'monthly') if r is mapping else 'monthly' %}
       <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--gray);">
@@ -129,8 +130,16 @@
         <a href="/dashboard?report_id={{ r.id }}" class="btn btn-outline btn-sm">View</a>
       </div>
       {% else %}
-      <p class="text-muted fs-sm">No reports generated yet. Upload a Tally file to get started.</p>
+      <p class="text-muted fs-sm">No sales reports generated yet. Upload a Tally file to get started.</p>
       {% endfor %}
+    </div>
+
+    <!-- Activity Report History -->
+    <div class="card-sm" style="border-top:3px solid var(--green);">
+      <div style="font-weight:600;color:var(--navy);margin-bottom:10px;">📋 Activity Report History</div>
+      <div id="activityHistoryList">
+        <p class="text-muted fs-sm">Loading activity history...</p>
+      </div>
     </div>
   </div>
 
@@ -458,17 +467,167 @@ async function generateActivityReports(batchId, btn, status) {
   }
 }
 
+// Load activity history on page load
+async function loadActivityHistory() {
+  const historyList = document.getElementById('activityHistoryList');
+  try {
+    const res = await fetch('/api/activity/batches?limit=5');
+    const data = await parseJsonResponse(res);
+    const batches = data.batches || [];
+    
+    if (batches.length === 0) {
+      historyList.innerHTML = '<p class="text-muted fs-sm">No activity reports generated yet. Upload an activity file to get started.</p>';
+      return;
+    }
+    
+    historyList.innerHTML = batches.map(batch => {
+      const date = new Date(batch.created_at).toLocaleDateString();
+      const period = batch.source_filename || 'Unknown period';
+      return `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--gray);">
+          <div>
+            <span style="font-weight:600;">${period}</span>
+            <span class="badge badge-green" style="font-size:9px;padding:1px 6px;margin-left:4px;">Activity</span>
+            <span class="text-muted fs-sm"> · ${date}</span>
+          </div>
+          <a href="/activity-intelligence?batch_id=${batch.id}" class="btn btn-outline btn-sm">View</a>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    historyList.innerHTML = '<p class="text-muted fs-sm">Could not load activity history.</p>';
+  }
+}
+
+// Brand detection preview
+let detectedBrands = [];
+let brandConfirmCallback = null;
+
+async function previewActivityFile(file) {
+  const preview = document.getElementById('activityPreviewNote');
+  preview.style.display = 'block';
+  preview.innerHTML = '🔍 Analyzing file and detecting brands...';
+  
+  const fd = new FormData();
+  fd.append('file', file);
+  
+  try {
+    const res = await fetch('/api/activity/detect-brands', { method: 'POST', body: fd });
+    const data = await parseJsonResponse(res);
+    
+    if (!data.success) {
+      preview.className = 'flash flash-error';
+      preview.textContent = data.error || 'Could not analyze file.';
+      return;
+    }
+    
+    detectedBrands = data.brands || [];
+    const brandCount = detectedBrands.length;
+    
+    if (brandCount === 0) {
+      preview.className = 'flash flash-error';
+      preview.innerHTML = '❌ No brand partners detected in this file. Please check the file format.';
+      return;
+    }
+    
+    // Show preview with detected brands
+    preview.className = 'flash flash-success';
+    preview.innerHTML = `
+      ✅ Detected <strong>${brandCount} brand${brandCount !== 1 ? 's' : ''}</strong> in file
+      <br><span class="text-muted fs-sm">${detectedBrands.slice(0, 5).join(', ')}${brandCount > 5 ? '...' : ''}</span>
+      <br><button type="button" class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="showBrandConfirm()">
+        ✏️ Review/Edit Brands
+      </button>
+    `;
+    
+    // If more than 30 brands or less than 1, show confirmation
+    if (brandCount > 30 || brandCount < 1) {
+      showBrandConfirm();
+    }
+    
+  } catch (err) {
+    preview.className = 'flash flash-error';
+    preview.textContent = 'Could not analyze file: ' + err.message;
+  }
+}
+
+// Brand confirmation modal
+function showBrandConfirm() {
+  const modal = document.createElement('div');
+  modal.id = 'brandConfirmModal';
+  modal.innerHTML = `
+    <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;">
+      <div style="background:white;padding:24px;border-radius:12px;max-width:500px;width:90%;max-height:80vh;overflow:auto;">
+        <h3 style="margin-bottom:16px;color:var(--navy);">Confirm Brand Partners</h3>
+        <p class="text-muted fs-sm" style="margin-bottom:16px;">
+          We detected ${detectedBrands.length} brand(s) in your file. 
+          Uncheck any brands you don't want to include in the report.
+        </p>
+        <div style="max-height:300px;overflow-y:auto;border:1px solid var(--gray);border-radius:8px;padding:12px;margin-bottom:16px;">
+          ${detectedBrands.map((brand, i) => `
+            <label style="display:flex;align-items:center;padding:8px;cursor:pointer;border-bottom:1px solid #f0f0f0;">
+              <input type="checkbox" class="brand-checkbox" value="${brand}" checked style="margin-right:12px;">
+              <span>${brand}</span>
+            </label>
+          `).join('')}
+        </div>
+        <div style="display:flex;gap:12px;justify-content:flex-end;">
+          <button type="button" class="btn btn-outline" onclick="closeBrandConfirm()">Cancel</button>
+          <button type="button" class="btn btn-primary" onclick="confirmBrands()" style="background:var(--green);">Generate Reports</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function closeBrandConfirm() {
+  const modal = document.getElementById('brandConfirmModal');
+  if (modal) modal.remove();
+}
+
+function confirmBrands() {
+  const checkboxes = document.querySelectorAll('.brand-checkbox:checked');
+  const selectedBrands = Array.from(checkboxes).map(cb => cb.value);
+  closeBrandConfirm();
+  
+  // Store selected brands for form submission
+  window.selectedActivityBrands = selectedBrands;
+  
+  // Trigger form submission
+  document.getElementById('activityGenBtn').click();
+}
+
+// File input change handler
+document.querySelector('input[name="activity_file"]').addEventListener('change', function() {
+  const file = this.files && this.files[0];
+  if (file) previewActivityFile(file);
+});
+
 document.getElementById('activityUploadForm').addEventListener('submit', async function(e) {
   e.preventDefault();
   
   const btn = document.getElementById('activityGenBtn');
   const status = document.getElementById('activityGenStatus');
+  
+  // If brands haven't been confirmed and we have many, show confirmation
+  if (detectedBrands.length > 30 && !window.selectedActivityBrands) {
+    showBrandConfirm();
+    return;
+  }
+  
   btn.disabled = true;
   btn.textContent = 'Uploading...';
   status.style.display = 'block';
   status.innerHTML = '<div class="flash flash-success">Uploading activity file...</div>';
 
   const fd = new FormData(this);
+  
+  // Add selected brands if confirmed
+  if (window.selectedActivityBrands && window.selectedActivityBrands.length > 0) {
+    fd.append('brands', JSON.stringify(window.selectedActivityBrands));
+  }
+  
   try {
     const res = await fetch('/api/activity/import', { method: 'POST', body: fd });
     const data = await parseJsonResponse(res);
@@ -479,11 +638,16 @@ document.getElementById('activityUploadForm').addEventListener('submit', async f
       return;
     }
     await pollActivityJob(data.job_id, btn, status);
+    // Reload history after successful generation
+    await loadActivityHistory();
   } catch(err) {
     status.innerHTML = `<div class="flash flash-error">❌ Upload failed: ${err.message}</div>`;
     btn.disabled = false;
     btn.textContent = '🔥 Generate Activity Reports';
   }
 });
+
+// Load activity history on page load
+loadActivityHistory();
 </script>
 {% endblock %}
