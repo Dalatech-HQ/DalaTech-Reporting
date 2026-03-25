@@ -11,6 +11,38 @@
 {% block content %}
 <div class="grid-2" style="margin-bottom:24px;">
 
+  <!-- Activity Report Upload Card -->
+  <div class="card" style="border-top:4px solid var(--green);">
+    <h3 style="color:var(--navy);margin-bottom:4px;">📊 Upload Activity Report</h3>
+    <p class="text-muted fs-sm" style="margin-bottom:20px;">Upload field activity data to generate Excel and PDF reports for all brand partners instantly.</p>
+
+    <form id="activityUploadForm" enctype="multipart/form-data">
+      <div class="form-group">
+        <label class="form-label">Activity File (.xls / .xlsx / .csv)</label>
+        <input type="file" name="activity_file" class="form-control" accept=".xls,.xlsx,.csv,.txt" required>
+      </div>
+      <div id="activityPreviewNote" class="flash flash-success" style="display:none;margin-bottom:12px;"></div>
+      <div class="form-group">
+        <label class="form-label">Period</label>
+        <select name="period_type" class="form-control" id="activityPeriodSelect">
+          <option value="auto">Auto-detect from file</option>
+          <option value="daily">Daily</option>
+          <option value="weekly" selected>Weekly</option>
+          <option value="monthly">Monthly</option>
+          <option value="quarterly">Quarterly</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;background:var(--green);" id="activityGenBtn">
+        🔥 Generate Activity Reports
+      </button>
+      <div class="text-muted fs-sm" style="margin-top:10px;">
+        Generates Excel + PDF reports for all 27 brand partners in the exact Week 1/2 format.
+      </div>
+    </form>
+
+    <div id="activityGenStatus" style="display:none;margin-top:16px;"></div>
+  </div>
+
   <!-- Upload Card -->
   <div class="card" style="border-top:4px solid var(--red);">
     <h3 style="color:var(--navy);margin-bottom:4px;">Generate New Reports</h3>
@@ -303,6 +335,111 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
 document.querySelector('input[name="tally_file"]').addEventListener('change', function() {
   const file = this.files && this.files[0];
   if (file) previewSelectedFile(file);
+});
+
+// ===== Activity Report Upload Handler =====
+let activityJobId = null;
+
+async function pollActivityJob(jobId, btn, status) {
+  activityJobId = jobId;
+  while (activityJobId === jobId) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    let payload;
+    try {
+      const res = await fetch(`/api/activity/job/${jobId}`, { cache: 'no-store' });
+      payload = await parseJsonResponse(res);
+    } catch (err) {
+      status.innerHTML = `<div class="flash flash-error">❌ ${err.message}</div>`;
+      break;
+    }
+
+    const progress = Number(payload.progress || 0);
+    const phase = payload.current_brand || 'Processing...';
+    status.innerHTML = `<div class="flash flash-success">Importing activity data... ${progress}%<br><span class="text-muted fs-sm">${phase}</span></div>`;
+
+    if (payload.status === 'done') {
+      // Import done, now generate reports
+      status.innerHTML = '<div class="flash flash-success">✅ Import complete! Generating brand reports...</div>';
+      await generateActivityReports(payload.result_json?.batch_id, btn, status);
+      break;
+    }
+    if (payload.status === 'error') {
+      status.innerHTML = `<div class="flash flash-error">❌ ${payload.error_msg || 'Import failed.'}</div>`;
+      break;
+    }
+  }
+  if (activityJobId === jobId) {
+    btn.disabled = false;
+    btn.textContent = '🔥 Generate Activity Reports';
+    activityJobId = null;
+  }
+}
+
+async function generateActivityReports(batchId, btn, status) {
+  status.innerHTML = '<div class="flash flash-success">📊 Generating Excel and PDF reports for all brands...</div>';
+  try {
+    const res = await fetch('/api/activity/report_bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        brands: [], // Empty = all brands
+        batch_id: batchId,
+        formats: ['excel', 'pdf']
+      })
+    });
+    const data = await parseJsonResponse(res);
+    if (!data.success) {
+      status.innerHTML = `<div class="flash flash-error">❌ ${data.error || 'Report generation failed.'}</div>`;
+      return;
+    }
+    
+    // Show download links
+    const reports = data.reports || [];
+    const successCount = reports.filter(r => r.success).length;
+    const downloadLinks = reports.filter(r => r.success).map(r => 
+      `<a href="${r.excel_url}" class="btn btn-outline btn-sm" style="margin:2px;">${r.brand} Excel</a>
+       <a href="${r.pdf_url}" class="btn btn-navy btn-sm" style="margin:2px;">${r.brand} PDF</a>`
+    ).join(' ');
+    
+    status.innerHTML = `<div class="flash flash-success">
+      ✅ Generated ${successCount} brand reports!
+      <br><span class="text-muted fs-sm">Period: ${data.period_label || 'Current Period'}</span>
+      <br><br>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;">${downloadLinks}</div>
+      <br>
+      <a href="/activity-intelligence" class="btn btn-outline btn-sm">View Activity Dashboard</a>
+    </div>`;
+  } catch (err) {
+    status.innerHTML = `<div class="flash flash-error">❌ Report generation failed: ${err.message}</div>`;
+  }
+}
+
+document.getElementById('activityUploadForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  
+  const btn = document.getElementById('activityGenBtn');
+  const status = document.getElementById('activityGenStatus');
+  btn.disabled = true;
+  btn.textContent = 'Uploading...';
+  status.style.display = 'block';
+  status.innerHTML = '<div class="flash flash-success">Uploading activity file...</div>';
+
+  const fd = new FormData(this);
+  try {
+    const res = await fetch('/api/activity/import', { method: 'POST', body: fd });
+    const data = await parseJsonResponse(res);
+    if (!data.success || !data.job_id) {
+      status.innerHTML = `<div class="flash flash-error">❌ ${data.error || 'Could not upload file.'}</div>`;
+      btn.disabled = false;
+      btn.textContent = '🔥 Generate Activity Reports';
+      return;
+    }
+    await pollActivityJob(data.job_id, btn, status);
+  } catch(err) {
+    status.innerHTML = `<div class="flash flash-error">❌ Upload failed: ${err.message}</div>`;
+    btn.disabled = false;
+    btn.textContent = '🔥 Generate Activity Reports';
+  }
 });
 </script>
 {% endblock %}

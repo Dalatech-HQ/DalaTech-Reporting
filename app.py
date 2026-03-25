@@ -46,7 +46,10 @@ from modules.ingestion        import (
 from modules.kpi              import calculate_kpis, calculate_perf_score, generate_narrative, build_reorder_trend
 from modules.pdf_generator_html import generate_pdf_html
 from modules.pdf_generator      import generate_pdf as generate_pdf_reportlab
-from modules.pdf_generator_html import render_pdf_report_html, render_pdf_bytes, prepare_interactive_html_for_pdf
+from modules.pdf_generator_html import (
+    render_pdf_report_html, render_pdf_bytes, prepare_interactive_html_for_pdf,
+    generate_activity_report_html, prepare_activity_report_data
+)
 from modules.html_generator   import generate_html, render_html_report
 from modules.portfolio_generator import generate_portfolio_html
 from modules.data_store       import DataStore
@@ -3266,6 +3269,14 @@ def download_html(filename):
         abort(404)
     return send_file(path, mimetype='text/html')
 
+@app.route('/download/<path:filename>')
+def download_file(filename):
+    """Download any file from output directory."""
+    path = os.path.join(OUTPUT_DIR, filename)
+    if not os.path.isfile(path):
+        abort(404)
+    return send_file(path, as_attachment=True, download_name=filename)
+
 
 # ── Generate PDF/HTML from DB data ────────────────────────────────────────────
 
@@ -3781,6 +3792,259 @@ def api_retailer_group_report_pdf(group_slug):
     safe = _safe_name(detail.get('retailer_name') or group_slug)
     filename = f"{safe}_Retailer_Group_Report_{month_tag.replace(' ', '_')}.pdf"
     return send_file(io.BytesIO(pdf_bytes), as_attachment=True, download_name=filename, mimetype='application/pdf')
+
+
+# ── Activity Report Generation ────────────────────────────────────────────────
+
+@app.route('/api/activity/report/<path:brand_name>')
+def api_activity_report(brand_name):
+    """Generate on-demand activity report (PDF + HTML) for a brand."""
+    report_id = request.args.get('report_id', type=int)
+    period_label = request.args.get('period', 'Current Period')
+    
+    # Get report if specified, otherwise use latest
+    report = ds.get_report(report_id) if report_id else ds.get_latest_report()
+    if not report:
+        return jsonify({'error': 'No report found'}), 404
+    
+    report_id = report['id']
+    
+    # Check if activity data exists for this brand
+    activity_summary = ds.get_activity_summary(report_id=report_id, brand_name=brand_name)
+    if not activity_summary or not activity_summary.get('totals', {}).get('events'):
+        return jsonify({
+            'error': f'No activity data found for {brand_name} in this period',
+            'hint': 'Import activity data first via /activity-intelligence'
+        }), 404
+    
+    # Prepare activity report data
+    try:
+        activity_data = prepare_activity_report_data(
+            ds, brand_name, report_id=report_id,
+            start_date=report.get('start_date'),
+            end_date=report.get('end_date')
+        )
+    except Exception as e:
+        return jsonify({'error': f'Failed to prepare activity data: {str(e)}'}), 500
+    
+    # Generate filename
+    safe_brand = ''.join(c if c.isalnum() or c in '-_' else '_' for c in brand_name)
+    period_safe = period_label.replace(' ', '_')
+    filename = f"{safe_brand}_Activity_Report_{period_safe}"
+    
+    pdf_path = os.path.join(PDF_DIR, f"{filename}.pdf")
+    html_path = os.path.join(HTML_DIR, f"{filename}.html")
+    
+    # Generate report
+    try:
+        result_path = generate_activity_report_html(
+            output_path=pdf_path,
+            brand_name=brand_name,
+            activity_data=activity_data,
+            period_label=period_label or report.get('month_label', 'Current Period'),
+            report_id=report_id
+        )
+    except Exception as e:
+        return jsonify({'error': f'Failed to generate report: {str(e)}'}), 500
+    
+    # Determine what was generated
+    is_pdf = result_path.endswith('.pdf')
+    
+    return jsonify({
+        'success': True,
+        'brand': brand_name,
+        'period': period_label or report.get('month_label'),
+        'pdf_url': f"/download/pdf/{filename}.pdf" if is_pdf else None,
+        'html_url': f"/download/html/{filename}.html",
+        'summary': activity_data.get('summary', {}),
+        'generated_at': datetime.now().isoformat()
+    })
+
+
+@app.route('/api/activity/report_bulk', methods=['POST'])
+def api_activity_report_bulk():
+    """Generate activity reports for multiple brands."""
+    import pandas as pd
+    import numpy as np
+    
+    data = request.get_json() or {}
+    brand_names = data.get('brands', [])
+    batch_id = data.get('batch_id')
+    report_id = data.get('report_id')
+    period_label = data.get('period', 'Current Period')
+    formats = data.get('formats', ['pdf'])  # 'excel', 'pdf'
+    
+    # If batch_id provided, get report_id and brand list from batch
+    if batch_id:
+        batch = ds.get_activity_batches(limit=1)
+        if batch:
+            batch = batch[0]  # Get latest if specific batch not found
+            report_id = batch.get('report_id') or report_id
+    
+    # If no report_id, use latest
+    if not report_id:
+        latest = ds.get_latest_report()
+        report_id = latest['id'] if latest else None
+    
+    if not report_id:
+        return jsonify({'error': 'No report found'}), 404
+    
+    # If no brands specified, get all brands with activity data
+    if not brand_names:
+        # Get from activity_issues table
+        conn = ds._conn()
+        cursor = conn.execute(
+            "SELECT DISTINCT brand_name FROM activity_issues WHERE report_id = ?",
+            (report_id,)
+        )
+        brand_names = [row['brand_name'] for row in cursor.fetchall()]
+        conn.close()
+    
+    if not brand_names:
+        return jsonify({'error': 'No brands with activity data found'}), 404
+    
+    results = []
+    errors = []
+    
+    # Get the raw activity data for Excel generation
+    COLUMN_ORDER = [
+        'Activity Date', 'Retailer Name', 'Retailer City',
+        'Close to Expiry Concerns?', 'Competitor Feedback Notes?',
+        'Notes Regarding Expiry?', 'Notes Regarding Packaging Quality?',
+        'Opportunities or Concerns?', 'Order Generated?',
+        'Picture of Shelf', 'Product feedback for which item?',
+        'Shelf Facings?', 'Shelf Level?', 'Store Inventory?'
+    ]
+    
+    for brand_name in brand_names:
+        try:
+            # Check if activity data exists
+            activity_summary = ds.get_activity_summary(report_id=report_id, brand_name=brand_name)
+            if not activity_summary or not activity_summary.get('totals', {}).get('events'):
+                errors.append({'brand': brand_name, 'error': 'No activity data'})
+                continue
+            
+            safe_brand = ''.join(c if c.isalnum() or c in '-_' else '_' for c in brand_name.replace(' ', '_'))
+            period_safe = period_label.replace(' ', '_').replace(',', '')
+            filename = f"{safe_brand}_Activity_Report_{period_safe}"
+            
+            report_result = {
+                'brand': brand_name,
+                'success': True,
+                'excel_url': None,
+                'pdf_url': None,
+                'html_url': None
+            }
+            
+            # Generate Excel if requested
+            if 'excel' in formats:
+                try:
+                    # Query raw data for this brand
+                    conn = ds._conn()
+                    query = """
+                        SELECT ae.activity_date, ae.retailer_name, ae.retailer_city,
+                               ae.salesman_name, abm.source_value as brand_name
+                        FROM activity_events ae
+                        JOIN activity_brand_mentions abm ON ae.batch_id = abm.batch_id 
+                            AND ae.activity_date = abm.activity_date
+                            AND ae.retailer_code = abm.retailer_code
+                        WHERE ae.report_id = ? AND abm.source_value LIKE ?
+                    """
+                    df = pd.read_sql_query(query, conn, params=(report_id, f'%{brand_name}%'))
+                    
+                    # Get questions/answers
+                    qa_query = """
+                        SELECT ae.activity_date, ae.retailer_name, ae.retailer_city,
+                               ae.question as Label, ae.answer as Answer
+                        FROM activity_events ae
+                        JOIN activity_brand_mentions abm ON ae.batch_id = abm.batch_id 
+                            AND ae.activity_date = abm.activity_date
+                            AND ae.retailer_code = abm.retailer_code
+                        WHERE ae.report_id = ? AND abm.source_value LIKE ?
+                    """
+                    qa_df = pd.read_sql_query(qa_query, conn, params=(report_id, f'%{brand_name}%'))
+                    conn.close()
+                    
+                    if not qa_df.empty:
+                        # Pivot to Excel format
+                        pivot_df = qa_df.pivot_table(
+                            index=['activity_date', 'retailer_name', 'retailer_city'],
+                            columns='Label',
+                            values='Answer',
+                            aggfunc='first'
+                        ).reset_index()
+                        pivot_df.columns.name = None
+                        
+                        # Rename columns
+                        pivot_df = pivot_df.rename(columns={
+                            'activity_date': 'Activity Date',
+                            'retailer_name': 'Retailer Name',
+                            'retailer_city': 'Retailer City'
+                        })
+                        
+                        # Ensure all expected columns exist
+                        for col in COLUMN_ORDER:
+                            if col not in pivot_df.columns:
+                                pivot_df[col] = None
+                        
+                        # Reorder
+                        pivot_df = pivot_df[COLUMN_ORDER]
+                        
+                        # Save Excel
+                        excel_path = os.path.join(OUTPUT_DIR, f"{filename}.xlsx")
+                        with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+                            pivot_df.to_excel(writer, sheet_name='Sheet1', index=False)
+                            worksheet = writer.sheets['Sheet1']
+                            for column in worksheet.columns:
+                                max_length = 0
+                                column_letter = column[0].column_letter
+                                for cell in column:
+                                    try:
+                                        cell_value = str(cell.value) if cell.value else ""
+                                        if len(cell_value) > max_length:
+                                            max_length = len(cell_value)
+                                    except:
+                                        pass
+                                adjusted_width = min(max_length + 2, 80)
+                                worksheet.column_dimensions[column_letter].width = adjusted_width
+                        
+                        report_result['excel_url'] = f"/download/{filename}.xlsx"
+                except Exception as excel_err:
+                    report_result['excel_error'] = str(excel_err)
+            
+            # Generate PDF if requested
+            if 'pdf' in formats:
+                try:
+                    activity_data = prepare_activity_report_data(ds, brand_name, report_id=report_id)
+                    pdf_path = os.path.join(PDF_DIR, f"{filename}.pdf")
+                    
+                    result_path = generate_activity_report_html(
+                        output_path=pdf_path,
+                        brand_name=brand_name,
+                        activity_data=activity_data,
+                        period_label=period_label,
+                        report_id=report_id
+                    )
+                    
+                    if result_path.endswith('.pdf'):
+                        report_result['pdf_url'] = f"/download/pdf/{filename}.pdf"
+                    report_result['html_url'] = f"/download/html/{filename}.html"
+                except Exception as pdf_err:
+                    report_result['pdf_error'] = str(pdf_err)
+            
+            results.append(report_result)
+            
+        except Exception as e:
+            errors.append({'brand': brand_name, 'error': str(e)})
+    
+    return jsonify({
+        'success': len(results) > 0,
+        'period_label': period_label,
+        'reports': results,
+        'errors': errors,
+        'total': len(brand_names),
+        'success_count': len([r for r in results if r.get('success')])
+    })
 
 
 @app.route('/files')

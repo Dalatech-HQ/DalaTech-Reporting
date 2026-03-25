@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ brand_name }} - DALA Activity Report</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@1,600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    @page { size: A4; margin: 0; }
+    
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 9pt;
+      color: #1A1A1A;
+      background: #fff;
+      width: 210mm;
+      line-height: 1.5;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      padding: 0 16px 16px;
+    }
+
+    /* ─── HEADER ─── */
+    .header {
+      display: flex;
+      align-items: center;
+      padding: 14px 0 10px;
+      border-bottom: 1px solid #E8EAED;
+    }
+
+    .header-accent {
+      width: 4px;
+      height: 52px;
+      background: #E8192C;
+      margin-right: 14px;
+      border-radius: 2px;
+    }
+
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-box {
+      width: 110px;
+      height: 44px;
+      background: #1B2B5E;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 900;
+      font-size: 16px;
+      letter-spacing: 3px;
+    }
+
+    .header-right {
+      margin-left: auto;
+      text-align: right;
+    }
+
+    .header-brand {
+      font-size: 9pt;
+      font-weight: 800;
+      color: #1B2B5E;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+    }
+
+    .header-sub {
+      font-size: 7pt;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    /* ─── TITLE BAND ─── */
+    .title-band {
+      background: #1B2B5E;
+      margin: 12px -16px 0;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .title-text {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: 22px;
+      font-style: italic;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .title-period {
+      font-size: 8pt;
+      color: rgba(255,255,255,0.75);
+      font-weight: 500;
+    }
+
+    /* ─── KPI SECTION ─── */
+    .kpi-section {
+      margin-top: 16px;
+    }
+
+    .kpi-grid {
+      display: flex;
+      gap: 12px;
+    }
+
+    .kpi-card {
+      flex: 1;
+      background: #fff;
+      border-radius: 8px;
+      padding: 14px 12px;
+      border: 1px solid #E8EAED;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+    }
+
+    .kpi-card.revenue::before { background: #E8192C; }
+    .kpi-card.quantity::before { background: #1B2B5E; }
+    .kpi-card.reach::before { background: #1E8449; }
+    .kpi-card.avg::before { background: #C0922A; }
+
+    .kpi-label {
+      font-size: 6.5pt;
+      font-weight: 700;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 6px;
+    }
+
+    .kpi-value {
+      font-size: 20pt;
+      font-weight: 800;
+      color: #1A1A1A;
+      line-height: 1.1;
+    }
+
+    .kpi-unit {
+      font-size: 7pt;
+      color: #666;
+      font-weight: 600;
+      margin-top: 3px;
+    }
+
+    .kpi-trend {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 7pt;
+      font-weight: 700;
+      margin-top: 8px;
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+
+    .kpi-trend.up {
+      background: #E8F5E9;
+      color: #2E7D32;
+    }
+
+    .kpi-trend.down {
+      background: #FFEBEE;
+      color: #C62828;
+    }
+
+    .kpi-trend.neutral {
+      background: #F5F5F5;
+      color: #666;
+    }
+
+    /* ─── INSIGHT BOX ─── */
+    .insight-box {
+      margin-top: 16px;
+      background: linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%);
+      border-left: 4px solid #1B2B5E;
+      border-radius: 0 10px 10px 0;
+      padding: 16px 18px;
+    }
+
+    .insight-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .insight-dot {
+      width: 8px;
+      height: 8px;
+      background: #1B2B5E;
+      border-radius: 50%;
+    }
+
+    .insight-title {
+      font-size: 9pt;
+      font-weight: 800;
+      color: #1B2B5E;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+    }
+
+    .insight-text {
+      font-size: 9pt;
+      line-height: 1.7;
+      color: #444;
+    }
+
+    /* ─── CONVERSION STRIP ─── */
+    .conversion-strip {
+      margin-top: 16px;
+      background: linear-gradient(135deg, #1B2B5E 0%, #2D4A8A 100%);
+      border-radius: 10px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(27,43,94,0.15);
+    }
+
+    .conversion-item {
+      text-align: center;
+      padding: 0 20px;
+      border-right: 1px solid rgba(255,255,255,0.15);
+    }
+
+    .conversion-item:last-child {
+      border-right: none;
+    }
+
+    .conversion-value {
+      font-size: 22pt;
+      font-weight: 800;
+      margin-bottom: 2px;
+    }
+
+    .conversion-label {
+      font-size: 7pt;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      opacity: 0.8;
+    }
+
+    /* ─── SECTION HEADERS ─── */
+    .section {
+      margin-top: 20px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #1B2B5E;
+    }
+
+    .section-dot {
+      width: 8px;
+      height: 8px;
+      background: #E8192C;
+      border-radius: 50%;
+    }
+
+    .section-title {
+      font-size: 11pt;
+      font-weight: 800;
+      color: #1A1A1A;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    /* ─── SPLIT GRID ─── */
+    .split-grid {
+      display: flex;
+      gap: 14px;
+    }
+
+    .split-col {
+      flex: 1;
+    }
+
+    /* ─── IO CARDS ─── */
+    .io-card {
+      background: #fff;
+      border: 1px solid #E8EAED;
+      border-radius: 10px;
+      padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    }
+
+    .io-card.issues {
+      border-top: 3px solid #E8192C;
+    }
+
+    .io-card.opportunities {
+      border-top: 3px solid #1E8449;
+    }
+
+    .io-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .io-title {
+      font-size: 11pt;
+      font-weight: 700;
+      color: #1A1A1A;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .io-count {
+      font-size: 24pt;
+      font-weight: 800;
+    }
+
+    .io-count.issues { color: #E8192C; }
+    .io-count.opportunities { color: #1E8449; }
+
+    .io-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .io-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: #F8FAFC;
+      border-radius: 6px;
+      font-size: 8pt;
+    }
+
+    .io-item-text {
+      color: #444;
+      font-weight: 500;
+    }
+
+    .io-badge {
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 6.5pt;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .io-badge.high { background: #FFEBEE; color: #C62828; }
+    .io-badge.medium { background: #FFF8E1; color: #E65100; }
+    .io-badge.low { background: #E3F2FD; color: #1565C0; }
+
+    .io-empty {
+      text-align: center;
+      padding: 24px;
+      color: #888;
+      font-size: 8.5pt;
+    }
+
+    /* ─── CHART CARDS ─── */
+    .chart-card {
+      background: #fff;
+      border: 1px solid #E8EAED;
+      border-radius: 10px;
+      padding: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    }
+
+    .chart-title {
+      font-size: 8pt;
+      font-weight: 700;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 10px;
+    }
+
+    .chart-container {
+      position: relative;
+      height: 140px;
+    }
+
+    /* ─── GEO TABLE ─── */
+    .geo-card {
+      background: #fff;
+      border: 1px solid #E8EAED;
+      border-radius: 10px;
+      padding: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    }
+
+    .geo-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 8pt;
+    }
+
+    .geo-table th {
+      text-align: left;
+      padding: 10px 8px;
+      background: #F8FAFC;
+      font-weight: 700;
+      color: #555;
+      text-transform: uppercase;
+      font-size: 6.5pt;
+      letter-spacing: 0.8px;
+      border-bottom: 2px solid #E8EAED;
+    }
+
+    .geo-table td {
+      padding: 9px 8px;
+      border-bottom: 1px solid #F0F0F0;
+      color: #444;
+    }
+
+    .geo-table tr:hover { background: #FAFAFA; }
+
+    .geo-bar-bg {
+      background: #E8EAED;
+      height: 5px;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .geo-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #1B2B5E, #3B5AA8);
+      border-radius: 3px;
+    }
+
+    /* ─── WOW CARD ─── */
+    .wow-card {
+      background: #fff;
+      border: 1px solid #E8EAED;
+      border-radius: 10px;
+      padding: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    }
+
+    /* ─── FOOTER ─── */
+    .footer {
+      margin-top: auto;
+      padding-top: 16px;
+      border-top: 1px solid #E8EAED;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 7pt;
+      color: #999;
+    }
+
+    .footer-brand {
+      font-weight: 800;
+      color: #1B2B5E;
+      letter-spacing: 0.5px;
+    }
+
+    /* ─── UTILITIES ─── */
+    .hidden { display: none; }
+
+    @media print {
+      body { background: white; }
+      .page { page-break-after: always; }
+      .page:last-child { page-break-after: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <!-- HEADER -->
+    <div class="header">
+      <div class="header-accent"></div>
+      <div class="logo-area">
+        <div class="logo-box">DALA</div>
+      </div>
+      <div class="header-right">
+        <div class="header-brand">Field Activity Report</div>
+        <div class="header-sub">{{ period }}</div>
+      </div>
+    </div>
+
+    <!-- TITLE BAND -->
+    <div class="title-band">
+      <div class="title-text">{{ brand_name }}</div>
+      <div class="title-period">{{ generated_at }}</div>
+    </div>
+
+    <!-- KPI SECTION -->
+    <div class="kpi-section">
+      <div class="kpi-grid">
+        <div class="kpi-card reach">
+          <div class="kpi-label">Stores Visited</div>
+          <div class="kpi-value">{% if summary.stores %}{{ summary.stores|int }}{% else %}-{% endif %}</div>
+          <div class="kpi-unit">unique retail locations</div>
+          {% if week_over_week.stores_visited_change is not none %}
+          <div class="kpi-trend {% if week_over_week.stores_visited_change > 0 %}up{% elif week_over_week.stores_visited_change < 0 %}down{% else %}neutral{% endif %}">
+            {% if week_over_week.stores_visited_change > 0 %}↑{% elif week_over_week.stores_visited_change < 0 %}↓{% else %}→{% endif %} 
+            {% if week_over_week.stores_visited_change is not none and week_over_week.stores_visited_change != 0 %}{{ "%.1f"|format(week_over_week.stores_visited_change|abs) }}%{% else %}0%{% endif %}
+            {% if week_over_week.previous_week_label %}<span style="font-size:5.5pt;opacity:0.7;">vs {{ week_over_week.previous_week_label }}</span>{% endif %}
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="kpi-card quantity">
+          <div class="kpi-label">Total Visits</div>
+          <div class="kpi-value">{% if summary.visits %}{{ summary.visits|int }}{% else %}-{% endif %}</div>
+          <div class="kpi-unit">field visits logged</div>
+          {% if week_over_week.visits_change is not none %}
+          <div class="kpi-trend {% if week_over_week.visits_change > 0 %}up{% elif week_over_week.visits_change < 0 %}down{% else %}neutral{% endif %}">
+            {% if week_over_week.visits_change > 0 %}↑{% elif week_over_week.visits_change < 0 %}↓{% else %}→{% endif %} 
+            {% if week_over_week.visits_change is not none and week_over_week.visits_change != 0 %}{{ "%.1f"|format(week_over_week.visits_change|abs) }}%{% else %}0%{% endif %}
+            {% if week_over_week.previous_week_label %}<span style="font-size:5.5pt;opacity:0.7;">vs {{ week_over_week.previous_week_label }}</span>{% endif %}
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="kpi-card avg">
+          <div class="kpi-label">Shelf Images</div>
+          <div class="kpi-value">{% if summary.photos %}{{ summary.photos|int }}{% else %}-{% endif %}</div>
+          <div class="kpi-unit">photos captured</div>
+          {% if week_over_week.images_change is not none %}
+          <div class="kpi-trend {% if week_over_week.images_change > 0 %}up{% elif week_over_week.images_change < 0 %}down{% else %}neutral{% endif %}">
+            {% if week_over_week.images_change > 0 %}↑{% elif week_over_week.images_change < 0 %}↓{% else %}→{% endif %} 
+            {% if week_over_week.images_change is not none and week_over_week.images_change != 0 %}{{ "%.1f"|format(week_over_week.images_change|abs) }}%{% else %}0%{% endif %}
+            {% if week_over_week.previous_week_label %}<span style="font-size:5.5pt;opacity:0.7;">vs {{ week_over_week.previous_week_label }}</span>{% endif %}
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="kpi-card revenue">
+          <div class="kpi-label">Issues Found</div>
+          <div class="kpi-value">{% if summary.issues %}{{ summary.issues|int }}{% else %}-{% endif %}</div>
+          <div class="kpi-unit">problems identified</div>
+          {% if week_over_week.issues_change is not none %}
+          <div class="kpi-trend {% if week_over_week.issues_change > 0 %}down{% elif week_over_week.issues_change < 0 %}up{% else %}neutral{% endif %}">
+            {% if week_over_week.issues_change > 0 %}↑{% elif week_over_week.issues_change < 0 %}↓{% else %}→{% endif %} 
+            {% if week_over_week.issues_change is not none and week_over_week.issues_change != 0 %}{{ "%.1f"|format(week_over_week.issues_change|abs) }}%{% else %}0%{% endif %}
+            {% if week_over_week.previous_week_label %}<span style="font-size:5.5pt;opacity:0.7;">vs {{ week_over_week.previous_week_label }}</span>{% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- EXECUTIVE SUMMARY -->
+    {% if narrative %}
+    <div class="insight-box">
+      <div class="insight-header">
+        <div class="insight-dot"></div>
+        <div class="insight-title">Executive Summary</div>
+      </div>
+      <div class="insight-text">{{ narrative }}</div>
+    </div>
+    {% endif %}
+
+    <!-- CONVERSION STRIP -->
+    {% if correlation and (correlation.visit_to_order_rate or correlation.orders_generated or correlation.stores_no_orders) %}
+    <div class="conversion-strip">
+      <div class="conversion-item">
+        <div class="conversion-value">{% if correlation.visit_to_order_rate %}{{ "%.0f"|format(correlation.visit_to_order_rate) }}%{% else %}-{% endif %}</div>
+        <div class="conversion-label">Visit to Order Rate</div>
+      </div>
+      <div class="conversion-item">
+        <div class="conversion-value">{% if correlation.orders_generated %}{{ correlation.orders_generated|int }}{% else %}-{% endif %}</div>
+        <div class="conversion-label">Orders Generated</div>
+      </div>
+      <div class="conversion-item">
+        <div class="conversion-value">{% if correlation.stores_no_orders %}{{ correlation.stores_no_orders|int }}{% else %}-{% endif %}</div>
+        <div class="conversion-label">No Orders</div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- ISSUES & OPPORTUNITIES -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-dot"></div>
+        <div class="section-title">Issues & Opportunities</div>
+      </div>
+      <div class="split-grid">
+        <div class="split-col">
+          <div class="io-card issues">
+            <div class="io-header">
+              <div class="io-title">⚠️ Critical Issues</div>
+              <div class="io-count issues">{% if issues.total %}{{ issues.total|int }}{% else %}-{% endif %}</div>
+            </div>
+            {% if issues.breakdown %}
+            <div class="io-list">
+              {% for issue in issues.breakdown[:4] %}
+              <div class="io-item">
+                <span class="io-item-text">{{ issue.type|replace('_', ' ')|title }}</span>
+                <span class="io-badge {{ issue.severity }}">{{ issue.severity }}</span>
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="io-empty">No critical issues reported this period</div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="split-col">
+          <div class="io-card opportunities">
+            <div class="io-header">
+              <div class="io-title">💡 Opportunities</div>
+              <div class="io-count opportunities">{% if opportunities.total %}{{ opportunities.total|int }}{% else %}-{% endif %}</div>
+            </div>
+            {% if opportunities.list %}
+            <div class="io-list">
+              {% for opp in opportunities.list[:4] %}
+              <div class="io-item">
+                <span class="io-item-text">{{ opp.description[:25] }}{% if opp.description|length > 25 %}...{% endif %}</span>
+                <span class="io-badge medium">{{ opp.store_count }} stores</span>
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="io-empty">No opportunities identified this period</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHARTS -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-dot"></div>
+        <div class="section-title">Activity Trends</div>
+      </div>
+      <div class="split-grid">
+        <div class="split-col">
+          <div class="chart-card">
+            <div class="chart-title">Daily Visit Trend</div>
+            <div class="chart-container">
+              <canvas id="dailyTrendChart"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="split-col">
+          <div class="chart-card">
+            <div class="chart-title">Store Category Distribution</div>
+            <div class="chart-container">
+              <canvas id="categoryChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer">
+      <div class="footer-brand">DALA ANALYTICS</div>
+      <div>Confidential • Generated {{ generated_at }}</div>
+    </div>
+  </div>
+
+  <!-- PAGE 2 -->
+  <div class="page">
+    <!-- HEADER -->
+    <div class="header">
+      <div class="header-accent"></div>
+      <div class="logo-area">
+        <div class="logo-box">DALA</div>
+      </div>
+      <div class="header-right">
+        <div class="header-brand">{{ brand_name }}</div>
+        <div class="header-sub">Geographic Analysis</div>
+      </div>
+    </div>
+
+    <!-- GEOGRAPHIC -->
+    <div class="section" style="margin-top: 12px;">
+      <div class="section-header">
+        <div class="section-dot"></div>
+        <div class="section-title">Geographic Distribution</div>
+      </div>
+      <div class="geo-card">
+        {% if geographic %}
+        <table class="geo-table">
+          <thead>
+            <tr>
+              <th style="width: 25%;">City</th>
+              <th style="width: 20%;">State</th>
+              <th style="width: 15%;">Stores</th>
+              <th style="width: 40%;">Distribution</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for city in geographic[:10] %}
+            <tr>
+              <td><strong>{{ city.name }}</strong></td>
+              <td>{{ city.state }}</td>
+              <td>{% if city.store_count %}{{ city.store_count }}{% else %}-{% endif %}</td>
+              <td>
+                <div class="geo-bar-bg">
+                  <div class="geo-bar-fill" style="width: {{ city.percentage }}%;"></div>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="io-empty">No geographic data available</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- WEEK OVER WEEK -->
+    {% if week_over_week.comparison_data %}
+    <div class="section">
+      <div class="section-header">
+        <div class="section-dot"></div>
+        <div class="section-title">Week-over-Week: {% if week_over_week.comparison_data %}{{ week_over_week.comparison_data.current_label }} vs {{ week_over_week.comparison_data.previous_label }}{% else %}Comparison{% endif %}</div>
+      </div>
+      {% if week_over_week.has_previous_week %}
+      <div style="display: flex; justify-content: center; gap: 24px; margin-bottom: 10px; font-size: 8pt;">
+        <div><span style="color: #1B2B5E; font-weight: 700;">■</span> {{ week_over_week.comparison_data.current_label }}</div>
+        <div><span style="color: #999; font-weight: 700;">■</span> {{ week_over_week.comparison_data.previous_label }}</div>
+      </div>
+      {% endif %}
+      <div class="wow-card">
+        <div class="chart-container" style="height: 160px;">
+          <canvas id="wowChart"></canvas>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- CATEGORY BREAKDOWN -->
+    {% if categories and categories.data %}
+    <div class="section">
+      <div class="section-header">
+        <div class="section-dot"></div>
+        <div class="section-title">Store Category Breakdown</div>
+      </div>
+      <div class="kpi-section">
+        <div class="kpi-grid">
+          {% for label in categories.labels %}
+          {% set value = categories.data[loop.index0] %}
+          {% if value %}
+          <div class="kpi-card" style="border-top: 3px solid {% if loop.index == 1 %}#1B2B5E{% elif loop.index == 2 %}#2E86C1{% elif loop.index == 3 %}#1E8449{% else %}#C0922A{% endif %};">
+            <div class="kpi-label">{{ label }}</div>
+            <div class="kpi-value">{{ value|int }}</div>
+            <div class="kpi-unit">stores</div>
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- FOOTER -->
+    <div class="footer">
+      <div class="footer-brand">DALA ANALYTICS</div>
+      <div>Page 2 • Confidential</div>
+    </div>
+  </div>
+
+  <script>
+    // Daily Trend Chart
+    {% if daily_trend and daily_trend.data %}
+    const dailyCtx = document.getElementById('dailyTrendChart').getContext('2d');
+    new Chart(dailyCtx, {
+      type: 'line',
+      data: {
+        labels: {{ daily_trend.labels|tojson }},
+        datasets: [{
+          label: 'Store Visits',
+          data: {{ daily_trend.data|tojson }},
+          borderColor: '#1B2B5E',
+          backgroundColor: 'rgba(27, 43, 94, 0.1)',
+          fill: true,
+          tension: 0.4,
+          pointRadius: 4,
+          pointBackgroundColor: '#1B2B5E',
+          borderWidth: 2.5
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, grid: { color: '#F0F0F0' }, ticks: { font: { size: 9 } } },
+          x: { grid: { display: false }, ticks: { font: { size: 9 } } }
+        }
+      }
+    });
+    {% endif %}
+
+    // Category Chart
+    {% if categories and categories.data %}
+    const catCtx = document.getElementById('categoryChart').getContext('2d');
+    new Chart(catCtx, {
+      type: 'doughnut',
+      data: {
+        labels: {{ categories.labels|tojson }},
+        datasets: [{
+          data: {{ categories.data|tojson }},
+          backgroundColor: ['#1B2B5E', '#2E86C1', '#1E8449', '#C0922A'],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '65%',
+        plugins: {
+          legend: { position: 'right', labels: { usePointStyle: true, padding: 12, font: { size: 10 } } }
+        }
+      }
+    });
+    {% endif %}
+
+    // Week-over-Week Chart
+    {% if week_over_week.comparison_data %}
+    const wowCtx = document.getElementById('wowChart').getContext('2d');
+    new Chart(wowCtx, {
+      type: 'bar',
+      data: {
+        labels: {{ week_over_week.comparison_data.labels|tojson }},
+        datasets: [
+          {
+            label: 'This Week',
+            data: {{ week_over_week.comparison_data.current_data|tojson }},
+            backgroundColor: '#1B2B5E',
+            borderRadius: 5
+          },
+          {
+            label: 'Last Week',
+            data: {{ week_over_week.comparison_data.previous_data|tojson }},
+            backgroundColor: '#DDE3ED',
+            borderRadius: 5
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'top', labels: { font: { size: 10 } } } },
+        scales: {
+          y: { beginAtZero: true, grid: { color: '#F0F0F0' }, ticks: { font: { size: 9 } } },
+          x: { grid: { display: false }, ticks: { font: { size: 9 } } }
+        }
+      }
+    });
+    {% endif %}
+  </script>
+</body>
+</html>
