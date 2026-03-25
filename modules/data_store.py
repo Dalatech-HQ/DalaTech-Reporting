@@ -795,20 +795,9 @@ class DataStore:
                 CREATE INDEX IF NOT EXISTS idx_activity_batch_created ON activity_batches(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_activity_events_batch ON activity_events(batch_id, activity_date);
                 CREATE INDEX IF NOT EXISTS idx_activity_events_report ON activity_events(report_id, activity_date);
-                CREATE INDEX IF NOT EXISTS idx_activity_events_report_store ON activity_events(report_id, retailer_code, activity_date);
-                CREATE INDEX IF NOT EXISTS idx_activity_events_report_salesman ON activity_events(report_id, salesman_name, activity_date);
-                CREATE INDEX IF NOT EXISTS idx_activity_events_report_survey ON activity_events(report_id, survey_name, activity_date);
-                CREATE INDEX IF NOT EXISTS idx_activity_events_report_state ON activity_events(report_id, retailer_state, activity_date);
-                CREATE INDEX IF NOT EXISTS idx_activity_events_report_type ON activity_events(report_id, retailer_type, activity_date);
                 CREATE INDEX IF NOT EXISTS idx_activity_visits_batch ON activity_visits(batch_id, activity_date);
-                CREATE INDEX IF NOT EXISTS idx_activity_visits_report_store ON activity_visits(report_id, retailer_code, activity_date);
                 CREATE INDEX IF NOT EXISTS idx_activity_issues_brand ON activity_issues(brand_name, issue_type, activity_date);
-                CREATE INDEX IF NOT EXISTS idx_activity_issues_report_brand_store ON activity_issues(report_id, brand_name, retailer_code, activity_date);
                 CREATE INDEX IF NOT EXISTS idx_activity_store_code ON activity_events(retailer_code, activity_date);
-                CREATE INDEX IF NOT EXISTS idx_activity_mentions_report_brand_date_store ON activity_brand_mentions(report_id, brand_name, activity_date, retailer_code);
-                CREATE INDEX IF NOT EXISTS idx_activity_mentions_brand_date_store ON activity_brand_mentions(brand_name, activity_date, retailer_code);
-                CREATE INDEX IF NOT EXISTS idx_activity_mentions_report_store ON activity_brand_mentions(report_id, retailer_code, activity_date);
-                CREATE INDEX IF NOT EXISTS idx_activity_mentions_report_sku ON activity_brand_mentions(report_id, brand_name, sku_name);
                 CREATE INDEX IF NOT EXISTS idx_agent_actions_status ON agent_actions(status, priority, created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_agent_subject ON agent_actions(subject_type, subject_key);
                 CREATE INDEX IF NOT EXISTS idx_agent_memories_scope ON agent_memories(scope_type, scope_key, updated_at DESC);
@@ -2944,6 +2933,15 @@ class DataStore:
         mention_params = list(params)
 
         if brand_name:
+            # For events and visits, filter by survey_name since brand_name column doesn't exist
+            filters.append("(LOWER(ae.survey_name) LIKE LOWER(?) OR LOWER(ae.survey_name) LIKE LOWER(?))")
+            params.append(f"%{brand_name}%")
+            params.append(f"%{brand_name.replace(' ', '')}%")
+            
+            visit_filters.append("(LOWER(av.survey_name) LIKE LOWER(?) OR LOWER(av.survey_name) LIKE LOWER(?))")
+            visit_params.append(f"%{brand_name}%")
+            visit_params.append(f"%{brand_name.replace(' ', '')}%")
+            
             issue_filters.append("LOWER(COALESCE(ai.brand_name,''))=LOWER(?)")
             issue_params.append(brand_name)
             mention_filters.append("LOWER(COALESCE(abm.brand_name,''))=LOWER(?)")
