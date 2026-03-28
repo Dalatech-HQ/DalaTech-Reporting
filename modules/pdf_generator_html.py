@@ -873,6 +873,10 @@ def render_pdf_bytes(html_content: str) -> bytes:
                         page.evaluate("document.fonts.ready")
                     except Exception:
                         pass
+                    try:
+                        page.wait_for_function("window.__REPORT_READY === true", timeout=3000)
+                    except Exception:
+                        pass
                     pdf_bytes = page.pdf(
                         format='A4',
                         print_background=True,

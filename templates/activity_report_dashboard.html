@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ identity.brand_name }} - {{ identity.report_title }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --navy:#1b2b5e; --red:#e8192c; --blue:#2f7dd1; --green:#1f9a59; --gold:#b7832f;
+      --ink:#1f2937; --muted:#667085; --line:#dbe4f0; --paper:#ffffff; --soft:#f4f7fb;
+      --warn:#fff4df; --pink:#fff0f1; --teal:#ecfbf4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 0; background: #eef3f9; color: var(--ink);
+      font-family: 'Inter', Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .report {
+      width: 100%; max-width: 1200px; margin: 0 auto; background: var(--paper); padding: 28px 32px 44px;
+    }
+    .hero {
+      border: 1px solid var(--line); border-radius: 22px; overflow: hidden; margin-bottom: 22px;
+      background: linear-gradient(135deg, #10204d 0%, #1f3d8f 58%, #275ec8 100%); color: white;
+      box-shadow: 0 18px 34px rgba(17, 35, 79, 0.14);
+    }
+    .hero-top {
+      display: grid; grid-template-columns: 1.5fr 1fr; gap: 24px; padding: 28px 28px 22px;
+    }
+    .eyebrow { font-size: 12px; letter-spacing: 1.8px; text-transform: uppercase; font-weight: 800; opacity: .82; }
+    h1 { margin: 10px 0 8px; font-size: 44px; line-height: 1.04; }
+    .hero-sub { font-size: 16px; line-height: 1.65; max-width: 720px; color: rgba(255,255,255,.9); }
+    .identity-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+    .identity-card {
+      background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.18); border-radius: 16px; padding: 14px 16px;
+      backdrop-filter: blur(8px);
+    }
+    .identity-card .label { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; opacity: .76; }
+    .identity-card .value { margin-top: 6px; font-size: 16px; font-weight: 700; line-height: 1.4; }
+    .hero-brief {
+      background: rgba(255,255,255,.96); color: var(--ink); border-top: 1px solid rgba(255,255,255,.18);
+      display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; padding: 22px 28px;
+    }
+    .section-title { font-size: 14px; font-weight: 800; letter-spacing: 1.6px; text-transform: uppercase; color: var(--navy); margin-bottom: 10px; }
+    .brief-card p { margin: 0; color: #344054; line-height: 1.65; }
+    .brief-bullets { margin: 8px 0 0; padding-left: 18px; color: #344054; line-height: 1.6; }
+    .brief-bullets li { margin-bottom: 4px; }
+    .summary-box { background: var(--soft); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
+    .summary-box h3 { margin: 0 0 10px; font-size: 18px; color: var(--navy); }
+    .summary-box p { margin: 0; color: #344054; line-height: 1.7; }
+    .grid-4, .grid-3, .grid-2 { display: grid; gap: 16px; margin-bottom: 18px; }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .card {
+      background: var(--paper); border: 1px solid var(--line); border-radius: 18px; padding: 18px;
+      box-shadow: 0 8px 18px rgba(21, 32, 68, 0.05);
+    }
+    .kpi-card .label { font-size: 12px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: #6b7280; }
+    .kpi-card .value { margin: 10px 0 4px; font-size: 34px; font-weight: 800; color: var(--navy); }
+    .kpi-card .sub { font-size: 13px; color: var(--muted); }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .chip { border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 700; }
+    .chip.up { background: #ecfdf3; color: #027a48; }
+    .chip.down { background: #fff1f3; color: #c01048; }
+    .chip.neutral { background: #eff3f8; color: #475467; }
+    .comparison-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; margin-bottom: 18px; }
+    .comparison-card { border: 1px solid var(--line); border-radius: 16px; padding: 16px; background: linear-gradient(180deg, #fafcff 0%, #f3f7fc 100%); }
+    .comparison-card h4 { margin: 0 0 8px; font-size: 15px; color: var(--navy); }
+    .comparison-card ul { margin: 0; padding-left: 18px; color: #475467; line-height: 1.7; }
+    .chart-card canvas { width: 100% !important; height: 290px !important; }
+    .chart-card.short canvas { height: 250px !important; }
+    .table-wrap { border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: white; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; vertical-align: top; }
+    th { background: #f8fafc; color: var(--navy); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+    tbody tr:nth-child(even) { background: #fbfcfe; }
+    .metric-list { display: grid; gap: 10px; }
+    .metric-item { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed var(--line); padding-bottom: 8px; }
+    .metric-item:last-child { border-bottom: none; padding-bottom: 0; }
+    .metric-item strong { color: var(--navy); }
+    .pill { display: inline-flex; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 700; }
+    .pill.red { background: #fff1f3; color: #c01048; } .pill.green { background: #ecfdf3; color: #027a48; } .pill.gold { background: #fff7e6; color: #b7832f; }
+    .band {
+      border-radius: 20px; padding: 22px; margin-bottom: 18px;
+      background: linear-gradient(180deg, #f9fbff 0%, #eff5fb 100%); border: 1px solid var(--line);
+    }
+    .band h2 { margin: 0 0 6px; color: var(--navy); font-size: 24px; }
+    .band p { margin: 0; color: #475467; line-height: 1.7; }
+    .actions-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px; }
+    .actions-box { border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+    .actions-box h4 { margin: 0 0 12px; font-size: 16px; color: var(--navy); }
+    .action-item { border-top: 1px dashed var(--line); padding-top: 12px; margin-top: 12px; }
+    .action-item:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+    .action-item strong { display: block; color: #111827; margin-bottom: 6px; }
+    .action-meta { font-size: 12px; color: #667085; line-height: 1.6; }
+    .search-box { margin-bottom: 12px; }
+    .search-box input {
+      width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 11px 14px; font: inherit;
+    }
+    .footnote { margin-top: 8px; font-size: 12px; color: #667085; }
+    .muted-note { color: #667085; font-size: 13px; }
+    @media print {
+      body { background: white; }
+      .report { padding: 18px 20px 24px; max-width: none; }
+      .hero, .card, .band, .table-wrap { break-inside: avoid; box-shadow: none; }
+      .grid-4, .grid-3, .grid-2, .comparison-grid, .actions-grid { page-break-inside: avoid; }
+      .search-box, .footnote.html-only { display: none; }
+    }
+    @media (max-width: 980px) {
+      .hero-top, .hero-brief, .grid-4, .grid-3, .grid-2, .comparison-grid, .actions-grid { grid-template-columns: 1fr; }
+      h1 { font-size: 34px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="report">
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <div class="eyebrow">{{ identity.report_title }}</div>
+          <h1>{{ identity.brand_name }}</h1>
+          <div class="hero-sub">{{ executive_summary.paragraph }}</div>
+        </div>
+        <div class="identity-grid">
+          <div class="identity-card"><div class="label">Period</div><div class="value">{{ identity.period_label }}</div></div>
+          <div class="identity-card"><div class="label">Date Range</div><div class="value">{{ identity.date_range }}</div></div>
+          <div class="identity-card"><div class="label">Source Type</div><div class="value">{{ identity.source_type }}</div></div>
+          <div class="identity-card"><div class="label">Source Quality</div><div class="value">{{ identity.source_quality }}</div></div>
+        </div>
+      </div>
+      <div class="hero-brief">
+        <div class="brief-card">
+          <div class="section-title">Executive Summary</div>
+          <ul class="brief-bullets">
+            {% for bullet in executive_summary.bullets %}
+            <li>{{ bullet }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        <div class="summary-box">
+          <h3>Report Identity</h3>
+          <p>
+            Generated on {{ identity.generated_at }}{% if identity.source_filename %} from <strong>{{ identity.source_filename }}</strong>{% endif %}.
+            {% if identity.quality_flags %} Quality notes: {{ identity.quality_flags|join(', ') }}.{% endif %}
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <div class="comparison-grid">
+      {% for item in comparison.basis %}
+      <div class="comparison-card">
+        <h4>{{ loop.index }}. Comparison Basis</h4>
+        <ul><li>{{ item }}</li></ul>
+      </div>
+      {% endfor %}
+    </div>
+
+    <section class="grid-4">
+      {% for card in kpi_cards %}
+      <div class="card kpi-card">
+        <div class="label">{{ card.label }}</div>
+        <div class="value">{{ "{:,}".format(card.value) if card.value is number else card.value }}</div>
+        <div class="sub">{{ card.note or card.subtitle }}</div>
+        <div class="chip-row">
+          <span class="chip {{ 'neutral' if card.prev_change is none else ('up' if card.prev_change > 0 else ('down' if card.prev_change < 0 else 'neutral')) }}">Vs previous: {{ card.prev_change_label }}</span>
+          <span class="chip {{ 'neutral' if card.trailing_change is none else ('up' if card.trailing_change > 0 else ('down' if card.trailing_change < 0 else 'neutral')) }}">Vs trailing avg: {{ card.trailing_change_label }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </section>
+
+    <section class="band">
+      <div class="section-title">Commercial Context</div>
+      <h2>{% if sales_context.available %}₦{{ "{:,.2f}".format(sales_context.revenue) }} revenue from {{ sales_context.sales_stores }} selling stores{% else %}Commercial sales context unavailable{% endif %}</h2>
+      <p>
+        {% if sales_context.available %}
+        The field report sits alongside {{ "{:,.0f}".format(sales_context.quantity) }} packs sold in the selected period, with repeat purchase at {{ "%.1f"|format(sales_context.repeat_pct) }}%.
+        {% else %}
+        No sales row was available for this brand and report combination, so this activity report is reading only from field evidence.
+        {% endif %}
+      </p>
+    </section>
+
+    <div class="grid-2">
+      <section class="card chart-card">
+        <div class="section-title">Activity Trend</div>
+        <canvas id="activityTrendChart"></canvas>
+      </section>
+      <section class="card chart-card short">
+        <div class="section-title">Issues & Opportunities</div>
+        <div class="grid-2" style="margin-bottom:0;">
+          <div><canvas id="issueMixChart"></canvas></div>
+          <div><canvas id="opportunityMixChart"></canvas></div>
+        </div>
+        <div class="metric-list" style="margin-top:16px;">
+          <div class="metric-item"><span>Most frequent issue</span><strong>{{ issues_opportunities.highlights.most_frequent_issue }}</strong></div>
+          <div class="metric-item"><span>Most urgent issue</span><strong>{{ issues_opportunities.highlights.most_urgent_issue }}</strong></div>
+          <div class="metric-item"><span>Most repeated opportunity</span><strong>{{ issues_opportunities.highlights.most_repeated_opportunity }}</strong></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="grid-2">
+      <section class="card chart-card">
+        <div class="section-title">Store Breakdown</div>
+        <canvas id="storeActivityChart"></canvas>
+      </section>
+      <section class="card">
+        <div class="section-title">Store Table</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Store</th><th>Visits</th><th>Issues</th><th>Opportunities</th><th>Brand Mentions</th><th>Last Activity</th></tr>
+            </thead>
+            <tbody>
+              {% for row in store_breakdown.rows[:12] %}
+              <tr>
+                <td><strong>{{ row.retailer_name }}</strong><br><span class="muted-note">{{ row.retailer_city }}, {{ row.retailer_state }}</span></td>
+                <td>{{ row.visits }}</td>
+                <td>{{ row.issues }}</td>
+                <td>{{ row.opportunities }}</td>
+                <td>{{ row.brand_mentions }}</td>
+                <td>{{ row.last_activity }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <div class="grid-2">
+      <section class="card chart-card short">
+        <div class="section-title">Geographic Distribution</div>
+        <canvas id="stateChart"></canvas>
+        <div class="footnote">Top state: {{ geography.top_state }} | Top city: {{ geography.top_city }}</div>
+      </section>
+      <section class="card chart-card short">
+        <div class="section-title">City Concentration</div>
+        <canvas id="cityChart"></canvas>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="section-title">Field Team Performance</div>
+      {% if field_team.available %}
+      <div class="grid-3">
+        <div class="chart-card short"><canvas id="fieldActivityChart"></canvas></div>
+        <div class="chart-card short"><canvas id="fieldStoreChart"></canvas></div>
+        <div class="chart-card short"><canvas id="fieldIssueChart"></canvas></div>
+      </div>
+      <div class="table-wrap" style="margin-top:16px;">
+        <table>
+          <thead><tr><th>Salesman</th><th>Activities</th><th>Stores Covered</th><th>Issues Logged</th><th>Opportunities Logged</th></tr></thead>
+          <tbody>
+            {% for row in field_team.table %}
+            <tr>
+              <td><strong>{{ row.salesman_name }}</strong></td>
+              <td>{{ row.activities }}</td>
+              <td>{{ row.stores }}</td>
+              <td>{{ row.issues }}</td>
+              <td>{{ row.opportunities }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="muted-note">{{ field_team.note }}</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <div class="section-title">Activity Details</div>
+      {% if include_full_details %}
+      <div class="search-box html-only">
+        <input id="activitySearch" type="search" placeholder="Search salesperson, retailer, city, survey, question, label, or answer">
+      </div>
+      {% endif %}
+      <div class="table-wrap">
+        <table id="activityDetailsTable">
+          <thead>
+            <tr>
+              {% for header in details_rows[0].keys() if details_rows %}
+              <th>{{ header }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in details_rows %}
+            <tr>
+              {% for value in row.values() %}
+              <td>{{ value }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="footnote">
+        {% if include_full_details %}
+        Showing {{ details.count }} detailed activity rows for the selected period.
+        {% else %}
+        PDF appendix preview is intentionally limited to the latest {{ details_rows|length }} detailed rows. Full detail is available in the HTML and Excel exports.
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">Summary & Recommended Actions</div>
+      <div class="grid-3">
+        <div class="actions-box">
+          <h4>What Stands Out</h4>
+          <ul class="brief-bullets">
+            {% for item in recommended.what_stands_out %}
+            <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        <div class="actions-box">
+          <h4>Risks</h4>
+          <ul class="brief-bullets">
+            {% for item in recommended.risks %}
+            <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        <div class="actions-box">
+          <h4>Opportunities</h4>
+          <ul class="brief-bullets">
+            {% for item in recommended.opportunities %}
+            <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+      <div class="actions-grid" style="margin-top:16px;">
+        <div class="actions-box">
+          <h4>Do Now</h4>
+          {% for action in recommended.actions.do_now %}
+          <div class="action-item">
+            <strong>{{ action.action }}</strong>
+            <div class="action-meta">Why: {{ action.why }}</div>
+            <div class="action-meta">Affected stores: {{ action.affected }}</div>
+            <div class="action-meta">Expected impact: {{ action.impact }}</div>
+            <div class="action-meta">Urgency: {{ action.urgency }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="actions-box">
+          <h4>Watch</h4>
+          {% for action in recommended.actions.watch %}
+          <div class="action-item">
+            <strong>{{ action.action }}</strong>
+            <div class="action-meta">Why: {{ action.why }}</div>
+            <div class="action-meta">Affected stores: {{ action.affected }}</div>
+            <div class="action-meta">Expected impact: {{ action.impact }}</div>
+            <div class="action-meta">Urgency: {{ action.urgency }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="actions-box">
+          <h4>Strategic</h4>
+          {% for action in recommended.actions.strategic %}
+          <div class="action-item">
+            <strong>{{ action.action }}</strong>
+            <div class="action-meta">Why: {{ action.why }}</div>
+            <div class="action-meta">Affected stores: {{ action.affected }}</div>
+            <div class="action-meta">Expected impact: {{ action.impact }}</div>
+            <div class="action-meta">Urgency: {{ action.urgency }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const chartData = {{ chart_json|safe }};
+    const baseOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: true, labels: { boxWidth: 12 } } },
+      scales: { x: { ticks: { color: '#667085' }, grid: { color: '#edf2f7' } }, y: { ticks: { color: '#667085' }, grid: { color: '#edf2f7' } } }
+    };
+    const fmt = (arr) => arr.map(item => item.label);
+    const vals = (arr) => arr.map(item => item.value);
+    function buildBar(id, labels, values, color, horizontal=false) {
+      const node = document.getElementById(id);
+      if (!node) return;
+      new Chart(node, {
+        type: 'bar',
+        data: { labels, datasets: [{ label: id, data: values, backgroundColor: color, borderRadius: 8 }] },
+        options: { ...baseOptions, indexAxis: horizontal ? 'y' : 'x', plugins: { legend: { display: false } } }
+      });
+    }
+    function buildDoughnut(id, labels, values, colors) {
+      const node = document.getElementById(id);
+      if (!node) return;
+      new Chart(node, {
+        type: 'doughnut',
+        data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+      });
+    }
+    function palette(count, fallback) {
+      const colors = ['#1b2b5e','#2f7dd1','#1f9a59','#b7832f','#e8192c','#7d55c7','#ec7d2c','#0ea5e9','#5b6475','#c084fc'];
+      return Array.from({length: count}, (_, i) => colors[i % colors.length] || fallback);
+    }
+    new Chart(document.getElementById('activityTrendChart'), {
+      type: 'line',
+      data: {
+        labels: chartData.trend.labels,
+        datasets: [
+          { label: 'Activities', data: chartData.trend.activities, borderColor: '#1b2b5e', backgroundColor: 'rgba(27,43,94,0.12)', tension: 0.35, fill: true },
+          { label: 'Issues', data: chartData.trend.issues, borderColor: '#e8192c', backgroundColor: 'rgba(232,25,44,0.08)', tension: 0.35, fill: false },
+          { label: 'Opportunities', data: chartData.trend.opportunities, borderColor: '#1f9a59', backgroundColor: 'rgba(31,154,89,0.08)', tension: 0.35, fill: false }
+        ]
+      },
+      options: baseOptions
+    });
+    buildDoughnut('issueMixChart', fmt(chartData.issue_mix), vals(chartData.issue_mix), palette(chartData.issue_mix.length, '#e8192c'));
+    buildDoughnut('opportunityMixChart', fmt(chartData.opportunity_mix), vals(chartData.opportunity_mix), palette(chartData.opportunity_mix.length, '#1f9a59'));
+    buildBar('storeActivityChart', fmt(chartData.stores_activity), vals(chartData.stores_activity), '#1b2b5e', true);
+    buildBar('stateChart', chartData.states.map(r => r.state), chartData.states.map(r => r.activities), '#2f7dd1', true);
+    buildBar('cityChart', chartData.cities.map(r => r.city), chartData.cities.map(r => r.activities), '#1f9a59', true);
+    if (chartData.field_activity && chartData.field_activity.length) {
+      buildBar('fieldActivityChart', fmt(chartData.field_activity), vals(chartData.field_activity), '#1b2b5e', true);
+      buildBar('fieldStoreChart', fmt(chartData.field_stores), vals(chartData.field_stores), '#2f7dd1', true);
+      buildBar('fieldIssueChart', fmt(chartData.field_issues), vals(chartData.field_issues), '#e8192c', true);
+    }
+    const searchBox = document.getElementById('activitySearch');
+    if (searchBox) {
+      searchBox.addEventListener('input', () => {
+        const query = searchBox.value.toLowerCase();
+        document.querySelectorAll('#activityDetailsTable tbody tr').forEach((row) => {
+          row.style.display = row.innerText.toLowerCase().includes(query) ? '' : 'none';
+        });
+      });
+    }
+    window.__REPORT_READY = true;
+  </script>
+</body>
+</html>

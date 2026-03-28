@@ -84,6 +84,11 @@ ISSUE_KEYWORDS = (
     ('damaged', 'packaging_issue', 'high'),
 )
 
+SKU_HINT_PATTERN = re.compile(
+    r'(\d+\s?(ml|g|kg|cl|l|ltr|litre|litres)|yogh|yogurt|greek|protein|vanilla|strawberry|choco|juice|tea|drink|water)',
+    re.I,
+)
+
 
 def _coerce_bytes(file_source) -> tuple[bytes, str]:
     if hasattr(file_source, 'read'):
@@ -114,6 +119,10 @@ def _looks_like_text(raw: bytes) -> bool:
         return False
     binary_hits = sum(1 for b in head if b == 0)
     return binary_hits == 0
+
+
+def _looks_like_zip(raw: bytes) -> bool:
+    return raw[:4] == b'PK\x03\x04'
 
 
 def _decode_text(raw: bytes) -> str:
@@ -157,85 +166,89 @@ def _read_activity_file(raw: bytes, filename: str = '') -> tuple[pd.DataFrame, s
 
 
 def _infer_zip_survey_name(member_name: str) -> str:
-    base = os.path.splitext(os.path.basename(member_name or ''))[0]
-    cleaned = re.sub(r'^[\-\s]+|[\-\s]+$', '', base)
-    cleaned = cleaned.replace('_', ' ')
+    base = os.path.splitext(os.path.basename(member_name))[0]
+    cleaned = re.sub(r'[_\-]+', ' ', base)
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-    if not cleaned:
-        return 'Unspecified'
     return cleaned
 
 
-def _infer_zip_source_category(survey_name: str) -> str:
-    name = str(survey_name or '').lower()
-    if 'credit notes' in name or 'complaints' in name or 'product issues' in name:
-        return 'issues'
-    if 'corporate' in name:
-        return 'corporate'
-    if 'general' in name:
-        return 'general'
-    if 'outlet' in name:
-        return 'outlet'
+def _infer_zip_source_category(member_name: str) -> str:
+    norm = _infer_zip_survey_name(member_name).lower()
+    if 'corporate' in norm:
+        return 'corporate_feedback'
+    if 'general' in norm:
+        return 'general_feedback'
+    if 'outlet' in norm:
+        return 'outlet_feedback'
+    if 'credit' in norm or 'complaint' in norm or 'issue' in norm:
+        return 'credit_notes_and_issues'
     return 'brand_feedback'
 
 
-def _is_zip_root_member(member: str) -> bool:
-    """Return True only for files in the top-level folder of the zip (no subdirectories)."""
-    parts = [p for p in member.replace('\\', '/').split('/') if p]
-    # parts[0] is the root folder name, parts[1] is the file — depth == 2 is root level
-    return len(parts) == 2 and not parts[-1].startswith('__')
+def _should_skip_zip_member(member_name: str) -> bool:
+    norm = member_name.replace('\\', '/').lower()
+    base = os.path.basename(norm)
+    if base.startswith('~$'):
+        return True
+    if '/weekly_reports_output_' in norm:
+        return True
+    if 'activity report march week' in base:
+        return True
+    if 'weekly_brand_summary' in base:
+        return True
+    return False
 
 
-def _read_activity_zip(raw: bytes, filename: str = '') -> tuple[pd.DataFrame, dict]:
-    frames: list[pd.DataFrame] = []
-    manifest: list[dict] = []
-    skipped: list[str] = []
-    with zipfile.ZipFile(io.BytesIO(raw), 'r') as archive:
-        all_members = [name for name in archive.namelist() if name.lower().endswith(('.xlsx', '.xls', '.csv', '.txt', '.tsv'))]
-        members = [m for m in all_members if _is_zip_root_member(m)]
-        for m in all_members:
-            if not _is_zip_root_member(m):
-                skipped.append(os.path.basename(m))
-        for member in members:
-            with archive.open(member) as fh:
+def _read_activity_zip(raw: bytes) -> tuple[pd.DataFrame, dict]:
+    frames = []
+    manifest = []
+    with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+        members = [
+            info for info in zf.infolist()
+            if not info.is_dir()
+            and info.filename.lower().endswith(('.xlsx', '.xls', '.csv', '.txt', '.tsv'))
+            and not _should_skip_zip_member(info.filename)
+        ]
+        for info in members:
+            with zf.open(info) as fh:
                 member_raw = fh.read()
-            member_df, member_source_type = _read_activity_file(member_raw, member)
-            member_df = _normalise_columns(member_df)
-            for col in member_df.columns:
-                member_df[col] = member_df[col].fillna('').astype(str).str.strip()
-            member_df['activity_date'] = member_df['activity_date'].apply(_to_iso_date)
-            member_df['survey_start_date'] = member_df['survey_start_date'].apply(_to_iso_date)
-            member_df['survey_end_date'] = member_df['survey_end_date'].apply(_to_iso_date)
-            member_df = member_df[member_df['activity_date'].notna()].copy()
-            survey_name = _infer_zip_survey_name(member)
-            if 'survey_name' not in member_df.columns or not member_df['survey_name'].astype(str).str.strip().replace({'nan': ''}).any():
-                member_df['survey_name'] = survey_name
-            else:
-                member_df['survey_name'] = member_df['survey_name'].replace('', survey_name)
-            if 'survey_code' not in member_df.columns:
-                member_df['survey_code'] = ''
-            member_df['survey_code'] = member_df['survey_code'].replace('', survey_name)
-            member_df['answer_type'] = member_df['answer_type'].replace('', 'zip_bundle')
-            member_df['reporting_person_name'] = member_df['reporting_person_name'].replace('', os.path.basename(member))
-            frames.append(member_df)
+            frame, source_type = _read_activity_file(member_raw, info.filename)
+            frame = _normalise_columns(frame)
+            for col in frame.columns:
+                frame[col] = frame[col].fillna('').astype(str).str.strip()
+            if not frame.empty:
+                survey_name = _infer_zip_survey_name(info.filename)
+                source_category = _infer_zip_source_category(info.filename)
+                if not frame['survey_name'].astype(str).str.strip().any():
+                    frame['survey_name'] = survey_name
+                frame['survey_code'] = frame['survey_code'].replace('', survey_name)
+                frame['answer_type'] = frame['answer_type'].replace('', 'text')
+                frame['activity_date'] = frame['activity_date'].apply(_to_iso_date)
+                frame['survey_start_date'] = frame['survey_start_date'].apply(_to_iso_date)
+                frame['survey_end_date'] = frame['survey_end_date'].apply(_to_iso_date)
+                frame = frame[frame['activity_date'].notna()].copy()
+                frame['source_category'] = source_category
+                frame['source_file'] = os.path.basename(info.filename)
+            frames.append(frame)
             manifest.append({
-                'file_name': os.path.basename(member),
-                'survey_name': survey_name,
-                'source_category': _infer_zip_source_category(survey_name),
-                'row_count': int(len(member_df)),
-                'source_type': member_source_type,
+                'member_name': info.filename,
+                'row_count': int(len(frame)),
+                'source_type': source_type,
+                'survey_name': _infer_zip_survey_name(info.filename),
+                'source_category': _infer_zip_source_category(info.filename),
             })
-
-    combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=list(EXPECTED_COLUMNS))
+    merged = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=list(EXPECTED_COLUMNS))
+    if 'source_category' not in merged.columns:
+        merged['source_category'] = ''
+    if 'source_file' not in merged.columns:
+        merged['source_file'] = ''
     meta = {
-        'filename': os.path.basename(filename or ''),
         'source_type': 'zip_bundle',
-        'row_count': int(len(combined)),
-        'bundle_file_count': len(manifest),
+        'row_count': int(len(merged)),
         'bundle_manifest': manifest,
-        'bundle_skipped': skipped,
+        'file_count': len(manifest),
     }
-    return combined, meta
+    return merged, meta
 
 
 def _clean_colname(name: str) -> str:
@@ -268,22 +281,22 @@ def _to_iso_date(value) -> str | None:
 
 def load_activity_dataframe(file_source) -> tuple[pd.DataFrame, dict]:
     raw, filename = _coerce_bytes(file_source)
-    ext = os.path.splitext(filename or '')[1].lower()
-    if ext == '.zip' or raw[:4] == b'PK\x03\x04':
-        return _read_activity_zip(raw, filename)
-    df, source_type = _read_activity_file(raw, filename)
-    df = _normalise_columns(df)
-    for col in df.columns:
-        df[col] = df[col].fillna('').astype(str).str.strip()
-    df['activity_date'] = df['activity_date'].apply(_to_iso_date)
-    df['survey_start_date'] = df['survey_start_date'].apply(_to_iso_date)
-    df['survey_end_date'] = df['survey_end_date'].apply(_to_iso_date)
-    df = df[df['activity_date'].notna()].copy()
-    meta = {
-        'filename': filename,
-        'source_type': source_type,
-        'row_count': len(df),
-    }
+    if _looks_like_zip(raw) or str(filename).lower().endswith('.zip'):
+        df, meta = _read_activity_zip(raw)
+    else:
+        df, source_type = _read_activity_file(raw, filename)
+        df = _normalise_columns(df)
+        for col in df.columns:
+            df[col] = df[col].fillna('').astype(str).str.strip()
+        df['activity_date'] = df['activity_date'].apply(_to_iso_date)
+        df['survey_start_date'] = df['survey_start_date'].apply(_to_iso_date)
+        df['survey_end_date'] = df['survey_end_date'].apply(_to_iso_date)
+        df = df[df['activity_date'].notna()].copy()
+        meta = {
+            'source_type': source_type,
+            'row_count': len(df),
+        }
+    meta['filename'] = filename
     return df, meta
 
 
@@ -302,56 +315,57 @@ def _extract_brand_candidate_from_survey(survey_name: str) -> str | None:
     return canonicalize_brand_name(cleaned)
 
 
-def _iter_brand_lookup(ds) -> Iterable[tuple[str, str, int]]:
+def _build_brand_lookup(ds) -> list[tuple[str, str, int]]:
     if not ds:
         return []
     rows = []
     for brand in ds.get_all_brand_master(status='all'):
-        rows.append((brand['canonical_name'], brand['canonical_name'].lower(), brand['id']))
+        canonical = str(brand['canonical_name']).strip()
+        if canonical:
+            rows.append((canonical, canonical.lower(), brand['id']))
         for alias in ds.get_brand_aliases(brand['id']):
-            rows.append((brand['canonical_name'], str(alias['alias_name']).strip().lower(), brand['id']))
+            alias_text = str(alias['alias_name']).strip().lower()
+            if alias_text:
+                rows.append((canonical, alias_text, brand['id']))
     rows.sort(key=lambda item: len(item[1]), reverse=True)
     return rows
 
 
-def _build_brand_lookup(ds):
-    return list(_iter_brand_lookup(ds))
-
-
-def _build_brand_resolution_cache(ds) -> dict[str, dict]:
-    cache = {}
+def _build_sku_lookup(ds) -> dict[int, list[tuple[str, str]]]:
     if not ds:
-        return cache
+        return {}
+    cache: dict[int, list[tuple[str, str]]] = {}
     for brand in ds.get_all_brand_master(status='all'):
-        cache[brand['canonical_name'].lower()] = brand
-        for alias in ds.get_brand_aliases(brand['id']):
-            cache[str(alias['alias_name']).strip().lower()] = brand
+        brand_id = int(brand['id'])
+        rows: list[tuple[str, str]] = []
+        for sku in ds.get_brand_skus(brand_id, status='all'):
+            sku_name = str(sku['sku_name']).strip()
+            if sku_name:
+                rows.append((sku_name, sku_name.lower()))
+        for alias in ds.get_sku_aliases(brand_id):
+            sku = ds.get_sku_master(alias['sku_id'])
+            if not sku:
+                continue
+            alias_text = str(alias['alias_name']).strip().lower()
+            sku_name = str(sku['sku_name']).strip()
+            if alias_text and sku_name:
+                rows.append((sku_name, alias_text))
+        deduped = []
+        seen = set()
+        for sku_name, key in rows:
+            token = (sku_name, key)
+            if token in seen:
+                continue
+            seen.add(token)
+            deduped.append((sku_name, key))
+        deduped.sort(key=lambda item: len(item[1]), reverse=True)
+        cache[brand_id] = deduped
     return cache
 
 
-def _build_sku_lookup(ds) -> dict[int, list[tuple[str, str]]]:
-    lookup: dict[int, list[tuple[str, str]]] = {}
-    if not ds:
-        return lookup
-    for brand in ds.get_all_brand_master(status='all'):
-        brand_id = brand['id']
-        rows = []
-        for sku in ds.get_brand_skus(brand_id, status='all'):
-            sku_name = str(sku['sku_name']).strip()
-            rows.append((sku_name.lower(), sku_name))
-        for alias in ds.get_sku_aliases(brand_id):
-            alias_name = str(alias['alias_name']).strip()
-            sku = ds.get_sku_master(alias['sku_id'])
-            if sku:
-                rows.append((alias_name.lower(), sku['sku_name']))
-        rows.sort(key=lambda item: len(item[0]), reverse=True)
-        lookup[brand_id] = rows
-    return lookup
-
-
-def _extract_brand_mentions(text: str, brand_lookup: list[tuple[str, str, int]] | None) -> list[dict]:
+def _extract_brand_mentions(text: str, brand_lookup: Iterable[tuple[str, str, int]]) -> list[dict]:
     norm = _norm_text(text)
-    if not norm or not brand_lookup:
+    if not norm:
         return []
     matches = []
     seen = set()
@@ -364,18 +378,18 @@ def _extract_brand_mentions(text: str, brand_lookup: list[tuple[str, str, int]] 
     return matches
 
 
-def _extract_sku_mentions(text: str, sku_lookup: dict[int, list[tuple[str, str]]] | None, brand_id: int | None) -> list[str]:
-    if not sku_lookup or not brand_id:
+def _extract_sku_mentions(text: str, sku_lookup: dict[int, list[tuple[str, str]]], brand_id: int | None) -> list[str]:
+    if not brand_id:
         return []
     norm = _norm_text(text)
     if not norm:
         return []
     matches = []
     seen = set()
-    for key, canonical_name in sku_lookup.get(brand_id, []):
-        if len(key) >= 4 and key in norm and canonical_name not in seen:
-            matches.append(canonical_name)
-            seen.add(canonical_name)
+    for sku_name, key in sku_lookup.get(int(brand_id), []):
+        if len(key) >= 4 and key in norm and sku_name not in seen:
+            matches.append(sku_name)
+            seen.add(sku_name)
     return matches
 
 
@@ -402,8 +416,7 @@ def _photo_count(answer_type: str, answer: str) -> int:
 
 
 def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
-                           report_id: int = None, progress_cb=None,
-                           source_meta: dict | None = None) -> dict:
+                           report_id: int = None, progress_cb=None, source_meta: dict | None = None) -> dict:
     df = df.copy()
     if df.empty:
         return {
@@ -419,10 +432,9 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
     brand_mentions = []
     unmatched_brand_candidates = set()
     unmatched_sku_candidates = set()
-    brand_lookup = _build_brand_lookup(ds)
-    brand_resolution_cache = _build_brand_resolution_cache(ds)
-    sku_lookup = _build_sku_lookup(ds)
-    brand_guess_cache: dict[str, dict | None] = {}
+    brand_lookup = _build_brand_lookup(ds) if ds else []
+    sku_lookup = _build_sku_lookup(ds) if ds else {}
+    survey_resolution_cache: dict[str, dict | None] = {}
 
     total_rows = max(len(df), 1)
     for idx, row in enumerate(df.to_dict(orient='records'), start=1):
@@ -434,12 +446,12 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
             progress_cb(progress, f"Reading activity rows {idx:,} of {total_rows:,}")
 
         survey_guess = _extract_brand_candidate_from_survey(clean.get('survey_name'))
+        source_category = str(clean.get('source_category') or '').strip().lower()
         brand_rows = []
         if survey_guess and ds:
-            guess_key = survey_guess.lower()
-            if guess_key not in brand_guess_cache:
-                brand_guess_cache[guess_key] = brand_resolution_cache.get(guess_key) or ds.resolve_brand_master(survey_guess)
-            resolved = brand_guess_cache.get(guess_key)
+            if survey_guess not in survey_resolution_cache:
+                survey_resolution_cache[survey_guess] = ds.resolve_brand_master(survey_guess)
+            resolved = survey_resolution_cache[survey_guess]
             if resolved:
                 brand_rows.append({'brand_name': resolved['canonical_name'], 'brand_id': resolved['id'], 'source_kind': 'survey_name'})
             else:
@@ -449,9 +461,15 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
             str(clean.get(k) or '')
             for k in ('survey_name', 'question', 'label', 'answer')
         )
-        brand_rows.extend(
-            {**match, 'source_kind': 'text'} for match in _extract_brand_mentions(text_blob, brand_lookup)
+        should_scan_text = (
+            not brand_rows
+            or source_category in {'general_feedback', 'outlet_feedback', 'corporate_feedback', 'credit_notes_and_issues'}
+            or not source_category
         )
+        if should_scan_text:
+            brand_rows.extend(
+                {**match, 'source_kind': 'text'} for match in _extract_brand_mentions(text_blob, brand_lookup)
+            )
 
         deduped_brands = []
         seen_brands = set()
@@ -469,7 +487,7 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
         )
 
         for match in deduped_brands:
-            sku_names = _extract_sku_mentions(text_blob, sku_lookup, match['brand_id'])
+            sku_names = _extract_sku_mentions(text_blob, sku_lookup, match['brand_id']) if SKU_HINT_PATTERN.search(text_blob) else []
             if not sku_names and clean.get('answer') and 'ml' in clean['answer'].lower():
                 unmatched_sku_candidates.add((match['brand_name'], clean['answer']))
             brand_mentions.append({
@@ -585,18 +603,24 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
         progress_cb(88, 'Preparing summary')
 
     activity_dates = [d for d in df['activity_date'].dropna().tolist() if d]
+    nonempty_salespeople = (
+        df['salesman_name'].fillna('').astype(str).str.strip().replace('', pd.NA).dropna().nunique()
+        if 'salesman_name' in df.columns else 0
+    )
     summary = {
         'row_count': int(len(df)),
         'start_date': min(activity_dates) if activity_dates else None,
         'end_date': max(activity_dates) if activity_dates else None,
         'brands_detected': len({m['brand_name'] for m in brand_mentions if m.get('brand_name')}),
         'stores_visited': int(df['retailer_code'].nunique()),
-        'salespeople': int(df['salesman_name'].nunique()),
+        'salespeople': int(nonempty_salespeople),
         'issue_count': len(issues),
         'visit_count': len(visit_rows),
     }
     if source_meta:
         summary['source_meta'] = source_meta
+        if source_meta.get('source_type') == 'zip_bundle' and int(nonempty_salespeople) == 0:
+            summary['quality_flags'] = ['salesperson_metadata_missing_in_cleaned_zip']
 
     return {
         'summary': summary,
