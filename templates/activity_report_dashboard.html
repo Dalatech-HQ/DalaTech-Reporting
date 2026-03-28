@@ -9,430 +9,351 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root {
-      --navy:#1b2b5e; --red:#e8192c; --blue:#2f7dd1; --green:#1f9a59; --gold:#b7832f;
-      --ink:#1f2937; --muted:#667085; --line:#dbe4f0; --paper:#ffffff; --soft:#f4f7fb;
-      --warn:#fff4df; --pink:#fff0f1; --teal:#ecfbf4;
+      --navy:#142b66; --navy-soft:#edf3ff; --paper:#ffffff; --line:#d7e0ef; --ink:#1f2937; --muted:#667085;
+      --red:#d92d20; --green:#15803d; --gold:#b7791f; --sky:#2f7dd1; --soft:#f4f7fb;
+      --red-soft:#fff1f0; --green-soft:#ecfdf3; --gold-soft:#fff7e6;
     }
     * { box-sizing: border-box; }
     body {
-      margin: 0; padding: 0; background: #eef3f9; color: var(--ink);
-      font-family: 'Inter', Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+      margin: 0;
+      background: #edf2f8;
+      color: var(--ink);
+      font-family: 'Inter', Arial, sans-serif;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
-    .report {
-      width: 100%; max-width: 1200px; margin: 0 auto; background: var(--paper); padding: 28px 32px 44px;
+    .dashboard {
+      width: 100%;
+      max-width: 1420px;
+      margin: 0 auto;
+      padding: 12px;
+      background: var(--paper);
     }
-    .hero {
-      border: 1px solid var(--line); border-radius: 22px; overflow: hidden; margin-bottom: 22px;
-      background: linear-gradient(135deg, #10204d 0%, #1f3d8f 58%, #275ec8 100%); color: white;
-      box-shadow: 0 18px 34px rgba(17, 35, 79, 0.14);
+    .page {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 1.75fr 1.25fr;
+      grid-template-areas:
+        "hero hero"
+        "kpis kpis"
+        "trend mix"
+        "stores geo"
+        "summary detail";
     }
-    .hero-top {
-      display: grid; grid-template-columns: 1.5fr 1fr; gap: 24px; padding: 28px 28px 22px;
+    .panel {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 8px 18px rgba(22, 39, 81, 0.05);
+      overflow: hidden;
     }
-    .eyebrow { font-size: 12px; letter-spacing: 1.8px; text-transform: uppercase; font-weight: 800; opacity: .82; }
-    h1 { margin: 10px 0 8px; font-size: 44px; line-height: 1.04; }
-    .hero-sub { font-size: 16px; line-height: 1.65; max-width: 720px; color: rgba(255,255,255,.9); }
-    .identity-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
-    .identity-card {
-      background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.18); border-radius: 16px; padding: 14px 16px;
-      backdrop-filter: blur(8px);
+    .hero { grid-area: hero; background: linear-gradient(135deg, #10204d 0%, #183780 60%, #2158bb 100%); color: white; border: none; }
+    .hero-inner {
+      display: grid;
+      grid-template-columns: 1.5fr 1fr;
+      gap: 10px;
+      padding: 14px 16px;
     }
-    .identity-card .label { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; opacity: .76; }
-    .identity-card .value { margin-top: 6px; font-size: 16px; font-weight: 700; line-height: 1.4; }
-    .hero-brief {
-      background: rgba(255,255,255,.96); color: var(--ink); border-top: 1px solid rgba(255,255,255,.18);
-      display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; padding: 22px 28px;
+    .eyebrow { font-size: 10px; text-transform: uppercase; letter-spacing: 1.8px; font-weight: 800; opacity: .8; }
+    h1 { margin: 6px 0 4px; font-size: 28px; line-height: 1; }
+    .hero-copy { font-size: 12px; line-height: 1.5; color: rgba(255,255,255,.92); }
+    .hero-meta { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
+    .meta-card {
+      background: rgba(255,255,255,.1);
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 12px;
+      padding: 10px;
     }
-    .section-title { font-size: 14px; font-weight: 800; letter-spacing: 1.6px; text-transform: uppercase; color: var(--navy); margin-bottom: 10px; }
-    .brief-card p { margin: 0; color: #344054; line-height: 1.65; }
-    .brief-bullets { margin: 8px 0 0; padding-left: 18px; color: #344054; line-height: 1.6; }
-    .brief-bullets li { margin-bottom: 4px; }
-    .summary-box { background: var(--soft); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
-    .summary-box h3 { margin: 0 0 10px; font-size: 18px; color: var(--navy); }
-    .summary-box p { margin: 0; color: #344054; line-height: 1.7; }
-    .grid-4, .grid-3, .grid-2, .mini-chart-grid { display: grid; gap: 16px; margin-bottom: 18px; }
-    .grid-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
-    .grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
-    .grid-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
-    .mini-chart-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
-    .card {
-      background: var(--paper); border: 1px solid var(--line); border-radius: 18px; padding: 18px;
-      box-shadow: 0 8px 18px rgba(21, 32, 68, 0.05);
+    .meta-card .label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 700;
+      opacity: .78;
     }
-    .kpi-card .label { font-size: 12px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: #6b7280; }
-    .kpi-card .value { margin: 10px 0 4px; font-size: 34px; font-weight: 800; color: var(--navy); }
-    .kpi-card .sub { font-size: 13px; color: var(--muted); }
-    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-    .chip { border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 700; }
-    .chip.up { background: #ecfdf3; color: #027a48; }
-    .chip.down { background: #fff1f3; color: #c01048; }
-    .chip.neutral { background: #eff3f8; color: #475467; }
-    .comparison-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; margin-bottom: 18px; }
-    .comparison-card { border: 1px solid var(--line); border-radius: 16px; padding: 16px; background: linear-gradient(180deg, #fafcff 0%, #f3f7fc 100%); }
-    .comparison-card h4 { margin: 0 0 8px; font-size: 15px; color: var(--navy); }
-    .comparison-card ul { margin: 0; padding-left: 18px; color: #475467; line-height: 1.7; }
-    .comparison-card .basis-copy { color: #475467; line-height: 1.6; font-size: 13px; margin-bottom: 12px; }
-    .comparison-card .period-chip { display: inline-flex; margin-bottom: 10px; }
-    .comparison-metrics { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
-    .comparison-metric { border: 1px solid #e8eef7; border-radius: 12px; padding: 10px 12px; background: rgba(255,255,255,.76); }
-    .comparison-metric .metric-label { display:block; font-size:11px; text-transform: uppercase; letter-spacing: 1px; color:#667085; font-weight:700; }
-    .comparison-metric .metric-value { display:block; margin-top: 4px; font-size: 15px; color: var(--navy); font-weight: 800; }
-    .chart-card canvas { width: 100% !important; height: 290px !important; }
-    .chart-card.short canvas { height: 250px !important; }
-    .mini-chart-grid canvas { width: 100% !important; height: 220px !important; }
-    .table-wrap { border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: white; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; vertical-align: top; }
-    th { background: #f8fafc; color: var(--navy); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+    .meta-card .value { margin-top: 5px; font-size: 12px; font-weight: 700; line-height: 1.35; }
+    .hero-notes { margin-top: 10px; display: grid; grid-template-columns: 1.15fr .85fr; gap: 8px; }
+    .note-card {
+      background: rgba(255,255,255,.96);
+      color: var(--ink);
+      border-radius: 14px;
+      padding: 10px 12px;
+      min-height: 102px;
+    }
+    .note-card h3 { margin: 0 0 6px; color: var(--navy); font-size: 13px; }
+    .note-card ul { margin: 0; padding-left: 18px; font-size: 11px; line-height: 1.45; color: #344054; }
+    .kpis { grid-area: kpis; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; }
+    .kpi-card {
+      background: linear-gradient(180deg, #fbfdff 0%, #f4f8fd 100%);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px 12px;
+      min-height: 86px;
+    }
+    .kpi-card .label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; }
+    .kpi-card .value { margin: 6px 0 2px; font-size: 22px; font-weight: 800; color: var(--navy); line-height: 1; }
+    .kpi-card .sub { font-size: 11px; color: var(--muted); }
+    .chips { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 5px; }
+    .chip { display:inline-flex; border-radius:999px; padding:4px 7px; font-size:10px; font-weight:700; }
+    .chip.up { background: var(--green-soft); color: var(--green); }
+    .chip.down { background: var(--red-soft); color: var(--red); }
+    .chip.neutral { background: #eef3f8; color:#475467; }
+    .trend { grid-area: trend; }
+    .mix { grid-area: mix; }
+    .stores { grid-area: stores; }
+    .geo { grid-area: geo; }
+    .summary { grid-area: summary; }
+    .detail { grid-area: detail; }
+    .panel-title { padding: 10px 14px 0; color: var(--navy); font-size: 11px; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 800; }
+    .panel-subtitle { padding: 2px 14px 0; color: var(--muted); font-size: 11px; }
+    .chart-wrap { position: relative; height: 145px; padding: 6px 12px 10px; }
+    .split-grid, .summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; padding: 8px 12px 12px; }
+    .mini-card, .summary-box {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fbfdff;
+      padding: 9px 10px;
+    }
+    .mini-card h4, .summary-box h4 { margin: 0 0 5px; color: var(--navy); font-size: 12px; }
+    .mini-card .stat { font-size: 16px; line-height: 1.15; font-weight: 800; color: var(--navy); }
+    .mini-card .copy, .summary-box ul, .recommendation-item div { font-size: 11px; color: var(--muted); line-height: 1.4; }
+    .mini-card canvas { width: 100% !important; height: 92px !important; }
+    .summary-box ul { margin: 0; padding-left: 16px; color: #344054; }
+    .recommendation-list { display: grid; gap: 6px; }
+    .recommendation-item { border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 8px 9px; }
+    .recommendation-item strong { display: block; font-size: 11px; color: #111827; margin-bottom: 3px; }
+    .detail-table { padding: 8px 12px 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th, td { padding: 6px 7px; text-align: left; border-bottom: 1px solid #edf2f7; vertical-align: top; }
+    th { background: #f8fafc; color: var(--navy); font-size: 10px; text-transform: uppercase; letter-spacing: .8px; }
     tbody tr:nth-child(even) { background: #fbfcfe; }
-    .metric-list { display: grid; gap: 10px; }
-    .metric-item { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed var(--line); padding-bottom: 8px; }
-    .metric-item:last-child { border-bottom: none; padding-bottom: 0; }
-    .metric-item strong { color: var(--navy); }
-    .pill { display: inline-flex; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 700; }
-    .pill.red { background: #fff1f3; color: #c01048; } .pill.green { background: #ecfdf3; color: #027a48; } .pill.gold { background: #fff7e6; color: #b7832f; }
-    .band {
-      border-radius: 20px; padding: 22px; margin-bottom: 18px;
-      background: linear-gradient(180deg, #f9fbff 0%, #eff5fb 100%); border: 1px solid var(--line);
-    }
-    .band h2 { margin: 0 0 6px; color: var(--navy); font-size: 24px; }
-    .band p { margin: 0; color: #475467; line-height: 1.7; }
-    .actions-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px; }
-    .actions-box { border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
-    .actions-box h4 { margin: 0 0 12px; font-size: 16px; color: var(--navy); }
-    .action-item { border-top: 1px dashed var(--line); padding-top: 12px; margin-top: 12px; }
-    .action-item:first-child { margin-top: 0; padding-top: 0; border-top: none; }
-    .action-item strong { display: block; color: #111827; margin-bottom: 6px; }
-    .action-meta { font-size: 12px; color: #667085; line-height: 1.6; }
-    .search-box { margin-bottom: 12px; }
-    .search-box input {
-      width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 11px 14px; font: inherit;
-    }
-    .footnote { margin-top: 8px; font-size: 12px; color: #667085; }
-    .muted-note { color: #667085; font-size: 13px; }
-    @page { size: A4; margin: 12mm 10mm; }
+    .note { padding: 0 12px 10px; font-size: 10px; color: var(--muted); }
+    @page { size: A3 landscape; margin: 5mm; }
     @media print {
       body { background: white; }
-      .report { padding: 12px 12px 18px; max-width: none; }
-      .hero, .card, .band, .table-wrap { break-inside: avoid; box-shadow: none; }
-      .grid-4, .grid-3, .grid-2, .comparison-grid, .actions-grid, .mini-chart-grid { page-break-inside: avoid; gap: 12px; }
-      .grid-4 { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
-      .grid-3, .comparison-grid, .actions-grid { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
-      .grid-2 { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
-      .mini-chart-grid { grid-template-columns: 1fr !important; }
-      .hero-top, .hero-brief { grid-template-columns: 1.3fr 1fr !important; gap: 16px; }
-      .card { padding: 14px; }
-      .kpi-card .value { font-size: 26px; margin: 8px 0 2px; }
-      .chip-row { gap: 6px; margin-top: 10px; }
-      .chip { padding: 5px 8px; font-size: 11px; }
-      .chart-card canvas { height: 210px !important; }
-      .chart-card.short canvas { height: 170px !important; }
-      .mini-chart-grid canvas { height: 160px !important; }
-      .comparison-card { padding: 12px; }
-      .comparison-card .basis-copy { font-size: 12px; margin-bottom: 8px; }
-      .comparison-metrics { gap: 6px; }
-      .comparison-metric { padding: 8px 10px; }
-      table { font-size: 11px; }
-      th, td { padding: 7px 8px; }
-      .search-box, .footnote.html-only { display: none; }
+      .dashboard { padding: 0; max-width: none; zoom: 0.72; }
+      .panel { box-shadow: none; break-inside: avoid; }
+      .page { gap: 8px; }
+      .hero-inner { gap: 8px; padding: 12px 14px; }
+      h1 { font-size: 24px; }
+      .chart-wrap { height: 125px; }
+      .mini-card canvas { height: 78px !important; }
+      table { font-size: 9px; }
+      th, td { padding: 4px 5px; }
     }
-    @media screen and (max-width: 980px) {
-      .hero-top, .hero-brief, .grid-4, .grid-3, .grid-2, .comparison-grid, .actions-grid, .mini-chart-grid { grid-template-columns: 1fr; }
-      h1 { font-size: 34px; }
+    @media screen and (max-width: 1180px) {
+      .page, .hero-inner, .hero-notes, .kpis, .split-grid, .summary-grid { grid-template-columns: 1fr; }
+      .page { grid-template-areas: "hero" "kpis" "trend" "mix" "stores" "geo" "summary" "detail"; }
+      .hero-meta { grid-template-columns: repeat(2, minmax(0,1fr)); }
     }
   </style>
 </head>
 <body>
-  <div class="report">
-    <section class="hero">
-      <div class="hero-top">
-        <div>
-          <div class="eyebrow">{{ identity.report_title }}</div>
-          <h1>{{ identity.brand_name }}</h1>
-          <div class="hero-sub">{{ executive_summary.paragraph }}</div>
-        </div>
-        <div class="identity-grid">
-          <div class="identity-card"><div class="label">Period</div><div class="value">{{ identity.period_label }}</div></div>
-          <div class="identity-card"><div class="label">Date Range</div><div class="value">{{ identity.date_range }}</div></div>
-          <div class="identity-card"><div class="label">Source Type</div><div class="value">{{ identity.source_type }}</div></div>
-          <div class="identity-card"><div class="label">Source Quality</div><div class="value">{{ identity.source_quality }}</div></div>
-        </div>
-      </div>
-      <div class="hero-brief">
-        <div class="brief-card">
-          <div class="section-title">Executive Summary</div>
-          <ul class="brief-bullets">
-            {% for bullet in executive_summary.bullets %}
-            <li>{{ bullet }}</li>
-            {% endfor %}
-          </ul>
-        </div>
-        <div class="summary-box">
-          <h3>Report Identity</h3>
-          <p>
-            Generated on {{ identity.generated_at }}{% if identity.source_filename %} from <strong>{{ identity.source_filename }}</strong>{% endif %}.
-            {% if identity.quality_flags %} Quality notes: {{ identity.quality_flags|join(', ') }}.{% endif %}
-          </p>
-        </div>
-      </div>
-    </section>
-
-    <div class="comparison-grid">
-      {% for card in comparison.cards %}
-      <div class="comparison-card">
-        <span class="pill gold period-chip">{{ card.label }}</span>
-        <h4>{{ card.title }}</h4>
-        <div class="basis-copy">{{ card.basis }}</div>
-        <div class="comparison-metrics">
-          {% for metric in card.metrics %}
-          <div class="comparison-metric">
-            <span class="metric-label">{{ metric.label }}</span>
-            <span class="metric-value">{{ metric.value }}</span>
+  <div class="dashboard">
+    <div class="page">
+      <section class="panel hero">
+        <div class="hero-inner">
+          <div>
+            <div class="eyebrow">{{ identity.report_title }}</div>
+            <h1>{{ identity.brand_name }}</h1>
+            <div class="hero-copy">{{ executive_summary.paragraph }}</div>
+            <div class="hero-notes">
+              <div class="note-card">
+                <h3>Executive Summary</h3>
+                <ul>
+                  {% for bullet in executive_summary.bullets[:3] %}
+                  <li>{{ bullet }}</li>
+                  {% endfor %}
+                </ul>
+              </div>
+              <div class="note-card">
+                <h3>Immediate Focus</h3>
+                <ul>
+                  {% for action in recommended.actions.do_now[:2] %}
+                  <li>{{ action.action }}</li>
+                  {% endfor %}
+                  {% for action in recommended.actions.watch[:1] %}
+                  <li>{{ action.action }}</li>
+                  {% endfor %}
+                </ul>
+              </div>
+            </div>
           </div>
-          {% endfor %}
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-
-    <section class="grid-4">
-      {% for card in kpi_cards %}
-      <div class="card kpi-card">
-        <div class="label">{{ card.label }}</div>
-        <div class="value">{{ "{:,}".format(card.value) if card.value is number else card.value }}</div>
-        <div class="sub">{{ card.note or card.subtitle }}</div>
-        <div class="chip-row">
-          <span class="chip {{ 'neutral' if card.prev_change is none else ('up' if card.prev_change > 0 else ('down' if card.prev_change < 0 else 'neutral')) }}">Vs previous: {{ card.prev_change_label }}</span>
-          <span class="chip {{ 'neutral' if card.trailing_change is none else ('up' if card.trailing_change > 0 else ('down' if card.trailing_change < 0 else 'neutral')) }}">Vs trailing avg: {{ card.trailing_change_label }}</span>
-        </div>
-      </div>
-      {% endfor %}
-    </section>
-
-    <section class="band">
-      <div class="section-title">Commercial Context</div>
-      <h2>{% if sales_context.available %}₦{{ "{:,.2f}".format(sales_context.revenue) }} revenue from {{ sales_context.sales_stores }} selling stores{% else %}Commercial sales context unavailable{% endif %}</h2>
-      <p>
-        {% if sales_context.available %}
-        The field report sits alongside {{ "{:,.0f}".format(sales_context.quantity) }} packs sold in the selected period, with repeat purchase at {{ "%.1f"|format(sales_context.repeat_pct) }}%.
-        {% else %}
-        No sales row was available for this brand and report combination, so this activity report is reading only from field evidence.
-        {% endif %}
-      </p>
-    </section>
-
-    <div class="grid-2">
-      <section class="card chart-card">
-        <div class="section-title">Activity Trend</div>
-        <canvas id="activityTrendChart"></canvas>
-      </section>
-      <section class="card chart-card short">
-        <div class="section-title">Issues & Opportunities</div>
-        <div class="mini-chart-grid" style="margin-bottom:0;">
-          <div><canvas id="issueMixChart"></canvas></div>
-          <div><canvas id="opportunityMixChart"></canvas></div>
-        </div>
-        <div class="metric-list" style="margin-top:16px;">
-          <div class="metric-item"><span>Most frequent issue</span><strong>{{ issues_opportunities.highlights.most_frequent_issue }}</strong></div>
-          <div class="metric-item"><span>Most urgent issue</span><strong>{{ issues_opportunities.highlights.most_urgent_issue }}</strong></div>
-          <div class="metric-item"><span>Most repeated opportunity</span><strong>{{ issues_opportunities.highlights.most_repeated_opportunity }}</strong></div>
+          <div class="hero-meta">
+            <div class="meta-card"><div class="label">Period</div><div class="value">{{ identity.period_label }}</div></div>
+            <div class="meta-card"><div class="label">Date Range</div><div class="value">{{ identity.date_range }}</div></div>
+            <div class="meta-card"><div class="label">Source</div><div class="value">{{ identity.source_type }}</div></div>
+            <div class="meta-card"><div class="label">Quality</div><div class="value">{{ identity.source_quality }}</div></div>
+            <div class="meta-card"><div class="label">Generated</div><div class="value">{{ identity.generated_at }}</div></div>
+            <div class="meta-card"><div class="label">Commercial Context</div><div class="value">{% if sales_context.available %}₦{{ "{:,.2f}".format(sales_context.revenue) }} revenue{% else %}Activity-only view{% endif %}</div></div>
+          </div>
         </div>
       </section>
-    </div>
 
-    <div class="grid-2">
-      <section class="card chart-card">
-        <div class="section-title">Store Breakdown</div>
-        <canvas id="storeActivityChart"></canvas>
+      <section class="kpis">
+        {% for card in kpi_cards %}
+        <div class="kpi-card">
+          <div class="label">{{ card.label }}</div>
+          <div class="value">{{ "{:,}".format(card.value) if card.value is number else card.value }}</div>
+          <div class="sub">{{ card.note or card.subtitle }}</div>
+          <div class="chips">
+            <span class="chip {{ 'neutral' if card.prev_change is none else ('up' if card.prev_change > 0 else ('down' if card.prev_change < 0 else 'neutral')) }}">Prev {{ card.prev_change_label }}</span>
+            <span class="chip {{ 'neutral' if card.trailing_change is none else ('up' if card.trailing_change > 0 else ('down' if card.trailing_change < 0 else 'neutral')) }}">4wk {{ card.trailing_change_label }}</span>
+          </div>
+        </div>
+        {% endfor %}
       </section>
-      <section class="card">
-        <div class="section-title">Store Table</div>
-        <div class="table-wrap">
+
+      <section class="panel trend">
+        <div class="panel-title">Activity Trend</div>
+        <div class="panel-subtitle">Daily activities, issues, and opportunity signals.</div>
+        <div class="chart-wrap"><canvas id="activityTrendChart"></canvas></div>
+      </section>
+
+      <section class="panel mix">
+        <div class="panel-title">Issues & Opportunities</div>
+        <div class="split-grid">
+          <div class="mini-card">
+            <h4>Issue Mix</h4>
+            <canvas id="issueMixChart"></canvas>
+          </div>
+          <div class="mini-card">
+            <h4>Opportunity Mix</h4>
+            <canvas id="opportunityMixChart"></canvas>
+          </div>
+          <div class="mini-card">
+            <h4>Most Frequent Issue</h4>
+            <div class="stat">{{ issues_opportunities.highlights.most_frequent_issue }}</div>
+            <div class="copy">Lead friction signal identified by the field team in the selected week.</div>
+          </div>
+          <div class="mini-card">
+            <h4>Most Repeated Opportunity</h4>
+            <div class="stat">{{ issues_opportunities.highlights.most_repeated_opportunity }}</div>
+            <div class="copy">Strongest recurring upside theme from store-level observations.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel stores">
+        <div class="panel-title">Store Breakdown</div>
+        <div class="split-grid">
+          <div class="mini-card">
+            <h4>Top Stores by Activity</h4>
+            <canvas id="storeActivityChart"></canvas>
+          </div>
+          <div class="mini-card">
+            <h4>Store Highlights</h4>
+            <div class="copy">
+              <strong>Top issue store:</strong> {{ store_breakdown.rows[0].retailer_name if store_breakdown.rows else 'No data' }}<br><br>
+              <strong>Coverage:</strong> {{ kpis.stores_visited }} stores visited with {{ kpis.brand_mentions }} brand mentions captured across the period.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel geo">
+        <div class="panel-title">Geography & Team</div>
+        <div class="split-grid">
+          <div class="mini-card">
+            <h4>Geographic Distribution</h4>
+            <canvas id="stateChart"></canvas>
+            <div class="copy" style="margin-top:6px;">Top state: <strong>{{ geography.top_state }}</strong> | Top city: <strong>{{ geography.top_city }}</strong></div>
+          </div>
+          <div class="mini-card">
+            <h4>Field Team Performance</h4>
+            {% if field_team.available %}
+            <canvas id="fieldActivityChart"></canvas>
+            {% else %}
+            <div class="copy">{{ field_team.note }}</div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+      <section class="panel summary">
+        <div class="panel-title">Summary & Recommended Actions</div>
+        <div class="summary-grid">
+          <div class="summary-box">
+            <h4>What Stands Out</h4>
+            <ul>
+              {% for item in recommended.what_stands_out[:3] %}
+              <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+          <div class="summary-box">
+            <h4>Risks</h4>
+            <ul>
+              {% for item in recommended.risks[:3] %}
+              <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+          <div class="summary-box">
+            <h4>Opportunities</h4>
+            <ul>
+              {% for item in recommended.opportunities[:3] %}
+              <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+          <div class="summary-box">
+            <h4>Recommended Actions</h4>
+            <div class="recommendation-list">
+              {% for action in recommended.actions.do_now[:2] %}
+              <div class="recommendation-item">
+                <strong>{{ action.action }}</strong>
+                <div>{{ action.why }}</div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel detail">
+        <div class="panel-title">Activity Details</div>
+        <div class="detail-table">
           <table>
             <thead>
-              <tr><th>Store</th><th>Visits</th><th>Issues</th><th>Opportunities</th><th>Brand Mentions</th><th>Last Activity</th></tr>
+              <tr><th>Date</th><th>Store</th><th>City</th><th>Inventory</th><th>Opportunity / Note</th></tr>
             </thead>
             <tbody>
-              {% for row in store_breakdown.rows[:12] %}
+              {% for row in details.preview_rows[:4] %}
               <tr>
-                <td><strong>{{ row.retailer_name }}</strong><br><span class="muted-note">{{ row.retailer_city }}, {{ row.retailer_state }}</span></td>
-                <td>{{ row.visits }}</td>
-                <td>{{ row.issues }}</td>
-                <td>{{ row.opportunities }}</td>
-                <td>{{ row.brand_mentions }}</td>
-                <td>{{ row.last_activity }}</td>
+                <td>{{ row.date }}</td>
+                <td><strong>{{ row.store }}</strong></td>
+                <td>{{ row.city }}</td>
+                <td>{{ row.inventory }}</td>
+                <td>{{ row.opportunity }}</td>
               </tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
+        <div class="note">Full row-level evidence is preserved in the companion Excel export.</div>
       </section>
     </div>
-
-    <div class="grid-2">
-      <section class="card chart-card short">
-        <div class="section-title">Geographic Distribution</div>
-        <canvas id="stateChart"></canvas>
-        <div class="footnote">Top state: {{ geography.top_state }} | Top city: {{ geography.top_city }}</div>
-      </section>
-      <section class="card chart-card short">
-        <div class="section-title">City Concentration</div>
-        <canvas id="cityChart"></canvas>
-      </section>
-    </div>
-
-    <section class="card">
-      <div class="section-title">Field Team Performance</div>
-      {% if field_team.available %}
-      <div class="grid-3">
-        <div class="chart-card short"><canvas id="fieldActivityChart"></canvas></div>
-        <div class="chart-card short"><canvas id="fieldStoreChart"></canvas></div>
-        <div class="chart-card short"><canvas id="fieldIssueChart"></canvas></div>
-      </div>
-      <div class="table-wrap" style="margin-top:16px;">
-        <table>
-          <thead><tr><th>Salesman</th><th>Activities</th><th>Stores Covered</th><th>Issues Logged</th><th>Opportunities Logged</th></tr></thead>
-          <tbody>
-            {% for row in field_team.table %}
-            <tr>
-              <td><strong>{{ row.salesman_name }}</strong></td>
-              <td>{{ row.activities }}</td>
-              <td>{{ row.stores }}</td>
-              <td>{{ row.issues }}</td>
-              <td>{{ row.opportunities }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% else %}
-      <p class="muted-note">{{ field_team.note }}</p>
-      {% endif %}
-    </section>
-
-    <section class="card">
-      <div class="section-title">Activity Details</div>
-      {% if include_full_details %}
-      <div class="search-box html-only">
-        <input id="activitySearch" type="search" placeholder="Search salesperson, retailer, city, survey, question, label, or answer">
-      </div>
-      {% endif %}
-      <div class="table-wrap">
-        <table id="activityDetailsTable">
-          <thead>
-            <tr>
-              {% for header in details_rows[0].keys() if details_rows %}
-              <th>{{ header }}</th>
-              {% endfor %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in details_rows %}
-            <tr>
-              {% for value in row.values() %}
-              <td>{{ value }}</td>
-              {% endfor %}
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      <div class="footnote">
-        {% if include_full_details %}
-        Showing {{ details.count }} detailed activity rows for the selected period.
-        {% else %}
-        PDF appendix preview is intentionally limited to the latest {{ details_rows|length }} detailed rows. Full detail is available in the HTML and Excel exports.
-        {% endif %}
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="section-title">Summary & Recommended Actions</div>
-      <div class="grid-3">
-        <div class="actions-box">
-          <h4>What Stands Out</h4>
-          <ul class="brief-bullets">
-            {% for item in recommended.what_stands_out %}
-            <li>{{ item }}</li>
-            {% endfor %}
-          </ul>
-        </div>
-        <div class="actions-box">
-          <h4>Risks</h4>
-          <ul class="brief-bullets">
-            {% for item in recommended.risks %}
-            <li>{{ item }}</li>
-            {% endfor %}
-          </ul>
-        </div>
-        <div class="actions-box">
-          <h4>Opportunities</h4>
-          <ul class="brief-bullets">
-            {% for item in recommended.opportunities %}
-            <li>{{ item }}</li>
-            {% endfor %}
-          </ul>
-        </div>
-      </div>
-      <div class="actions-grid" style="margin-top:16px;">
-        <div class="actions-box">
-          <h4>Do Now</h4>
-          {% for action in recommended.actions.do_now %}
-          <div class="action-item">
-            <strong>{{ action.action }}</strong>
-            <div class="action-meta">Why: {{ action.why }}</div>
-            <div class="action-meta">Affected stores: {{ action.affected }}</div>
-            <div class="action-meta">Expected impact: {{ action.impact }}</div>
-            <div class="action-meta">Urgency: {{ action.urgency }}</div>
-          </div>
-          {% endfor %}
-        </div>
-        <div class="actions-box">
-          <h4>Watch</h4>
-          {% for action in recommended.actions.watch %}
-          <div class="action-item">
-            <strong>{{ action.action }}</strong>
-            <div class="action-meta">Why: {{ action.why }}</div>
-            <div class="action-meta">Affected stores: {{ action.affected }}</div>
-            <div class="action-meta">Expected impact: {{ action.impact }}</div>
-            <div class="action-meta">Urgency: {{ action.urgency }}</div>
-          </div>
-          {% endfor %}
-        </div>
-        <div class="actions-box">
-          <h4>Strategic</h4>
-          {% for action in recommended.actions.strategic %}
-          <div class="action-item">
-            <strong>{{ action.action }}</strong>
-            <div class="action-meta">Why: {{ action.why }}</div>
-            <div class="action-meta">Affected stores: {{ action.affected }}</div>
-            <div class="action-meta">Expected impact: {{ action.impact }}</div>
-            <div class="action-meta">Urgency: {{ action.urgency }}</div>
-          </div>
-          {% endfor %}
-        </div>
-      </div>
-    </section>
   </div>
 
   <script>
     const chartData = {{ chart_json|safe }};
     const reportMode = {{ ('html' if include_full_details else 'pdf') | tojson }};
-    const baseOptions = {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: true, labels: { boxWidth: 12 } } },
-      scales: { x: { ticks: { color: '#667085' }, grid: { color: '#edf2f7' } }, y: { ticks: { color: '#667085' }, grid: { color: '#edf2f7' } } }
-    };
-    const fmt = (arr) => arr.map(item => item.label);
-    const vals = (arr) => arr.map(item => item.value);
+    const baseGrid = { color: '#edf2f7' };
+    const baseTicks = { color: '#667085', font: { size: 9 } };
     function buildBar(id, labels, values, color, horizontal=false) {
       const node = document.getElementById(id);
       if (!node) return;
       new Chart(node, {
         type: 'bar',
-        data: { labels, datasets: [{ label: id, data: values, backgroundColor: color, borderRadius: 8 }] },
-        options: { ...baseOptions, indexAxis: horizontal ? 'y' : 'x', plugins: { legend: { display: false } } }
+        data: { labels, datasets: [{ data: values, backgroundColor: color, borderRadius: 8 }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          indexAxis: horizontal ? 'y' : 'x',
+          plugins: { legend: { display: false } },
+          scales: { x: { ticks: baseTicks, grid: baseGrid }, y: { ticks: baseTicks, grid: baseGrid } }
+        }
       });
     }
     function buildDoughnut(id, labels, values, colors) {
@@ -441,48 +362,41 @@
       new Chart(node, {
         type: 'doughnut',
         data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 9 } } } } }
       });
     }
-    function palette(count, fallback) {
-      const colors = ['#1b2b5e','#2f7dd1','#1f9a59','#b7832f','#e8192c','#7d55c7','#ec7d2c','#0ea5e9','#5b6475','#c084fc'];
-      return Array.from({length: count}, (_, i) => colors[i % colors.length] || fallback);
+    function palette(count) {
+      const colors = ['#142b66','#2f7dd1','#15803d','#b7791f','#d92d20','#7d55c7','#0ea5e9','#5b6475'];
+      return Array.from({length: count}, (_, i) => colors[i % colors.length]);
     }
     new Chart(document.getElementById('activityTrendChart'), {
       type: 'line',
       data: {
         labels: chartData.trend.labels,
         datasets: [
-          { label: 'Activities', data: chartData.trend.activities, borderColor: '#1b2b5e', backgroundColor: 'rgba(27,43,94,0.12)', tension: 0.35, fill: true },
-          { label: 'Issues', data: chartData.trend.issues, borderColor: '#e8192c', backgroundColor: 'rgba(232,25,44,0.08)', tension: 0.35, fill: false },
-          { label: 'Opportunities', data: chartData.trend.opportunities, borderColor: '#1f9a59', backgroundColor: 'rgba(31,154,89,0.08)', tension: 0.35, fill: false }
+          { label: 'Activities', data: chartData.trend.activities, borderColor: '#142b66', backgroundColor: 'rgba(20,43,102,0.12)', tension: 0.35, fill: true },
+          { label: 'Issues', data: chartData.trend.issues, borderColor: '#d92d20', tension: 0.35, fill: false },
+          { label: 'Opportunities', data: chartData.trend.opportunities, borderColor: '#15803d', tension: 0.35, fill: false }
         ]
       },
-      options: baseOptions
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { boxWidth: 10, font: { size: 10 } } } },
+        scales: { x: { ticks: baseTicks, grid: baseGrid }, y: { ticks: baseTicks, grid: baseGrid } }
+      }
     });
     if (reportMode === 'pdf') {
-      buildBar('issueMixChart', fmt(chartData.issue_mix), vals(chartData.issue_mix), '#e8192c', true);
-      buildBar('opportunityMixChart', fmt(chartData.opportunity_mix), vals(chartData.opportunity_mix), '#1f9a59', true);
+      buildBar('issueMixChart', chartData.issue_mix.map(x => x.label), chartData.issue_mix.map(x => x.count), '#d92d20', true);
+      buildBar('opportunityMixChart', chartData.opportunity_mix.map(x => x.label), chartData.opportunity_mix.map(x => x.count), '#15803d', true);
     } else {
-      buildDoughnut('issueMixChart', fmt(chartData.issue_mix), vals(chartData.issue_mix), palette(chartData.issue_mix.length, '#e8192c'));
-      buildDoughnut('opportunityMixChart', fmt(chartData.opportunity_mix), vals(chartData.opportunity_mix), palette(chartData.opportunity_mix.length, '#1f9a59'));
+      buildDoughnut('issueMixChart', chartData.issue_mix.map(x => x.label), chartData.issue_mix.map(x => x.count), palette(chartData.issue_mix.length));
+      buildDoughnut('opportunityMixChart', chartData.opportunity_mix.map(x => x.label), chartData.opportunity_mix.map(x => x.count), palette(chartData.opportunity_mix.length));
     }
-    buildBar('storeActivityChart', fmt(chartData.stores_activity), vals(chartData.stores_activity), '#1b2b5e', true);
-    buildBar('stateChart', chartData.states.map(r => r.state), chartData.states.map(r => r.activities), '#2f7dd1', true);
-    buildBar('cityChart', chartData.cities.map(r => r.city), chartData.cities.map(r => r.activities), '#1f9a59', true);
+    buildBar('storeActivityChart', chartData.stores_activity.map(x => x.label), chartData.stores_activity.map(x => x.value), '#142b66', true);
+    buildBar('stateChart', chartData.states.map(x => x.state), chartData.states.map(x => x.activities), '#2f7dd1', true);
     if (chartData.field_activity && chartData.field_activity.length) {
-      buildBar('fieldActivityChart', fmt(chartData.field_activity), vals(chartData.field_activity), '#1b2b5e', true);
-      buildBar('fieldStoreChart', fmt(chartData.field_stores), vals(chartData.field_stores), '#2f7dd1', true);
-      buildBar('fieldIssueChart', fmt(chartData.field_issues), vals(chartData.field_issues), '#e8192c', true);
-    }
-    const searchBox = document.getElementById('activitySearch');
-    if (searchBox) {
-      searchBox.addEventListener('input', () => {
-        const query = searchBox.value.toLowerCase();
-        document.querySelectorAll('#activityDetailsTable tbody tr').forEach((row) => {
-          row.style.display = row.innerText.toLowerCase().includes(query) ? '' : 'none';
-        });
-      });
+      buildBar('fieldActivityChart', chartData.field_activity.map(x => x.label), chartData.field_activity.map(x => x.value), '#b7791f', true);
     }
     window.__REPORT_READY = true;
   </script>

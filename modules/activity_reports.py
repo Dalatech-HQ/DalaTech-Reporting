@@ -78,6 +78,24 @@ def _humanize_issue_type(value):
     return mapping.get(str(value or '').strip().lower(), _humanize_metric_label(value))
 
 
+LEGACY_ACTIVITY_EXPORT_COLUMNS = [
+    'Activity Date',
+    'Retailer Name',
+    'Retailer City',
+    'Close to Expiry Concerns?',
+    'Competitor Feedback Notes?',
+    'Notes Regarding Expiry?',
+    'Notes Regarding Packaging Quality?',
+    'Opportunities or Concerns?',
+    'Order Generated?',
+    'Picture of Shelf',
+    'Product feedback for which item?',
+    'Shelf Facings?',
+    'Shelf Level?',
+    'Store Inventory?',
+]
+
+
 def _trend_direction(change):
     if change is None:
         return 'neutral'
@@ -506,7 +524,7 @@ def _build_field_team(events_df, visits_df, quality_label):
 
 def _build_details(events_df):
     if events_df.empty:
-        return {'rows': [], 'count': 0, 'pdf_rows': []}
+        return {'rows': [], 'count': 0, 'pdf_rows': [], 'flat_rows': [], 'preview_rows': []}
     details = events_df.copy()
     details['activity_date'] = details['activity_date'].dt.strftime('%d %b %Y')
     details = details.fillna('')
@@ -525,7 +543,59 @@ def _build_details(events_df):
     ordered = []
     for _, row in details.iterrows():
         ordered.append({label: row[col] for col, label in cols})
-    return {'rows': ordered, 'count': len(ordered), 'pdf_rows': ordered[:20]}
+
+    flat_df = events_df.copy()
+    flat_df['activity_date'] = flat_df['activity_date'].dt.strftime('%d-%b-%y')
+    flat_df = flat_df.fillna('')
+    group_cols = ['activity_date', 'retailer_name', 'retailer_city']
+
+    def collapse(values):
+        seen = []
+        for value in values:
+            text = str(value or '').strip()
+            if not text or text.lower() == 'none':
+                continue
+            if text not in seen:
+                seen.append(text)
+        if not seen:
+            return ''
+        return seen[0] if len(seen) == 1 else ' | '.join(seen[:3])
+
+    pivoted = (
+        flat_df.groupby(group_cols + ['label'], dropna=False)['answer']
+        .agg(collapse)
+        .reset_index()
+        .pivot(index=group_cols, columns='label', values='answer')
+        .reset_index()
+    )
+    pivoted.columns.name = None
+    pivoted = pivoted.rename(columns={
+        'activity_date': 'Activity Date',
+        'retailer_name': 'Retailer Name',
+        'retailer_city': 'Retailer City',
+    })
+    for column in LEGACY_ACTIVITY_EXPORT_COLUMNS:
+        if column not in pivoted.columns:
+            pivoted[column] = ''
+    pivoted = pivoted[LEGACY_ACTIVITY_EXPORT_COLUMNS]
+    flat_rows = pivoted.to_dict('records')
+
+    preview_rows = []
+    for row in flat_rows[:6]:
+        preview_rows.append({
+            'date': row.get('Activity Date', ''),
+            'store': row.get('Retailer Name', ''),
+            'city': row.get('Retailer City', ''),
+            'inventory': row.get('Store Inventory?', '') or 'Not stated',
+            'opportunity': row.get('Opportunities or Concerns?', '') or 'No note captured',
+        })
+    return {
+        'rows': ordered,
+        'count': len(ordered),
+        'pdf_rows': ordered[:20],
+        'flat_rows': flat_rows,
+        'preview_rows': preview_rows,
+    }
 
 
 def _build_executive_summary(brand_name, current, issue_mix, opportunity_mix, geography, sales_row, previous_metrics, trailing_avg, quality_label):
@@ -802,52 +872,28 @@ def generate_activity_report_html(output_path: str, brand_name: str, activity_da
 def generate_activity_excel_report(output_path: str, activity_data: dict) -> str:
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     wb = Workbook()
-    default = wb.active
-    wb.remove(default)
-
-    def add_sheet(name, rows):
-        ws = wb.create_sheet(title=name[:31])
-        if not rows:
-            ws.append(['Note'])
-            ws.append(['No data available'])
-            return
-        headers = list(rows[0].keys())
-        ws.append(headers)
+    ws = wb.active
+    ws.title = 'Sheet1'
+    headers = LEGACY_ACTIVITY_EXPORT_COLUMNS
+    rows = activity_data['details'].get('flat_rows') or []
+    ws.append(headers)
+    if rows:
         for row in rows:
             ws.append([row.get(header, '') for header in headers])
-        fill = PatternFill('solid', fgColor='1B2B5E')
-        for cell in ws[1]:
-            cell.font = Font(color='FFFFFF', bold=True)
-            cell.fill = fill
-            cell.alignment = Alignment(horizontal='center')
-        ws.freeze_panes = 'A2'
-        for column in ws.columns:
-            max_len = max(len(str(cell.value or '')) for cell in column[:250])
-            ws.column_dimensions[column[0].column_letter].width = min(max_len + 2, 45)
+    else:
+        ws.append(['No activity detail available'] + [''] * (len(headers) - 1))
 
-    add_sheet('Summary', [
-        {'Metric': 'Brand', 'Value': activity_data['identity']['brand_name']},
-        {'Metric': 'Report Title', 'Value': activity_data['identity']['report_title']},
-        {'Metric': 'Period Label', 'Value': activity_data['identity']['period_label']},
-        {'Metric': 'Date Range', 'Value': activity_data['identity']['date_range']},
-        {'Metric': 'Source Type', 'Value': activity_data['identity']['source_type']},
-        {'Metric': 'Source Quality', 'Value': activity_data['identity']['source_quality']},
-        {'Metric': 'Generated On', 'Value': activity_data['identity']['generated_at']},
-    ])
-    add_sheet('KPIs', [{
-        'Metric': card['label'],
-        'Value': card['value'],
-        'Unit': card['subtitle'],
-        'Vs Previous Comparable': card['prev_change_label'],
-        'Vs Trailing 4-week Avg': card['trailing_change_label'],
-        'Note': card['note'] or '',
-    } for card in activity_data['kpi_cards']])
-    add_sheet('Issues', [{'Issue Type': row['label'], 'Count': row['count']} for row in activity_data['issues_opportunities']['issue_mix']])
-    add_sheet('Opportunities', [{'Opportunity Type': row['label'], 'Count': row['count']} for row in activity_data['issues_opportunities']['opportunity_mix']])
-    add_sheet('Stores', activity_data['store_breakdown']['rows'])
-    add_sheet('Geography_States', activity_data['geography']['states'])
-    add_sheet('Geography_Cities', activity_data['geography']['cities'])
-    add_sheet('Field Team', activity_data['field_team']['table'] if activity_data['field_team']['available'] else [{'Note': activity_data['field_team']['note'] or 'No field team data'}])
-    add_sheet('Details', activity_data['details']['rows'])
+    fill = PatternFill('solid', fgColor='1B2B5E')
+    for cell in ws[1]:
+        cell.font = Font(color='FFFFFF', bold=True)
+        cell.fill = fill
+        cell.alignment = Alignment(horizontal='center')
+    ws.freeze_panes = 'A2'
+    widths = {
+        'A': 16, 'B': 34, 'C': 18, 'D': 18, 'E': 28, 'F': 24, 'G': 30,
+        'H': 42, 'I': 16, 'J': 32, 'K': 28, 'L': 18, 'M': 18, 'N': 18,
+    }
+    for col, width in widths.items():
+        ws.column_dimensions[col].width = width
     wb.save(output_path)
     return output_path
