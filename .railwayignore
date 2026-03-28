@@ -18,9 +18,21 @@ logs*.csv
 Activity report/
 February Monthly Report/
 extracted_updated/
+Active/
+New Data to Feed/
+Ouutouuut/
 *.pbix
 *.zip
+*.rar
+*.docx
+*.jpeg
 ORISIRISI FEBRUARY MONTHLY SALES REPORT.pdf
+feedback_activity_detail_report*.xls
+generate_*.py
+import_new_file.py
+activity_report_snapshot.md
+eloha_activity_report_*.png
+test_activity_report_preview.png
 
 # Local database should come from Railway volume mount
 dala_data.db
