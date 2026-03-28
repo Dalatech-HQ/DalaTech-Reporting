@@ -95,6 +95,20 @@ def _format_delta(change):
     return f"{sign}{change:.1f}%"
 
 
+def _build_comparison_card(title, basis, metrics, label=None):
+    return {
+        'title': title,
+        'basis': basis,
+        'label': label or 'Not available',
+        'metrics': [
+            {'label': 'Activities', 'value': _format_delta(metrics.get('activities_change'))},
+            {'label': 'Issues', 'value': _format_delta(metrics.get('issues_change'))},
+            {'label': 'Opportunities', 'value': _format_delta(metrics.get('opportunities_change'))},
+            {'label': 'Stores', 'value': _format_delta(metrics.get('stores_change'))},
+        ],
+    }
+
+
 def _parse_summary_json(batch_row):
     raw = (batch_row or {}).get('summary_json') or '{}'
     try:
@@ -677,6 +691,26 @@ def prepare_activity_report_data(ds, brand_name: str, report_id: int = None, sta
             'stores_change': _calc_pct_change(current['stores_visited'], yoy_current.get('stores_visited')),
         }
     }
+    comparison['cards'] = [
+        _build_comparison_card(
+            'Previous Comparable',
+            comparison['basis'][0],
+            comparison['previous'],
+            comparison['previous']['label'],
+        ),
+        _build_comparison_card(
+            'Trailing 4-Week Average',
+            comparison['basis'][1],
+            comparison['trailing'],
+            'Last 4 comparable periods' if trailing_metrics else 'Not available',
+        ),
+        _build_comparison_card(
+            'Same Period Last Year',
+            comparison['basis'][2],
+            comparison['yoy'],
+            comparison['yoy']['label'],
+        ),
+    ]
 
     return {
         'identity': {

@@ -50,10 +50,11 @@
     .summary-box { background: var(--soft); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
     .summary-box h3 { margin: 0 0 10px; font-size: 18px; color: var(--navy); }
     .summary-box p { margin: 0; color: #344054; line-height: 1.7; }
-    .grid-4, .grid-3, .grid-2 { display: grid; gap: 16px; margin-bottom: 18px; }
+    .grid-4, .grid-3, .grid-2, .mini-chart-grid { display: grid; gap: 16px; margin-bottom: 18px; }
     .grid-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
     .grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
     .grid-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .mini-chart-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
     .card {
       background: var(--paper); border: 1px solid var(--line); border-radius: 18px; padding: 18px;
       box-shadow: 0 8px 18px rgba(21, 32, 68, 0.05);
@@ -70,8 +71,15 @@
     .comparison-card { border: 1px solid var(--line); border-radius: 16px; padding: 16px; background: linear-gradient(180deg, #fafcff 0%, #f3f7fc 100%); }
     .comparison-card h4 { margin: 0 0 8px; font-size: 15px; color: var(--navy); }
     .comparison-card ul { margin: 0; padding-left: 18px; color: #475467; line-height: 1.7; }
+    .comparison-card .basis-copy { color: #475467; line-height: 1.6; font-size: 13px; margin-bottom: 12px; }
+    .comparison-card .period-chip { display: inline-flex; margin-bottom: 10px; }
+    .comparison-metrics { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+    .comparison-metric { border: 1px solid #e8eef7; border-radius: 12px; padding: 10px 12px; background: rgba(255,255,255,.76); }
+    .comparison-metric .metric-label { display:block; font-size:11px; text-transform: uppercase; letter-spacing: 1px; color:#667085; font-weight:700; }
+    .comparison-metric .metric-value { display:block; margin-top: 4px; font-size: 15px; color: var(--navy); font-weight: 800; }
     .chart-card canvas { width: 100% !important; height: 290px !important; }
     .chart-card.short canvas { height: 250px !important; }
+    .mini-chart-grid canvas { width: 100% !important; height: 220px !important; }
     .table-wrap { border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: white; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf2f7; vertical-align: top; }
@@ -102,15 +110,34 @@
     }
     .footnote { margin-top: 8px; font-size: 12px; color: #667085; }
     .muted-note { color: #667085; font-size: 13px; }
+    @page { size: A4; margin: 12mm 10mm; }
     @media print {
       body { background: white; }
-      .report { padding: 18px 20px 24px; max-width: none; }
+      .report { padding: 12px 12px 18px; max-width: none; }
       .hero, .card, .band, .table-wrap { break-inside: avoid; box-shadow: none; }
-      .grid-4, .grid-3, .grid-2, .comparison-grid, .actions-grid { page-break-inside: avoid; }
+      .grid-4, .grid-3, .grid-2, .comparison-grid, .actions-grid, .mini-chart-grid { page-break-inside: avoid; gap: 12px; }
+      .grid-4 { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+      .grid-3, .comparison-grid, .actions-grid { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+      .grid-2 { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+      .mini-chart-grid { grid-template-columns: 1fr !important; }
+      .hero-top, .hero-brief { grid-template-columns: 1.3fr 1fr !important; gap: 16px; }
+      .card { padding: 14px; }
+      .kpi-card .value { font-size: 26px; margin: 8px 0 2px; }
+      .chip-row { gap: 6px; margin-top: 10px; }
+      .chip { padding: 5px 8px; font-size: 11px; }
+      .chart-card canvas { height: 210px !important; }
+      .chart-card.short canvas { height: 170px !important; }
+      .mini-chart-grid canvas { height: 160px !important; }
+      .comparison-card { padding: 12px; }
+      .comparison-card .basis-copy { font-size: 12px; margin-bottom: 8px; }
+      .comparison-metrics { gap: 6px; }
+      .comparison-metric { padding: 8px 10px; }
+      table { font-size: 11px; }
+      th, td { padding: 7px 8px; }
       .search-box, .footnote.html-only { display: none; }
     }
-    @media (max-width: 980px) {
-      .hero-top, .hero-brief, .grid-4, .grid-3, .grid-2, .comparison-grid, .actions-grid { grid-template-columns: 1fr; }
+    @media screen and (max-width: 980px) {
+      .hero-top, .hero-brief, .grid-4, .grid-3, .grid-2, .comparison-grid, .actions-grid, .mini-chart-grid { grid-template-columns: 1fr; }
       h1 { font-size: 34px; }
     }
   </style>
@@ -151,10 +178,19 @@
     </section>
 
     <div class="comparison-grid">
-      {% for item in comparison.basis %}
+      {% for card in comparison.cards %}
       <div class="comparison-card">
-        <h4>{{ loop.index }}. Comparison Basis</h4>
-        <ul><li>{{ item }}</li></ul>
+        <span class="pill gold period-chip">{{ card.label }}</span>
+        <h4>{{ card.title }}</h4>
+        <div class="basis-copy">{{ card.basis }}</div>
+        <div class="comparison-metrics">
+          {% for metric in card.metrics %}
+          <div class="comparison-metric">
+            <span class="metric-label">{{ metric.label }}</span>
+            <span class="metric-value">{{ metric.value }}</span>
+          </div>
+          {% endfor %}
+        </div>
       </div>
       {% endfor %}
     </div>
@@ -192,7 +228,7 @@
       </section>
       <section class="card chart-card short">
         <div class="section-title">Issues & Opportunities</div>
-        <div class="grid-2" style="margin-bottom:0;">
+        <div class="mini-chart-grid" style="margin-bottom:0;">
           <div><canvas id="issueMixChart"></canvas></div>
           <div><canvas id="opportunityMixChart"></canvas></div>
         </div>
@@ -381,6 +417,7 @@
 
   <script>
     const chartData = {{ chart_json|safe }};
+    const reportMode = {{ ('html' if include_full_details else 'pdf') | tojson }};
     const baseOptions = {
       responsive: true,
       maintainAspectRatio: false,
@@ -423,8 +460,13 @@
       },
       options: baseOptions
     });
-    buildDoughnut('issueMixChart', fmt(chartData.issue_mix), vals(chartData.issue_mix), palette(chartData.issue_mix.length, '#e8192c'));
-    buildDoughnut('opportunityMixChart', fmt(chartData.opportunity_mix), vals(chartData.opportunity_mix), palette(chartData.opportunity_mix.length, '#1f9a59'));
+    if (reportMode === 'pdf') {
+      buildBar('issueMixChart', fmt(chartData.issue_mix), vals(chartData.issue_mix), '#e8192c', true);
+      buildBar('opportunityMixChart', fmt(chartData.opportunity_mix), vals(chartData.opportunity_mix), '#1f9a59', true);
+    } else {
+      buildDoughnut('issueMixChart', fmt(chartData.issue_mix), vals(chartData.issue_mix), palette(chartData.issue_mix.length, '#e8192c'));
+      buildDoughnut('opportunityMixChart', fmt(chartData.opportunity_mix), vals(chartData.opportunity_mix), palette(chartData.opportunity_mix.length, '#1f9a59'));
+    }
     buildBar('storeActivityChart', fmt(chartData.stores_activity), vals(chartData.stores_activity), '#1b2b5e', true);
     buildBar('stateChart', chartData.states.map(r => r.state), chartData.states.map(r => r.activities), '#2f7dd1', true);
     buildBar('cityChart', chartData.cities.map(r => r.city), chartData.cities.map(r => r.activities), '#1f9a59', true);
