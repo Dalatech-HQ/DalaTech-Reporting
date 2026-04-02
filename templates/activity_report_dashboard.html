@@ -207,7 +207,12 @@
 
       <section class="panel trend">
         <div class="panel-title">Activity Trend</div>
-        <div class="panel-subtitle">Daily activities, issues, and opportunity signals.</div>
+        <div class="panel-subtitle">
+          Daily activities, issues, and opportunity signals.
+          {% if comparison and comparison.grain %}
+            Comparison basis: {{ comparison.grain|replace('-', ' ') }} against the previous comparable period.
+          {% endif %}
+        </div>
         <div class="chart-wrap"><canvas id="activityTrendChart"></canvas></div>
       </section>
 

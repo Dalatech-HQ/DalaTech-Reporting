@@ -23,6 +23,7 @@ from difflib import SequenceMatcher
 
 from .brand_names import canonicalize_brand_name, normalize_brand_compare_key, normalize_name_key
 from .ingestion import looks_like_sku_label, looks_like_store_label
+from .period_comparison import compare_same_type_reports, normalize_report_type
 
 # Allow overriding via env var so a Railway Volume can be used for persistence.
 # On Railway: set DATABASE_PATH=/data/dala_data.db and mount a Volume at /data
@@ -1830,6 +1831,24 @@ class DataStore:
                 ).fetchone()
             return dict(row) if row else None
 
+    def get_previous_comparable_report(self, report_id: int, report_type: str | None = None):
+        report = self.get_report(report_id)
+        if not report:
+            return None
+        report_type = normalize_report_type(report_type or report.get('report_type'))
+        reports = self.get_all_reports()
+        comparison = compare_same_type_reports(reports, {**report, 'report_type': report_type})
+        return comparison.get('previous')
+
+    def get_same_period_last_year_report(self, report_id: int, report_type: str | None = None):
+        report = self.get_report(report_id)
+        if not report:
+            return None
+        report_type = normalize_report_type(report_type or report.get('report_type'))
+        reports = self.get_all_reports()
+        comparison = compare_same_type_reports(reports, {**report, 'report_type': report_type})
+        return comparison.get('same_period_last_year')
+
     def find_report_covering_range(self, start_date: str, end_date: str):
         """Return the nearest report overlapping the given activity date range, or None."""
         with self._connect() as conn:
@@ -1849,24 +1868,15 @@ class DataStore:
 
     def get_yoy_kpis(self, report_id: int):
         """
-        Return a dict {brand_name: brand_kpis_row} for the same calendar month
+        Return a dict {brand_name: brand_kpis_row} for the same comparable period
         one year prior to the given report_id.
         Returns {} if no matching report OR if report types differ (e.g. weekly vs monthly).
         """
         report = self.get_report(report_id)
         if not report:
             return {}
-        try:
-            from datetime import date as _date
-            d = _date.fromisoformat(report['start_date'])
-            prev_year = d.year - 1
-            prev_report = self.get_report_by_month(prev_year, d.month, report.get('report_type'))
-        except Exception:
-            return {}
+        prev_report = self.get_same_period_last_year_report(report_id, report.get('report_type'))
         if not prev_report:
-            return {}
-        # Only compare reports of the same type to avoid week vs month distortion
-        if prev_report.get('report_type') != report.get('report_type'):
             return {}
         rows = self.get_all_brand_kpis(prev_report['id'])
         return {r['brand_name']: r for r in rows}
@@ -1874,22 +1884,14 @@ class DataStore:
     def get_portfolio_yoy(self, report_id: int):
         """
         Return (prev_report, prev_total_revenue, prev_total_qty, prev_total_stores)
-        for the same calendar month last year.  Returns (None, 0, 0, 0) if unavailable
+        for the same comparable period last year. Returns (None, 0, 0, 0) if unavailable
         or if report types differ (e.g. weekly vs monthly).
         """
         report = self.get_report(report_id)
         if not report:
             return None, 0, 0, 0
-        try:
-            from datetime import date as _date
-            d = _date.fromisoformat(report['start_date'])
-            prev_report = self.get_report_by_month(d.year - 1, d.month, report.get('report_type'))
-        except Exception:
-            return None, 0, 0, 0
+        prev_report = self.get_same_period_last_year_report(report_id, report.get('report_type'))
         if not prev_report:
-            return None, 0, 0, 0
-        # Only compare same report type to avoid week vs month distortion
-        if prev_report.get('report_type') != report.get('report_type'):
             return None, 0, 0, 0
         return (
             prev_report,

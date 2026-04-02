@@ -52,6 +52,7 @@ from modules.pdf_generator_html import (
 from modules.html_generator   import generate_html, render_html_report
 from modules.portfolio_generator import generate_portfolio_html
 from modules.data_store       import DataStore
+from modules.period_comparison import build_period_comparison, comparison_basis_label, normalize_report_type
 from modules.alerts           import check_and_save_alerts, run_portfolio_alerts
 from modules.predictor        import build_brand_forecasts, stock_depletion_date, growth_label, growth_color
 from modules.gmv              import build_gmv_window
@@ -476,15 +477,17 @@ def _attach_reorder_trend(brand_name: str, kpis: dict | None,
 
 def _report_summary_payload(brand_name: str, kpis: dict, report: dict | None) -> dict:
     """Build a report-native summary block from saved KPI history."""
-    report_type = str((report or {}).get('report_type') or '').strip().lower()
+    raw_report_type = str((report or {}).get('report_type') or '').strip().lower()
+    report_type = normalize_report_type(raw_report_type)
     period_label = (report or {}).get('month_label') or (
         f"{(report or {}).get('start_date', '')} to {(report or {}).get('end_date', '')}"
     ).strip()
-    history_rows = list(reversed(ds.get_brand_history(brand_name, limit=18, report_type=report_type or None)))
+    history_rows = list(reversed(ds.get_brand_history(brand_name, limit=18, report_type=raw_report_type or None)))
 
     current_report_id = (report or {}).get('id')
     current_start = str((report or {}).get('start_date') or '')[:10]
     current_end = str((report or {}).get('end_date') or '')[:10]
+    previous_report = ds.get_previous_comparable_report(current_report_id, report_type) if current_report_id else None
 
     def _safe_float(value):
         try:
@@ -539,7 +542,19 @@ def _report_summary_payload(brand_name: str, kpis: dict, report: dict | None) ->
             current_history_row = row
             current_index = idx
             break
-    if current_index is not None and current_index > 0:
+    if previous_report:
+        previous_history_row = next(
+            (
+                row for row in history_rows
+                if row.get('report_id') == previous_report.get('id')
+                or (
+                    str(row.get('start_date') or '')[:10] == str(previous_report.get('start_date') or '')[:10]
+                    and str(row.get('end_date') or '')[:10] == str(previous_report.get('end_date') or '')[:10]
+                )
+            ),
+            None,
+        )
+    if previous_history_row is None and current_index is not None and current_index > 0:
         previous_history_row = history_rows[current_index - 1]
     if current_history_row is None:
         current_history_row = {
@@ -571,6 +586,7 @@ def _report_summary_payload(brand_name: str, kpis: dict, report: dict | None) ->
     top_store_name = str(kpis.get('top_store_name') or '').strip()
     top_store_revenue = _safe_float(kpis.get('top_store_revenue'))
     top_store_pct = _safe_float(kpis.get('top_store_pct'))
+    comparison_grain = comparison_basis_label(report_type)
 
     previous_revenue = _safe_float(previous_history_row.get('total_revenue')) if previous_history_row else 0.0
     previous_qty = _safe_float(previous_history_row.get('total_qty')) if previous_history_row else 0.0
@@ -630,6 +646,26 @@ def _report_summary_payload(brand_name: str, kpis: dict, report: dict | None) ->
             ops_bits.append(f"the lead outlet was {top_store_name}{concentration}")
         if ops_bits:
             summary_parts.append(', '.join(ops_bits).capitalize() + '.')
+
+    period_breakdown = None
+    current_daily = kpis.get('daily_sales')
+    has_current_daily = False
+    if current_daily is not None:
+        has_current_daily = not getattr(current_daily, 'empty', False) if hasattr(current_daily, 'empty') else bool(current_daily)
+    if not has_current_daily and current_report_id:
+        current_daily = ds.get_daily_sales(current_report_id, brand_name)
+        has_current_daily = bool(current_daily)
+    previous_daily = ds.get_daily_sales(previous_report.get('id'), brand_name) if previous_report else []
+    if has_current_daily:
+        period_breakdown = build_period_comparison(
+            current_daily,
+            previous_daily,
+            date_key='date',
+            metric_columns=('revenue', 'qty'),
+            report_type=report_type,
+            current_start=current_start,
+            previous_start=str(previous_report.get('start_date') or '')[:10] if previous_report else None,
+        )
 
     signals = []
     if previous_history_row and revenue_delta is not None:
@@ -692,6 +728,11 @@ def _report_summary_payload(brand_name: str, kpis: dict, report: dict | None) ->
             'summary': ' '.join(part for part in summary_parts if part),
             'recommended_actions': recommended_actions[:4],
             'used_gemini': False,
+        },
+        'comparison': {
+            'basis': comparison_grain,
+            'previous_report': previous_report,
+            'period_breakdown': period_breakdown,
         },
         'signals': signals[:3],
         'action_items': [],

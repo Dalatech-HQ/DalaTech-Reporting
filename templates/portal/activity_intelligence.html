@@ -1,789 +1,451 @@
 {% extends "portal/base.html" %}
-{% block title %}Activity Intelligence{% endblock %}
-{% block page_title %}Activity Intelligence{% endblock %}
+{% block title %}Activity - DALA Analytics{% endblock %}
+{% block page_title %}Activity{% endblock %}
 
 {% block topbar_actions %}
-<div style="display:flex;align-items:center;gap:10px;">
-  <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);">Batch</label>
-  <select id="batchSelector" class="form-control" style="width:auto;min-width:160px;font-size:12px;padding:6px 28px 6px 10px;">
-    {% for b in batches %}
-    <option value="{{ b.id }}" {% if selected_batch_id and b.id == selected_batch_id %}selected{% elif not selected_batch_id and loop.first %}selected{% endif %}>
-      Batch {{ b.id }} — {{ b.start_date or 'No date' }}
-    </option>
-    {% endfor %}
-  </select>
-</div>
+<span class="text-muted fs-sm">
+  {% if report %}Linked to {{ report.month_label }}{% else %}No linked sales report{% endif %}
+</span>
+{% if selected_store %}
+<span class="badge badge-blue">{{ selected_store }}</span>
+{% endif %}
 {% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <style>
-  /* ── Dashboard chrome ── */
-  .dash-header {
-    background: linear-gradient(135deg, #1B2B5E 0%, #22366f 100%);
-    color: #fff;
-    padding: 18px 28px 16px;
-    border-radius: 14px;
-    margin-bottom: 22px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-  }
-  .dash-header h2 { font-size: 20px; font-weight: 800; letter-spacing: -.3px; }
-  .dash-header p { font-size: 12px; opacity: .75; margin-top: 3px; }
-  .dash-import-link {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 8px 18px; border-radius: 8px;
-    background: rgba(255,255,255,.12); color: #fff;
-    font-size: 12px; font-weight: 700; text-decoration: none;
-    border: 1px solid rgba(255,255,255,.2);
-    white-space: nowrap; transition: background .15s;
-  }
-  .dash-import-link:hover { background: rgba(255,255,255,.2); }
-
-  /* ── Filters bar ── */
-  .filters-bar {
-    display: flex; align-items: center; gap: 12px;
-    flex-wrap: wrap; margin-bottom: 20px;
-  }
-  .filters-bar label {
-    font-size: 11px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: .6px; color: var(--muted); white-space: nowrap;
-  }
-  .filters-bar select {
-    padding: 7px 28px 7px 10px; border: 1.5px solid var(--gray);
-    border-radius: 8px; font-size: 12px; font-family: inherit;
-    color: var(--text); background-color: #fff;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237A849E' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
-    background-repeat: no-repeat; background-position: right 10px center;
-    cursor: pointer; transition: border-color .15s;
-  }
-  .filters-bar select:focus { outline: none; border-color: var(--navy); }
-  .filter-reset {
-    padding: 7px 14px; border: 1.5px solid var(--gray); border-radius: 8px;
-    font-size: 12px; font-weight: 600; cursor: pointer;
-    background: #fff; color: var(--muted); transition: all .15s;
-  }
-  .filter-reset:hover { border-color: var(--red); color: var(--red); }
-
-  /* ── KPI row ── */
-  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 22px; }
-  .kpi-tile {
-    background: #fff; border-radius: 12px; padding: 18px 22px;
-    box-shadow: 0 1px 3px rgba(27,43,94,.06), 0 4px 16px rgba(27,43,94,.08);
-    border: 1px solid rgba(27,43,94,.06); position: relative; overflow: hidden;
-  }
-  .kpi-tile::before {
-    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-  }
-  .kpi-tile.navy::before { background: var(--navy); }
-  .kpi-tile.red::before { background: var(--red); }
-  .kpi-tile.blue::before { background: var(--blue); }
-  .kpi-tile.green::before { background: var(--green); }
-  .kpi-tile .t-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
-  .kpi-tile .t-value { font-size: 34px; font-weight: 800; color: var(--text); margin: 8px 0 4px; line-height: 1; letter-spacing: -1px; }
-  .kpi-tile .t-sub { font-size: 11px; color: var(--muted); }
-
-  /* ── Grid layouts ── */
-  .dash-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
-  .dash-grid-full { margin-bottom: 20px; }
-
-  /* ── Chart cards ── */
-  .chart-card {
-    background: #fff; border-radius: 12px; padding: 20px 22px;
-    box-shadow: 0 1px 3px rgba(27,43,94,.06), 0 4px 16px rgba(27,43,94,.08);
-    border: 1px solid rgba(27,43,94,.06);
-  }
-  .chart-card-title {
-    font-size: 13px; font-weight: 700; color: var(--navy);
-    margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;
-  }
-  .chart-card-title span { font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
-
-  /* ── Map ── */
-  #activityMap { height: 340px; border-radius: 10px; overflow: hidden; }
-  .leaflet-container { font-family: inherit; }
-
-  /* ── Detail table ── */
-  .detail-table-wrap {
-    max-height: 460px; overflow-y: auto;
-    border-radius: 10px; border: 1px solid rgba(27,43,94,.08);
-  }
-  .detail-table-wrap table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  .detail-table-wrap thead th {
-    background: var(--navy); color: #fff; padding: 9px 12px;
-    font-size: 10px; text-transform: uppercase; letter-spacing: .6px; font-weight: 600;
-    position: sticky; top: 0; z-index: 2;
-  }
-  .detail-table-wrap tbody td { padding: 9px 12px; border-bottom: 1px solid var(--gray); vertical-align: middle; }
-  .detail-table-wrap tbody tr:last-child td { border-bottom: none; }
-  .detail-table-wrap tbody tr:hover td { background: rgba(242,245,251,.7); }
-  .detail-empty { padding: 32px; text-align: center; color: var(--muted); font-size: 13px; }
-
-  /* ── Loading overlay ── */
-  .dash-loading {
-    position: fixed; inset: 0; background: rgba(27,43,94,.55);
-    display: flex; align-items: center; justify-content: center;
-    z-index: 9999; transition: opacity .2s;
-  }
-  .dash-loading.hidden { opacity: 0; pointer-events: none; }
-  .dash-spinner {
-    background: #fff; border-radius: 16px; padding: 32px 40px;
-    text-align: center; box-shadow: 0 24px 60px rgba(27,43,94,.22);
-  }
-  .dash-spinner-ring {
-    width: 44px; height: 44px; border: 4px solid var(--gray);
-    border-top-color: var(--navy); border-radius: 50%;
-    animation: spin .7s linear infinite; margin: 0 auto 14px;
-  }
-  .dash-spinner p { font-size: 13px; font-weight: 600; color: var(--navy); }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  /* ── Empty state ── */
-  .dash-empty {
-    background: #fff; border-radius: 12px; padding: 48px 32px;
-    text-align: center; box-shadow: 0 1px 3px rgba(27,43,94,.06), 0 4px 16px rgba(27,43,94,.08);
-    border: 1px solid rgba(27,43,94,.06); margin-bottom: 20px;
-  }
-  .dash-empty-icon { font-size: 48px; margin-bottom: 12px; }
-  .dash-empty h3 { font-size: 17px; font-weight: 700; color: var(--navy); margin-bottom: 8px; }
-  .dash-empty p { font-size: 13px; color: var(--muted); max-width: 380px; margin: 0 auto; line-height: 1.6; }
-
-  /* ── No batch warning ── */
-  #noBatchWarning { display: none; }
-
-  /* ── Responsive ── */
-  @media (max-width: 900px) {
-    .kpi-row { grid-template-columns: 1fr 1fr; }
-    .dash-grid-2 { grid-template-columns: 1fr; }
-  }
-  @media (max-width: 600px) {
-    .kpi-row { grid-template-columns: 1fr 1fr; }
-    .filters-bar { gap: 8px; }
-    .kpi-tile .t-value { font-size: 26px; }
-  }
+  .summary-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:24px; }
+  .issue-list, .visit-list { display:flex; flex-direction:column; gap:8px; }
+  .issue-row, .visit-row { padding:12px; border:1px solid var(--gray); border-radius:10px; background:var(--bg); }
+  .split-grid { display:grid; grid-template-columns:1.2fr .8fr; gap:20px; }
+  .summary-banner { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+  .summary-banner-copy { max-width:720px; }
+  .summary-banner-kicker { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); margin-bottom:8px; }
+  .summary-banner-text { font-size:15px; line-height:1.65; color:var(--text); }
+  .summary-banner-meta { display:flex; gap:8px; flex-wrap:wrap; }
+  .activity-progress { margin-top:16px; padding:16px; border-radius:12px; border:1px solid rgba(27,43,94,.08); background:linear-gradient(180deg,#ffffff 0%,#f7f9fe 100%); }
+  .activity-progress[hidden] { display:none; }
+  .activity-progress-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+  .activity-progress-track { height:10px; border-radius:999px; background:#E5EAF4; overflow:hidden; }
+  .activity-progress-fill { height:100%; width:0%; background:linear-gradient(90deg,var(--navy) 0%, var(--blue) 100%); border-radius:999px; transition:width .25s ease; }
+  .activity-progress-note { margin-top:10px; font-size:12px; color:var(--muted); line-height:1.6; }
+  .activity-progress-summary { margin-top:8px; font-size:12px; color:var(--navy); font-weight:700; }
+  .scope-card { margin-bottom:24px; }
+  .scope-card form { display:grid; grid-template-columns:1.1fr 1fr auto; gap:16px; align-items:end; }
+  .scope-note { margin-top:10px; font-size:12px; color:var(--muted); line-height:1.6; }
+  @media(max-width:900px){ .scope-card form { grid-template-columns:1fr; } }
+  @media(max-width:900px){ .summary-grid,.split-grid { grid-template-columns:1fr; } }
 </style>
 {% endblock %}
 
 {% block content %}
-<!-- Loading spinner -->
-<div id="dashLoading" class="dash-loading hidden">
-  <div class="dash-spinner">
-    <div class="dash-spinner-ring"></div>
-    <p>Loading dashboard data...</p>
-  </div>
-</div>
-
-<!-- Header -->
-<div class="dash-header">
-  <div>
-    <h2>Sales Team Field Activities Dashboard</h2>
-    <p>Live field data — filters apply across all charts and the detail table</p>
-  </div>
-  <a href="{{ url_for('activity_intelligence') }}" class="dash-import-link">&#8593; Import Activity File</a>
-</div>
-
-<!-- No batch state -->
-<div id="noBatchWarning" class="dash-empty">
-  <div class="dash-empty-icon">&#128202;</div>
-  <h3>No activity data imported yet</h3>
-  <p>Upload a field activity file first to see this dashboard populate with salesmen performance, visit maps, and trend charts.</p>
-</div>
-
-<!-- Filters bar -->
-<div class="filters-bar" id="filtersBar">
-  <label>Date From</label>
-  <input type="date" id="fDateFrom" style="padding:7px 10px;border:1.5px solid var(--gray);border-radius:8px;font-size:12px;font-family:inherit;color:var(--text);">
-  <label>Date To</label>
-  <input type="date" id="fDateTo" style="padding:7px 10px;border:1.5px solid var(--gray);border-radius:8px;font-size:12px;font-family:inherit;color:var(--text);">
-  <label>Salesman</label>
-  <select id="fSalesman"><option value="">All Salesmen</option></select>
-  <label>State</label>
-  <select id="fState"><option value="">All States</option></select>
-  <label>Survey</label>
-  <select id="fSurvey"><option value="">All Surveys</option></select>
-  <button class="filter-reset" id="filterReset">Clear Filters</button>
-</div>
-
-<!-- KPI cards -->
-<div class="kpi-row" id="kpiRow">
-  <div class="kpi-tile navy">
-    <div class="t-label">Total Activities</div>
-    <div class="t-value" id="kTotal">—</div>
-    <div class="t-sub">All field responses</div>
-  </div>
-  <div class="kpi-tile blue">
-    <div class="t-label">Retailers Visited</div>
-    <div class="t-value" id="kRetailers">—</div>
-    <div class="t-sub">Unique stores</div>
-  </div>
-  <div class="kpi-tile red">
-    <div class="t-label">Surveys Completed</div>
-    <div class="t-value" id="kSurveys">—</div>
-    <div class="t-sub">Distinct visit records</div>
-  </div>
-  <div class="kpi-tile green">
-    <div class="t-label">Distinct Salesmen</div>
-    <div class="t-value" id="kSalesmen">—</div>
-    <div class="t-sub">Active field reps</div>
-  </div>
-</div>
-
-<!-- Row 1: Top Salesmen + Map -->
-<div class="dash-grid-2">
-  <div class="chart-card">
-    <div class="chart-card-title">
-      Top 10 Salesmen by Activities
-      <span>by response count</span>
+<div class="card mb-3">
+  <div class="flex items-center justify-between mb-2">
+    <div>
+      <h3 class="text-navy fw-bold">Import Activity File</h3>
+      <p class="text-muted fs-sm">Upload field activity in Excel or CSV. We will match it to the right report and build the summary for you.</p>
     </div>
-    <canvas id="chartSalesmen" height="280"></canvas>
   </div>
-  <div class="chart-card">
-    <div class="chart-card-title">
-      Activities Map
-      <span>bubble size = activity count</span>
+  <form id="activityImportForm" class="grid-3">
+    <div class="form-group" style="grid-column:span 2;">
+      <label class="form-label">Activity File</label>
+      <input class="form-control" type="file" name="file" accept=".xlsx,.xls,.csv,.txt,.tsv" required>
     </div>
-    <div id="activityMap"></div>
+    <div class="form-group">
+      <label class="form-label">Link to Report</label>
+      <select class="form-control" name="report_id">
+        <option value="">Auto-detect from dates</option>
+        {% for item in reports %}
+        <option value="{{ item.id }}" {% if report and item.id == report.id %}selected{% endif %}>{{ item.month_label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <button class="btn btn-primary" id="activityImportBtn" type="submit">Import Activity</button>
+      <span id="activityImportMsg" class="text-muted fs-sm" style="margin-left:10px;"></span>
+    </div>
+  </form>
+
+  <div id="activityProgressCard" class="activity-progress" hidden>
+    <div class="activity-progress-top">
+      <div>
+        <div class="summary-banner-kicker" style="margin-bottom:4px;">Import Progress</div>
+        <div id="activityProgressStage" class="text-navy fw-bold">Preparing activity import</div>
+      </div>
+      <div id="activityProgressPct" class="kpi-value-sm">0%</div>
+    </div>
+    <div class="activity-progress-track">
+      <div id="activityProgressFill" class="activity-progress-fill"></div>
+    </div>
+    <div id="activityProgressNote" class="activity-progress-note">We will show progress here while the file is being processed.</div>
+    <div id="activityProgressSummary" class="activity-progress-summary"></div>
   </div>
 </div>
 
-<!-- Row 2: Trend + Donut -->
-<div class="dash-grid-2">
-  <div class="chart-card">
-    <div class="chart-card-title">
-      Activity Trend Over Time
-      <span>daily count &amp; unique visits</span>
+<div class="card scope-card">
+  <div class="flex items-center justify-between mb-2">
+    <div>
+      <h3 class="text-navy fw-bold">Activity Scope</h3>
+      <p class="text-muted fs-sm">Switch between the full activity view and a specific supermarket context.</p>
     </div>
-    <canvas id="chartTrend" height="220"></canvas>
   </div>
-  <div class="chart-card">
-    <div class="chart-card-title">
-      Retailer Type Distribution
-      <span>by activity count</span>
+  <form method="get" action="{{ url_for('activity_intelligence') }}">
+    <div class="form-group">
+      <label class="form-label">Linked Report</label>
+      <select class="form-control" name="report_id">
+        {% for item in reports %}
+        <option value="{{ item.id }}" {% if report and item.id == report.id %}selected{% endif %}>{{ item.month_label }}</option>
+        {% endfor %}
+      </select>
     </div>
-    <canvas id="chartTypes" height="220"></canvas>
+    <div class="form-group">
+      <label class="form-label">Retailer Focus</label>
+      <select class="form-control" name="store">
+        <option value="">All retailers</option>
+        {% for item in available_stores %}
+        <option value="{{ item.retailer_code }}" {% if selected_store == item.retailer_code %}selected{% endif %}>{{ item.retailer_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      {% if selected_brand %}
+      <input type="hidden" name="brand" value="{{ selected_brand }}">
+      {% endif %}
+      <button class="btn btn-outline" type="submit">Apply Scope</button>
+    </div>
+  </form>
+  <div class="scope-note">
+    {% if selected_store %}
+    Activity is filtered to {{ summary.store_name or selected_store }} for the current report.
+    {% else %}
+    You are viewing the full activity summary across the selected report context.
+    {% endif %}
   </div>
 </div>
 
-<!-- Row 3: Survey completion -->
-<div class="dash-grid-full">
-  <div class="chart-card">
-    <div class="chart-card-title">
-      Survey Completion by Survey Name
-      <span>top 12 surveys</span>
+<!-- Activity Report Generation -->
+<div class="card mb-3">
+  <div class="flex items-center justify-between mb-2">
+    <div>
+      <h3 class="text-navy fw-bold">Generate Activity Report</h3>
+      <p class="text-muted fs-sm">Create a comprehensive PDF/HTML report with charts and insights for this brand.</p>
     </div>
-    <canvas id="chartSurveys" height="160"></canvas>
+  </div>
+  <div class="grid-3" style="align-items:end;">
+    <div class="form-group">
+      <label class="form-label">Select Brand</label>
+      <select class="form-control" id="reportBrandSelect">
+        <option value="">-- Choose Brand --</option>
+        {% for brand in summary.top_brands %}
+        <option value="{{ brand.brand_name }}">{{ brand.brand_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Period Label</label>
+      <input type="text" class="form-control" id="reportPeriodInput" value="{{ report.month_label if report else 'Current Period' }}" placeholder="e.g., March Week 2">
+    </div>
+    <div>
+      <button class="btn btn-primary" id="generateActivityReportBtn" onclick="generateActivityReport()">
+        📊 Generate Report
+      </button>
+    </div>
+  </div>
+  <div id="activityReportStatus" class="scope-note" style="margin-top:12px; display:none;"></div>
+</div>
+
+<div class="card mb-3">
+  <div class="summary-banner">
+    <div class="summary-banner-copy">
+      <div class="summary-banner-kicker">Current Summary</div>
+      {% if summary.totals.events %}
+      <div class="summary-banner-text">
+        {{ summary.totals.events }} responses were captured across {{ summary.totals.visits }} visits,
+        {{ summary.totals.stores }} stores, and {{ summary.totals.active_days }} active day{% if summary.totals.active_days != 1 %}s{% endif %}.
+        We found {{ summary.totals.issues }} issue{% if summary.totals.issues != 1 %}s{% endif %}
+        and {{ summary.totals.opportunities }} opportunity{% if summary.totals.opportunities != 1 %}ies{% else %}y{% endif %}.
+      </div>
+      {% else %}
+      <div class="summary-banner-text">
+        {% if selected_store %}
+        No linked field activity has been imported yet for {{ summary.store_name or selected_store }} in this report context.
+        {% else %}
+        Upload an activity file to see a clean summary of visits, stores, issues, and opportunities here.
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    <div class="summary-banner-meta">
+      {% if report %}
+      <span class="badge badge-blue">{{ report.month_label }}</span>
+      {% endif %}
+      {% if selected_batch_id %}
+      <span class="badge badge-green">Batch {{ selected_batch_id }}</span>
+      {% endif %}
+      {% if selected_brand %}
+      <span class="badge badge-amber">{{ selected_brand }}</span>
+      {% endif %}
+      {% if selected_store %}
+      <span class="badge badge-blue">Store Focus</span>
+      {% endif %}
+    </div>
   </div>
 </div>
 
-<!-- Row 4: Activity Details table -->
-<div class="dash-grid-full">
-  <div class="chart-card">
-    <div class="chart-card-title">
-      Activity Details
-      <span id="detailCount">latest 200 records</span>
+<div class="summary-grid">
+  <div class="kpi-card blue">
+    <div class="kpi-label">Events</div>
+    <div class="kpi-value">{{ summary.totals.events or 0 }}</div>
+    <div class="kpi-sub">Responses captured</div>
+  </div>
+  <div class="kpi-card green">
+    <div class="kpi-label">Visits</div>
+    <div class="kpi-value">{{ summary.totals.visits or 0 }}</div>
+    <div class="kpi-sub">Store visits logged</div>
+  </div>
+  <div class="kpi-card red">
+    <div class="kpi-label">Issues</div>
+    <div class="kpi-value">{{ summary.totals.issues or 0 }}</div>
+    <div class="kpi-sub">Issues found in the field</div>
+  </div>
+  <div class="kpi-card amber">
+    <div class="kpi-label">Coverage</div>
+    <div class="kpi-value">{{ summary.totals.stores or 0 }}</div>
+    <div class="kpi-sub">{{ summary.totals.salespeople or 0 }} salespeople active</div>
+  </div>
+</div>
+
+<div class="split-grid mb-3">
+  <div class="card">
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="text-navy fw-bold">Recent Issues</h3>
+      <span class="badge badge-red">{{ summary.top_issues|length }} issue types</span>
     </div>
-    <div class="detail-table-wrap" id="detailTableWrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Salesman</th>
-            <th>Retailer</th>
-            <th>City</th>
-            <th>State</th>
-            <th>Survey</th>
-            <th>Label</th>
-            <th>Answer</th>
-          </tr>
-        </thead>
-        <tbody id="detailTbody">
-          <tr><td colspan="8" class="detail-empty">Loading data...</td></tr>
-        </tbody>
-      </table>
+    {% if summary.recent_issues %}
+    <div class="issue-list">
+      {% for issue in summary.recent_issues %}
+      <div class="issue-row">
+        <div class="flex items-center justify-between">
+          <strong>{{ issue.brand_name or 'Unmatched brand' }}</strong>
+          <span class="badge {% if issue.severity == 'high' %}badge-red{% elif issue.severity == 'medium' %}badge-amber{% else %}badge-blue{% endif %}">
+            {{ issue.issue_type|replace('_', ' ') }}
+          </span>
+        </div>
+        <div class="fs-sm text-muted mt-1">{{ issue.retailer_name or issue.retailer_code or 'Unknown store' }} · {{ issue.activity_date or 'No date' }}</div>
+        {% if issue.answer %}
+        <div class="mt-1">{{ issue.answer[:180] }}{% if issue.answer|length > 180 %}...{% endif %}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
     </div>
+    {% else %}
+    <p class="text-muted fs-sm">No activity issues have been imported yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3 class="text-navy fw-bold mb-2">Top Breakdown</h3>
+    <div class="mb-2">
+      <div class="form-label">Issue Themes</div>
+      {% for row in summary.top_issues %}
+      <div class="row"><span>{{ row.issue_type|replace('_', ' ')|title }}</span><strong>{{ row.count }}</strong></div>
+      {% else %}
+      <div class="text-muted fs-sm">No issue themes yet.</div>
+      {% endfor %}
+    </div>
+    <div class="mb-2">
+      <div class="form-label">Brand Mentions</div>
+      {% for row in summary.top_brands %}
+      <div class="row"><span>{{ row.brand_name }}</span><strong>{{ row.count }}</strong></div>
+      {% else %}
+      <div class="text-muted fs-sm">No brand mentions yet.</div>
+      {% endfor %}
+    </div>
+    <div>
+      <div class="form-label">Salespeople</div>
+      {% for row in summary.top_salespeople %}
+      <div class="row"><span>{{ row.salesman_name or 'Unknown' }}</span><strong>{{ row.visits }}</strong></div>
+      {% else %}
+      <div class="text-muted fs-sm">No visit summaries yet.</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h3 class="text-navy fw-bold mb-2">Recent Visits</h3>
+    {% if summary.recent_visits %}
+    <div class="visit-list">
+      {% for visit in summary.recent_visits %}
+      <div class="visit-row">
+        <div class="flex items-center justify-between">
+          <strong>{{ visit.retailer_name or visit.retailer_code }}</strong>
+          <a href="{{ url_for('store_360', retailer_code=visit.retailer_code) }}" class="btn btn-outline btn-sm">Store 360</a>
+        </div>
+        <div class="fs-sm text-muted mt-1">{{ visit.activity_date }} · {{ visit.salesman_name or 'Unknown SE' }}</div>
+        <div class="fs-sm mt-1">{{ visit.event_count }} responses · {{ visit.issue_count }} issues · {{ visit.opportunity_count }} opportunities</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted fs-sm">No visits have been imported yet.</p>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h3 class="text-navy fw-bold mb-2">Imported Batches</h3>
+    <table class="data-table">
+      <thead><tr><th>File</th><th>Period</th><th>Rows</th></tr></thead>
+      <tbody>
+        {% for batch in batches %}
+        <tr>
+          <td>{{ batch.source_filename }}</td>
+          <td>{{ batch.start_date or '-' }}{% if batch.end_date and batch.end_date != batch.start_date %} to {{ batch.end_date }}{% endif %}</td>
+          <td>{{ batch.row_count }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3" class="text-muted">No activity batches imported yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
-(function () {
-  'use strict';
+document.getElementById('activityImportForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const msg = document.getElementById('activityImportMsg');
+  const btn = document.getElementById('activityImportBtn');
+  const progressCard = document.getElementById('activityProgressCard');
+  const progressFill = document.getElementById('activityProgressFill');
+  const progressPct = document.getElementById('activityProgressPct');
+  const progressStage = document.getElementById('activityProgressStage');
+  const progressNote = document.getElementById('activityProgressNote');
+  const progressSummary = document.getElementById('activityProgressSummary');
 
-  // ── State ──────────────────────────────────────────────────────────────────
-  const BATCHES = {{ batches | tojson }};
-  let selectedBatchId = {{ selected_batch_id | tojson }};
-  if (!selectedBatchId && BATCHES.length > 0) selectedBatchId = BATCHES[0].id;
+  const setProgress = (pct, stage, note = '', summary = '') => {
+    const safePct = Math.max(0, Math.min(100, Number(pct || 0)));
+    progressCard.hidden = false;
+    progressFill.style.width = `${safePct}%`;
+    progressPct.textContent = `${Math.round(safePct)}%`;
+    progressStage.textContent = stage || 'Processing activity import';
+    progressNote.textContent = note || '';
+    progressSummary.textContent = summary || '';
+  };
 
-  // Chart.js instances
-  let chartSalesmen = null;
-  let chartTrend = null;
-  let chartTypes = null;
-  let chartSurveys = null;
+  btn.disabled = true;
+  msg.textContent = 'Starting import...';
+  setProgress(3, 'Preparing activity import', 'We will show each step here.');
 
-  // Leaflet map instance + layer
-  let leafletMap = null;
-  let bubbleLayer = null;
-
-  // DALA colours
-  const C_NAVY  = '#1B2B5E';
-  const C_RED   = '#E8192C';
-  const C_BLUE  = '#2E86C1';
-  const C_GREEN = '#1E8449';
-  const C_AMBER = '#C0922A';
-  const C_GRAY  = '#DDE3ED';
-  const PALETTE = [C_NAVY, C_BLUE, C_RED, C_GREEN, C_AMBER,
-    '#8E44AD','#16A085','#D35400','#2980B9','#27AE60',
-    '#C0392B','#F39C12'];
-
-  // ── DOM refs ────────────────────────────────────────────────────────────────
-  const $ = id => document.getElementById(id);
-  const loadingEl   = $('dashLoading');
-  const noBatchEl   = $('noBatchWarning');
-  const kpiRow      = $('kpiRow');
-  const filtersBar  = $('filtersBar');
-  const batchSel    = $('batchSelector');
-  const fDateFrom   = $('fDateFrom');
-  const fDateTo     = $('fDateTo');
-  const fSalesman   = $('fSalesman');
-  const fState      = $('fState');
-  const fSurvey     = $('fSurvey');
-  const filterReset = $('filterReset');
-  const detailTbody = $('detailTbody');
-  const detailCount = $('detailCount');
-
-  // ── Utility ─────────────────────────────────────────────────────────────────
-  function fmt(n) {
-    if (n === null || n === undefined) return '—';
-    return Number(n).toLocaleString();
+  const res = await fetch('/api/activity/import', { method: 'POST', body: new FormData(form) });
+  const data = await res.json();
+  if (!data.success || !data.job_id) {
+    btn.disabled = false;
+    msg.textContent = data.error || 'Import failed.';
+    setProgress(0, 'Import did not start', data.error || 'Please try again.');
+    return;
   }
 
-  function showLoading(on) {
-    if (on) loadingEl.classList.remove('hidden');
-    else    loadingEl.classList.add('hidden');
-  }
+  msg.textContent = 'Import in progress...';
 
-  function populateSelect(el, values, currentVal) {
-    const prev = currentVal || el.value;
-    // keep first option
-    while (el.options.length > 1) el.remove(1);
-    values.forEach(v => {
-      const opt = document.createElement('option');
-      opt.value = v; opt.textContent = v;
-      if (v === prev) opt.selected = true;
-      el.appendChild(opt);
-    });
-  }
-
-  // ── Build API URL ────────────────────────────────────────────────────────────
-  function buildUrl() {
-    const params = new URLSearchParams();
-    if (selectedBatchId) params.set('batch_id', selectedBatchId);
-    const df = fDateFrom.value; if (df) params.set('date_from', df);
-    const dt = fDateTo.value;   if (dt) params.set('date_to', dt);
-    const sm = fSalesman.value; if (sm) params.set('salesman', sm);
-    const st = fState.value;    if (st) params.set('state', st);
-    const sv = fSurvey.value;   if (sv) params.set('survey', sv);
-    return '/api/activity/dashboard_data?' + params.toString();
-  }
-
-  // ── Fetch & Render ───────────────────────────────────────────────────────────
-  async function loadDashboard() {
-    if (!selectedBatchId) {
-      noBatchEl.style.display = 'block';
-      kpiRow.style.display = 'none';
-      filtersBar.style.display = 'none';
+  const poll = async () => {
+    const jobRes = await fetch(`/api/activity/job/${data.job_id}`);
+    const job = await jobRes.json();
+    if (!jobRes.ok) {
+      btn.disabled = false;
+      msg.textContent = job.error || 'Could not read import progress.';
+      setProgress(0, 'Progress unavailable', job.error || '');
       return;
     }
-    noBatchEl.style.display = 'none';
-    kpiRow.style.display = '';
-    filtersBar.style.display = '';
 
-    showLoading(true);
-    try {
-      const res  = await fetch(buildUrl());
-      const data = await res.json();
-      if (data.error === 'no_batch') {
-        noBatchEl.style.display = 'block';
-        kpiRow.style.display = 'none';
-        filtersBar.style.display = 'none';
-        showLoading(false);
-        return;
-      }
-      renderKpis(data.kpis || {});
-      populateFilters(data.filter_options || {});
-      renderSalesmenChart(data.top_salesmen || []);
-      renderTrendChart(data.daily_trend || []);
-      renderTypesChart(data.retailer_types || []);
-      renderSurveysChart(data.survey_completion || []);
-      renderMap(data.map_points || []);
-      renderTable(data.activity_details || []);
-    } catch (err) {
-      console.error('Dashboard load error:', err);
-    } finally {
-      showLoading(false);
-    }
-  }
+    setProgress(
+      job.progress || 0,
+      job.current_brand || 'Processing activity import',
+      job.status === 'error' ? (job.error_msg || 'Import failed.') : 'Activity summaries will open as soon as the import is done.'
+    );
 
-  // ── KPIs ────────────────────────────────────────────────────────────────────
-  function renderKpis(kpis) {
-    $('kTotal').textContent     = fmt(kpis.total_activities);
-    $('kRetailers').textContent = fmt(kpis.retailers_visited);
-    $('kSurveys').textContent   = fmt(kpis.surveys_completed);
-    $('kSalesmen').textContent  = fmt(kpis.distinct_salesmen);
-  }
-
-  // ── Filter dropdowns ─────────────────────────────────────────────────────────
-  function populateFilters(opts) {
-    populateSelect(fSalesman, opts.salesmen || []);
-    populateSelect(fState,    opts.states   || []);
-    populateSelect(fSurvey,   opts.surveys  || []);
-  }
-
-  // ── Salesmen horizontal bar ──────────────────────────────────────────────────
-  function renderSalesmenChart(rows) {
-    const labels = rows.map(r => r.salesman_name || 'Unknown');
-    const values = rows.map(r => r.activities);
-    const colors = rows.map((_, i) => i === 0 ? C_RED : C_NAVY);
-
-    const ctx = $('chartSalesmen').getContext('2d');
-    if (chartSalesmen) chartSalesmen.destroy();
-    chartSalesmen = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          label: 'Activities',
-          data: values,
-          backgroundColor: colors,
-          borderRadius: 5,
-          borderSkipped: false,
-        }]
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: ctx => ` ${fmt(ctx.raw)} activities`
-            }
-          }
-        },
-        scales: {
-          x: {
-            grid: { color: 'rgba(27,43,94,.06)' },
-            ticks: { font: { size: 11 }, color: '#7A849E' },
-            border: { display: false },
-          },
-          y: {
-            grid: { display: false },
-            ticks: {
-              font: { size: 11 }, color: '#1A1A2E',
-              callback: function(val, idx) {
-                const label = this.getLabelForValue(val);
-                return label.length > 20 ? label.slice(0, 20) + '…' : label;
-              }
-            },
-            border: { display: false },
-          }
-        },
-        layout: { padding: { right: 16 } }
-      }
-    });
-  }
-
-  // ── Trend dual-axis ──────────────────────────────────────────────────────────
-  function renderTrendChart(rows) {
-    const labels = rows.map(r => r.activity_date);
-    const counts = rows.map(r => r.daily_count);
-    const visits = rows.map(r => r.visit_count);
-
-    const ctx = $('chartTrend').getContext('2d');
-    if (chartTrend) chartTrend.destroy();
-    chartTrend = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Daily Responses',
-            data: counts,
-            borderColor: C_NAVY,
-            backgroundColor: 'rgba(27,43,94,.08)',
-            fill: true,
-            tension: 0.35,
-            pointRadius: rows.length < 30 ? 3 : 0,
-            pointHoverRadius: 5,
-            borderWidth: 2.5,
-            yAxisID: 'yLeft',
-          },
-          {
-            label: 'Unique Visits',
-            data: visits,
-            borderColor: C_RED,
-            backgroundColor: 'transparent',
-            fill: false,
-            tension: 0.35,
-            pointRadius: rows.length < 30 ? 3 : 0,
-            pointHoverRadius: 5,
-            borderWidth: 2,
-            borderDash: [4, 3],
-            yAxisID: 'yRight',
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: {
-            position: 'top',
-            labels: { font: { size: 11 }, usePointStyle: true, pointStyleWidth: 10, boxHeight: 7 }
-          }
-        },
-        scales: {
-          yLeft: {
-            type: 'linear', position: 'left',
-            grid: { color: 'rgba(27,43,94,.06)' },
-            ticks: { font: { size: 10 }, color: '#7A849E' },
-            border: { display: false },
-            title: { display: true, text: 'Responses', font: { size: 10 }, color: '#7A849E' }
-          },
-          yRight: {
-            type: 'linear', position: 'right',
-            grid: { drawOnChartArea: false },
-            ticks: { font: { size: 10 }, color: C_RED },
-            border: { display: false },
-            title: { display: true, text: 'Visits', font: { size: 10 }, color: C_RED }
-          },
-          x: {
-            grid: { display: false },
-            ticks: {
-              font: { size: 10 }, color: '#7A849E',
-              maxTicksLimit: 12,
-              maxRotation: 45,
-            },
-            border: { display: false },
-          }
-        }
-      }
-    });
-  }
-
-  // ── Retailer type donut ───────────────────────────────────────────────────────
-  function renderTypesChart(rows) {
-    const labels = rows.map(r => r.retailer_type || 'Unknown');
-    const values = rows.map(r => r.cnt);
-
-    const ctx = $('chartTypes').getContext('2d');
-    if (chartTypes) chartTypes.destroy();
-    chartTypes = new Chart(ctx, {
-      type: 'doughnut',
-      data: {
-        labels,
-        datasets: [{
-          data: values,
-          backgroundColor: PALETTE.slice(0, labels.length),
-          borderWidth: 2,
-          borderColor: '#fff',
-          hoverOffset: 6,
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: '62%',
-        plugins: {
-          legend: {
-            position: 'right',
-            labels: { font: { size: 11 }, usePointStyle: true, pointStyleWidth: 10, boxHeight: 7 }
-          },
-          tooltip: {
-            callbacks: {
-              label: ctx => ` ${ctx.label}: ${fmt(ctx.raw)}`
-            }
-          }
-        }
-      }
-    });
-  }
-
-  // ── Survey completion grouped bar ─────────────────────────────────────────────
-  function renderSurveysChart(rows) {
-    const labels = rows.map(r => {
-      const s = r.survey_name || 'Unknown';
-      return s.length > 30 ? s.slice(0, 30) + '…' : s;
-    });
-    const completions = rows.map(r => r.completions);
-    const stores      = rows.map(r => r.stores);
-
-    const ctx = $('chartSurveys').getContext('2d');
-    if (chartSurveys) chartSurveys.destroy();
-    chartSurveys = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Completions',
-            data: completions,
-            backgroundColor: C_NAVY,
-            borderRadius: 4,
-            borderSkipped: false,
-          },
-          {
-            label: 'Stores Reached',
-            data: stores,
-            backgroundColor: C_BLUE,
-            borderRadius: 4,
-            borderSkipped: false,
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'top',
-            labels: { font: { size: 11 }, usePointStyle: true, pointStyleWidth: 10, boxHeight: 7 }
-          }
-        },
-        scales: {
-          x: {
-            grid: { display: false },
-            ticks: { font: { size: 10 }, color: '#7A849E', maxRotation: 35 },
-            border: { display: false },
-          },
-          y: {
-            grid: { color: 'rgba(27,43,94,.06)' },
-            ticks: { font: { size: 10 }, color: '#7A849E' },
-            border: { display: false },
-          }
-        }
-      }
-    });
-  }
-
-  // ── Leaflet map ───────────────────────────────────────────────────────────────
-  function initMap() {
-    if (leafletMap) return; // already initialised
-    leafletMap = L.map('activityMap', {
-      center: [7.9, 5.0],
-      zoom: 6,
-      zoomControl: true,
-      scrollWheelZoom: false,
-    });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 18,
-    }).addTo(leafletMap);
-    bubbleLayer = L.layerGroup().addTo(leafletMap);
-  }
-
-  function renderMap(points) {
-    initMap();
-    bubbleLayer.clearLayers();
-    if (!points.length) return;
-
-    const maxAct = Math.max(...points.map(p => p.activities), 1);
-
-    points.forEach(p => {
-      // scale radius 8–40
-      const radius = 8 + Math.round((p.activities / maxAct) * 32);
-      const circle = L.circleMarker([p.lat, p.lon], {
-        radius,
-        fillColor: C_NAVY,
-        color: '#fff',
-        weight: 2,
-        opacity: 1,
-        fillOpacity: 0.72,
-      });
-      circle.bindPopup(
-        `<strong>${p.city}${p.state ? ', ' + p.state : ''}</strong><br>` +
-        `<span style="font-size:12px;">${fmt(p.activities)} activities &bull; ${fmt(p.stores)} stores</span>`
-      );
-      bubbleLayer.addLayer(circle);
-    });
-
-    // Fit bounds to markers
-    const coords = points.map(p => [p.lat, p.lon]);
-    if (coords.length > 0) {
-      try { leafletMap.fitBounds(L.latLngBounds(coords), { padding: [20, 20], maxZoom: 10 }); }
-      catch (_) {}
-    }
-  }
-
-  // ── Detail table ──────────────────────────────────────────────────────────────
-  function renderTable(rows) {
-    if (!rows.length) {
-      detailTbody.innerHTML = '<tr><td colspan="8" class="detail-empty">No activity records match the current filters.</td></tr>';
-      detailCount.textContent = '0 records';
+    if (job.status === 'done') {
+      const result = job.result_json || {};
+      const summary = result.summary || {};
+      const summaryText = `${summary.visit_count || 0} visits, ${summary.issue_count || 0} issues, ${summary.stores_visited || 0} stores`;
+      setProgress(100, 'Activity import complete', 'Opening the updated summary now.', summaryText);
+      msg.textContent = 'Activity import complete.';
+      const target = new URL(window.location.href);
+      if (result.batch_id) target.searchParams.set('batch_id', result.batch_id);
+      if (result.report_id) target.searchParams.set('report_id', result.report_id);
+      window.setTimeout(() => { window.location.href = target.toString(); }, 700);
       return;
     }
-    detailCount.textContent = `${rows.length.toLocaleString()} records shown`;
-    const html = rows.map(r => {
-      const esc = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      const answer = esc(r.answer || '');
-      const short  = answer.length > 80 ? answer.slice(0, 80) + '…' : answer;
-      return `<tr>
-        <td style="white-space:nowrap;">${esc(r.activity_date || '')}</td>
-        <td>${esc(r.salesman_name || '')}</td>
-        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.retailer_name || '')}">${esc(r.retailer_name || '')}</td>
-        <td>${esc(r.retailer_city || '')}</td>
-        <td>${esc(r.retailer_state || '')}</td>
-        <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.survey_name || '')}">${esc(r.survey_name || '')}</td>
-        <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.label || '')}">${esc(r.label || '')}</td>
-        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${answer}">${short}</td>
-      </tr>`;
-    }).join('');
-    detailTbody.innerHTML = html;
-  }
 
-  // ── Event wiring ──────────────────────────────────────────────────────────────
-  if (batchSel) {
-    batchSel.addEventListener('change', () => {
-      selectedBatchId = parseInt(batchSel.value, 10) || null;
-      loadDashboard();
-    });
-  }
-
-  function onFilterChange() { loadDashboard(); }
-  fDateFrom.addEventListener('change', onFilterChange);
-  fDateTo.addEventListener('change', onFilterChange);
-  fSalesman.addEventListener('change', onFilterChange);
-  fState.addEventListener('change', onFilterChange);
-  fSurvey.addEventListener('change', onFilterChange);
-
-  filterReset.addEventListener('click', () => {
-    fDateFrom.value = '';
-    fDateTo.value   = '';
-    fSalesman.value = '';
-    fState.value    = '';
-    fSurvey.value   = '';
-    loadDashboard();
-  });
-
-  // ── Boot ──────────────────────────────────────────────────────────────────────
-  document.addEventListener('DOMContentLoaded', () => {
-    if (!BATCHES.length) {
-      noBatchEl.style.display = 'block';
-      kpiRow.style.display    = 'none';
-      filtersBar.style.display = 'none';
-    } else {
-      loadDashboard();
+    if (job.status === 'error') {
+      btn.disabled = false;
+      msg.textContent = job.error_msg || 'Import failed.';
+      return;
     }
-  });
 
-})();
+    window.setTimeout(poll, 900);
+  };
+
+  poll();
+});
+
+// Activity Report Generation
+async function generateActivityReport() {
+  const brandSelect = document.getElementById('reportBrandSelect');
+  const periodInput = document.getElementById('reportPeriodInput');
+  const statusDiv = document.getElementById('activityReportStatus');
+  const btn = document.getElementById('generateActivityReportBtn');
+  
+  const brandName = brandSelect.value;
+  const periodLabel = periodInput.value;
+  
+  if (!brandName) {
+    statusDiv.style.display = 'block';
+    statusDiv.innerHTML = '<span style="color:var(--red);">Please select a brand first.</span>';
+    return;
+  }
+  
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  statusDiv.style.display = 'block';
+  statusDiv.innerHTML = '<span style="color:var(--blue);">Generating activity report... This may take a moment.</span>';
+  
+  try {
+    const reportId = new URLSearchParams(window.location.search).get('report_id');
+    let url = `/api/activity/report/${encodeURIComponent(brandName)}?period=${encodeURIComponent(periodLabel)}`;
+    if (reportId) url += `&report_id=${reportId}`;
+    
+    const res = await fetch(url);
+    const data = await res.json();
+    
+    if (!res.ok) {
+      statusDiv.innerHTML = `<span style="color:var(--red);">Error: ${data.error || 'Failed to generate report'}</span>`;
+      if (data.hint) {
+        statusDiv.innerHTML += `<br><span style="color:var(--muted); font-size:12px;">${data.hint}</span>`;
+      }
+      return;
+    }
+    
+    // Success
+    let html = `<strong style="color:var(--green);">✓ Report generated successfully!</strong><br>`;
+    html += `<span style="font-size:12px; color:var(--muted);">Stores: ${data.summary.stores || 0} | Visits: ${data.summary.visits || 0} | Issues: ${data.summary.issues || 0}</span><br>`;
+    html += `<div style="margin-top:8px; display:flex; gap:8px;">`;
+    if (data.pdf_url) {
+      html += `<a href="${data.pdf_url}" class="btn btn-primary btn-sm" download>Download PDF</a>`;
+    }
+    html += `<a href="${data.html_url}" class="btn btn-outline btn-sm" target="_blank">View HTML</a>`;
+    html += `</div>`;
+    
+    statusDiv.innerHTML = html;
+    
+  } catch (err) {
+    statusDiv.innerHTML = `<span style="color:var(--red);">Error: ${err.message}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📊 Generate Report';
+  }
+}
 </script>
 {% endblock %}

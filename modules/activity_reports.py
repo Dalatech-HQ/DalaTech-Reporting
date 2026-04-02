@@ -7,6 +7,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
+from .period_comparison import build_period_comparison, comparison_basis_label, compare_same_type_reports
 from .pdf_generator_html import render_pdf_bytes
 
 
@@ -272,19 +273,12 @@ def _report_lookup(ds):
 
 
 def _find_comparison_reports(ds, report):
-    current_start = datetime.strptime(report['start_date'], '%Y-%m-%d')
     report_type = report.get('report_type') or 'weekly'
     reports = _report_lookup(ds)
-    comparable = [r for r in reports if r.get('report_type') == report_type and r['_start_dt'] < current_start]
-    comparable.sort(key=lambda r: r['_start_dt'])
-    previous = comparable[-1] if comparable else None
-    trailing = comparable[-4:] if comparable else []
-    same_period_last_year = None
-    if current_start.year > 1900:
-        target = current_start.replace(year=current_start.year - 1)
-        candidates = [r for r in comparable if abs((r['_start_dt'] - target).days) <= 7]
-        if candidates:
-            same_period_last_year = sorted(candidates, key=lambda r: abs((r['_start_dt'] - target).days))[0]
+    comparison = compare_same_type_reports(reports, report)
+    previous = comparison.get('previous')
+    trailing = comparison.get('trailing') or []
+    same_period_last_year = comparison.get('same_period_last_year')
     return previous, trailing, same_period_last_year
 
 
@@ -379,6 +373,27 @@ def _build_daily_trend(visits_df):
         'issues': [int(v) for v in daily['issues'].fillna(0)],
         'opportunities': [int(v) for v in daily['opportunities'].fillna(0)],
     }
+
+
+def _build_period_rows(visits_df):
+    if visits_df.empty:
+        return []
+    working = visits_df.copy()
+    working['date'] = working['activity_date'].dt.strftime('%Y-%m-%d')
+    if 'issue_count' not in working.columns:
+        working['issue_count'] = 0
+    if 'opportunity_count' not in working.columns:
+        working['opportunity_count'] = 0
+    daily = (
+        working.groupby('date', dropna=False)
+        .agg(
+            activities=('activity_date', 'size'),
+            issues=('issue_count', 'sum'),
+            opportunities=('opportunity_count', 'sum'),
+        )
+        .reset_index()
+    )
+    return daily.to_dict('records')
 
 
 def _build_mix_sections(non_opportunity_issues, opportunity_issues, visits_df):
@@ -717,6 +732,19 @@ def prepare_activity_report_data(ds, brand_name: str, report_id: int = None, sta
     events_df, visits_df, issues_df, mentions_df = _read_activity_frames(ds, brand_name, report_id)
     current, non_opportunity_issues, opportunity_issues = _compute_current_metrics(events_df, visits_df, issues_df, mentions_df)
     previous, previous_metrics, trailing, trailing_metrics, same_period_last_year, yoy_metrics = _build_comparisons(ds, brand_name, report)
+    previous_events_df = pd.DataFrame()
+    previous_visits_df = pd.DataFrame()
+    if previous:
+        previous_events_df, previous_visits_df, _, _ = _read_activity_frames(ds, brand_name, previous['id'])
+    period_breakdown = build_period_comparison(
+        _build_period_rows(visits_df),
+        _build_period_rows(previous_visits_df),
+        date_key='date',
+        metric_columns=('activities', 'issues', 'opportunities'),
+        report_type=report.get('report_type'),
+        current_start=start_date,
+        previous_start=previous.get('start_date') if previous else None,
+    ) if not events_df.empty else None
     kpi_cards, trailing_avg = _build_kpi_cards(current, previous_metrics, trailing_metrics, quality_label)
     issue_mix, opportunity_mix, highlights = _build_mix_sections(non_opportunity_issues, opportunity_issues, visits_df)
     store_breakdown = _build_store_breakdown(visits_df, mentions_df)
@@ -730,6 +758,7 @@ def prepare_activity_report_data(ds, brand_name: str, report_id: int = None, sta
     previous_current = previous_metrics['current'] if previous_metrics else {}
     yoy_current = yoy_metrics['current'] if yoy_metrics else {}
     comparison = {
+        'grain': comparison_basis_label(report.get('report_type')),
         'basis': [
             f"Vs previous comparable {report.get('report_type') or 'period'}" + (f" ({previous.get('month_label')})" if previous else ' (not available)'),
             "Vs trailing 4-week average" if trailing_metrics else "Vs trailing 4-week average (not available)",
@@ -756,6 +785,7 @@ def prepare_activity_report_data(ds, brand_name: str, report_id: int = None, sta
             'stores_change': _calc_pct_change(current['stores_visited'], yoy_current.get('stores_visited')),
         }
     }
+    comparison['period_breakdown'] = period_breakdown
     comparison['cards'] = [
         _build_comparison_card(
             'Previous Comparable',

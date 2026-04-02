@@ -125,6 +125,23 @@ def _looks_like_zip(raw: bytes) -> bool:
     return raw[:4] == b'PK\x03\x04'
 
 
+def _looks_like_ooxml_excel(raw: bytes) -> bool:
+    if not _looks_like_zip(raw):
+        return False
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            names = {name.lower() for name in zf.namelist()}
+    except Exception:
+        return False
+    return '[content_types].xml' in names and any(
+        candidate in names
+        for candidate in (
+            'xl/workbook.xml',
+            'xl/worksheets/sheet1.xml',
+        )
+    )
+
+
 def _decode_text(raw: bytes) -> str:
     for enc in ('utf-8-sig', 'utf-16', 'latin1'):
         try:
@@ -152,6 +169,34 @@ def _read_activity_file(raw: bytes, filename: str = '') -> tuple[pd.DataFrame, s
             return _read_text_table(raw), 'text'
         except Exception:
             pass
+
+    if ext in ('.xlsx', '.xlsm', '.xltx', '.xltm'):
+        for engine in (None, 'openpyxl'):
+            try:
+                kwargs = {'dtype': str}
+                if engine:
+                    kwargs['engine'] = engine
+                return pd.read_excel(io.BytesIO(raw), **kwargs), 'excel'
+            except Exception:
+                continue
+        return _read_text_table(raw), 'text'
+
+    if ext == '.xls':
+        for engine in ('xlrd', 'openpyxl'):
+            try:
+                return pd.read_excel(io.BytesIO(raw), dtype=str, engine=engine), 'excel'
+            except Exception:
+                continue
+        if _looks_like_ooxml_excel(raw):
+            for engine in (None, 'openpyxl'):
+                try:
+                    kwargs = {'dtype': str}
+                    if engine:
+                        kwargs['engine'] = engine
+                    return pd.read_excel(io.BytesIO(raw), **kwargs), 'excel'
+                except Exception:
+                    continue
+        return _read_text_table(raw), 'text'
 
     for engine in (None, 'openpyxl', 'xlrd'):
         try:
@@ -282,14 +327,20 @@ def _to_iso_date(value) -> str | None:
 def load_activity_dataframe(file_source, expected_source: str | None = None) -> tuple[pd.DataFrame, dict]:
     raw, filename = _coerce_bytes(file_source)
     source_choice = str(expected_source or 'auto').strip().lower()
-    is_zip = _looks_like_zip(raw) or str(filename).lower().endswith('.zip')
+    ext = os.path.splitext(filename or '')[1].lower()
+    is_zip_bundle = str(filename).lower().endswith('.zip')
+    if not is_zip_bundle and _looks_like_zip(raw):
+        is_zip_bundle = (
+            ext not in ('.xlsx', '.xlsm', '.xltx', '.xltm', '.xls')
+            and not _looks_like_ooxml_excel(raw)
+        )
 
-    if source_choice == 'cleaned_zip' and not is_zip:
+    if source_choice == 'cleaned_zip' and not is_zip_bundle:
         raise ValueError('Expected a cleaned weekly zip file, but the uploaded file is not a zip archive.')
-    if source_choice == 'raw_export' and is_zip:
+    if source_choice == 'raw_export' and is_zip_bundle:
         raise ValueError('Expected a raw activity export file, but the uploaded file is a zip archive.')
 
-    if is_zip:
+    if is_zip_bundle:
         df, meta = _read_activity_zip(raw)
     else:
         df, source_type = _read_activity_file(raw, filename)
