@@ -2021,8 +2021,35 @@ def generate_async():
     options = _parse_generation_options(request.form)
     batch_mode = (request.form.get('batch_mode') or '').strip().lower()
 
-    if not files or not start_date or not end_date:
+    if not files:
         return jsonify({'success': False, 'error': 'Missing file or dates'}), 400
+
+    file_entries = []
+    for uploaded in files[:2]:
+        file_entries.append({'filename': uploaded.filename, 'file_bytes': uploaded.read()})
+
+    if not start_date or not end_date:
+        try:
+            from modules.drive_sync import DateExtractor
+            if batch_mode == 'paired' or len(file_entries) > 1:
+                combined_frames = [load_and_clean(io.BytesIO(entry['file_bytes'])) for entry in file_entries]
+                combined_df = pd.concat(combined_frames, ignore_index=True) if combined_frames else pd.DataFrame()
+                start_date, end_date = DateExtractor.from_excel_content(combined_df)
+            else:
+                single_df = load_and_clean(io.BytesIO(file_entries[0]['file_bytes']))
+                start_date, end_date = DateExtractor.from_excel_content(single_df)
+        except Exception:
+            start_date = start_date or None
+            end_date = end_date or None
+
+    if not start_date or not end_date:
+        return jsonify({
+            'success': False,
+            'error': 'Could not determine the date range. Please choose a period or upload a workbook with detectable dates.'
+        }), 400
+
+    if report_type == 'auto':
+        report_type = None
 
     if batch_mode == 'paired' or len(files) > 1:
         if len(files) < 2:
@@ -2046,9 +2073,6 @@ def generate_async():
             report_id=None,
             result_json={'import_mode': options.get('import_mode', 'full'), 'batch_id': batch_id},
         )
-        file_entries = []
-        for uploaded in files[:2]:
-            file_entries.append({'filename': uploaded.filename, 'file_bytes': uploaded.read()})
         GENERATION_EXECUTOR.submit(
             _run_generation_batch,
             job_id,
@@ -2072,7 +2096,7 @@ def generate_async():
         })
 
     file = files[0]
-    file_bytes = file.read()
+    file_bytes = file_entries[0]['file_bytes']
     job_id = _submit_generation_job(
         file_bytes=file_bytes,
         start_date=start_date,

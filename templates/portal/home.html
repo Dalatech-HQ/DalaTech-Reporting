@@ -9,83 +9,122 @@
 {% endblock %}
 
 {% block content %}
-<div class="grid-2" style="margin-bottom:24px;">
-
-  <!-- Activity Report Upload Card -->
-  <div class="card" style="border-top:4px solid var(--green);">
-    <h3 style="color:var(--navy);margin-bottom:4px;">📊 Upload Activity Report</h3>
-    <p class="text-muted fs-sm" style="margin-bottom:20px;">Upload field activity data to generate Excel and PDF reports for all brand partners instantly.</p>
-
-    <form id="activityUploadForm" enctype="multipart/form-data">
-      <div class="form-group">
-        <label class="form-label">Activity File (.xls / .xlsx / .csv)</label>
-        <input type="file" name="activity_file" class="form-control" accept=".xls,.xlsx,.csv,.txt,.zip" required>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Source Type</label>
-        <select name="source_mode" class="form-control" id="activitySourceSelect">
-          <option value="auto" selected>Auto-detect</option>
-          <option value="raw_export">Raw activity export</option>
-          <option value="cleaned_zip">Cleaned weekly zip</option>
-        </select>
-      </div>
-      <div id="activityPreviewNote" class="flash flash-success" style="display:none;margin-bottom:12px;"></div>
-      <div class="form-group">
-        <label class="form-label">Period</label>
-        <select name="period_type" class="form-control" id="activityPeriodSelect">
-          <option value="auto">Auto-detect from file</option>
-          <option value="daily">Daily</option>
-          <option value="weekly" selected>Weekly</option>
-          <option value="monthly">Monthly</option>
-          <option value="quarterly">Quarterly</option>
-        </select>
-      </div>
-      <button type="submit" class="btn btn-primary" style="width:100%;background:var(--green);" id="activityGenBtn">
-        🔥 Generate Activity Reports
-      </button>
-      <div class="text-muted fs-sm" style="margin-top:10px;">
-        Auto-detects brand partners from your file and generates Excel + PDF reports for each.
-      </div>
-    </form>
-
-    <div id="activityGenStatus" style="display:none;margin-top:16px;"></div>
-  </div>
-
-  <!-- Upload Card -->
-  <div class="card" style="border-top:4px solid var(--red);">
-    <h3 style="color:var(--navy);margin-bottom:4px;">Generate New Reports</h3>
-    <p class="text-muted fs-sm" style="margin-bottom:20px;">Upload a Tally Excel export to save the report immediately. PDFs and interactive reports render on demand when opened.</p>
-
-    <form id="uploadForm" enctype="multipart/form-data">
-      <div class="form-group">
-        <label class="form-label">Tally Excel File (.xls / .xlsx)</label>
-        <input type="file" name="tally_file" class="form-control" accept=".xls,.xlsx" required>
-      </div>
-      <div id="filePreviewNote" class="flash flash-success" style="display:none;margin-bottom:12px;"></div>
-      <div class="grid-2" style="gap:12px;">
-        <div class="form-group">
-          <label class="form-label">Start Date</label>
-          <input type="date" name="start_date" id="homeStartDate" class="form-control" value="2026-02-01" required>
-        </div>
-        <div class="form-group">
-          <label class="form-label">End Date</label>
-          <input type="date" name="end_date" id="homeEndDate" class="form-control" value="2026-02-28" required>
-        </div>
-      </div>
-      <div id="dateError" class="flash flash-error" style="display:none;margin-bottom:12px;"></div>
-      <button type="submit" class="btn btn-primary" style="width:100%;" id="genBtn">
-        ⚡ Generate All Reports
-      </button>
-      <div class="text-muted fs-sm" style="margin-top:10px;">
-        Fast import is used here. Report data is saved immediately; PDFs and interactive report files render on demand when opened.
-      </div>
-    </form>
-
-    <div id="genStatus" style="display:none;margin-top:16px;"></div>
-  </div>
-
-  <!-- Quick Stats -->
+<div class="grid-2" style="margin-bottom:24px;align-items:start;gap:20px;">
   <div style="display:flex;flex-direction:column;gap:16px;">
+    <div class="card" style="border-top:4px solid var(--green);">
+      <h3 style="color:var(--navy);margin-bottom:4px;">📊 Upload Activity Report</h3>
+      <p class="text-muted fs-sm" style="margin-bottom:20px;">Upload field activity data to generate Excel and PDF reports for all brand partners instantly.</p>
+
+      <form id="activityUploadForm" enctype="multipart/form-data">
+        <div class="form-group">
+          <label class="form-label">Activity File (.xls / .xlsx / .csv)</label>
+          <input type="file" name="activity_file" class="form-control" accept=".xls,.xlsx,.csv,.txt,.zip" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Source Type</label>
+          <select name="source_mode" class="form-control" id="activitySourceSelect">
+            <option value="auto" selected>Auto-detect</option>
+            <option value="raw_export">Raw activity export</option>
+            <option value="cleaned_zip">Cleaned weekly zip</option>
+          </select>
+        </div>
+        <div id="activityPreviewNote" class="flash flash-success" style="display:none;margin-bottom:12px;"></div>
+        <div class="form-group">
+          <label class="form-label">Period</label>
+          <select name="period_type" class="form-control" id="activityPeriodSelect">
+            <option value="auto">Auto-detect from file</option>
+            <option value="weekly" selected>Weekly</option>
+            <option value="biweekly">Bi-weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="halfyear">Half-year</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;background:var(--green);" id="activityGenBtn">
+          🔥 Generate Activity Reports
+        </button>
+        <div class="text-muted fs-sm" style="margin-top:10px;">
+          Auto-detects brand partners from your file and generates Excel + PDF reports for each.
+        </div>
+      </form>
+
+      <div id="activityGenStatus" style="display:none;margin-top:16px;"></div>
+    </div>
+
+    <div class="card-sm" style="border-top:3px solid var(--green);">
+      <div style="font-weight:600;color:var(--navy);margin-bottom:10px;">📋 Activity Report History</div>
+      <div id="activityHistoryList">
+        <p class="text-muted fs-sm">Loading activity history...</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:16px;">
+    <div class="card" style="border-top:4px solid var(--red);">
+      <h3 style="color:var(--navy);margin-bottom:4px;">Generate New Reports</h3>
+      <p class="text-muted fs-sm" style="margin-bottom:20px;">Upload a Tally Excel export to save the report immediately. PDFs and interactive reports render on demand when opened.</p>
+
+      <form id="uploadForm" enctype="multipart/form-data">
+        <input type="hidden" id="homeReportType" value="{{ latest.report_type if latest and latest.report_type else 'monthly' }}">
+        <div class="form-group">
+          <label class="form-label">Tally Excel File (.xls / .xlsx)</label>
+          <input type="file" name="tally_file" class="form-control" accept=".xls,.xlsx" required>
+        </div>
+        <div id="filePreviewNote" class="flash flash-success" style="display:none;margin-bottom:12px;"></div>
+        <div class="form-group">
+          <label class="form-label">Report Period</label>
+          <select id="reportPeriodSelect" class="form-control" onchange="setHomeReportPeriod(this.value)">
+            <option value="auto">Auto-detect from file</option>
+            <option value="weekly" {% if latest and latest.report_type == 'weekly' %}selected{% endif %}>Weekly</option>
+            <option value="biweekly" {% if latest and latest.report_type == 'biweekly' %}selected{% endif %}>Bi-weekly</option>
+            <option value="monthly" {% if not latest or latest.report_type == 'monthly' %}selected{% endif %}>Monthly</option>
+            <option value="quarterly" {% if latest and latest.report_type == 'quarterly' %}selected{% endif %}>Quarterly</option>
+            <option value="halfyear" {% if latest and latest.report_type == 'halfyear' %}selected{% endif %}>Half-year</option>
+            <option value="yearly" {% if latest and latest.report_type == 'yearly' %}selected{% endif %}>Yearly</option>
+            <option value="custom">Custom Range</option>
+          </select>
+          <div class="text-muted fs-sm" style="margin-top:6px;">Choose a period to auto-fill dates, or leave it on auto-detect if you want the file to define the range.</div>
+        </div>
+        <div class="grid-2" style="gap:12px;">
+          <div class="form-group">
+            <label class="form-label">Start Date</label>
+            <input type="date" name="start_date" id="homeStartDate" class="form-control" value="{{ latest.start_date if latest else '' }}" onchange="onHomeDateChange()">
+          </div>
+          <div class="form-group">
+            <label class="form-label">End Date</label>
+            <input type="date" name="end_date" id="homeEndDate" class="form-control" value="{{ latest.end_date if latest else '' }}" onchange="onHomeDateChange()">
+          </div>
+        </div>
+        <div id="dateError" class="flash flash-error" style="display:none;margin-bottom:12px;"></div>
+        <button type="submit" class="btn btn-primary" style="width:100%;" id="genBtn">
+          ⚡ Generate All Reports
+        </button>
+        <div class="text-muted fs-sm" style="margin-top:10px;">
+          Fast import is used here. Report data is saved immediately; PDFs and interactive report files render on demand when opened.
+        </div>
+      </form>
+
+      <div id="genStatus" style="display:none;margin-top:16px;"></div>
+    </div>
+
+    <div class="card-sm">
+      <div style="font-weight:600;color:var(--navy);margin-bottom:10px;">📊 Sales Report History</div>
+      {% for r in reports[:5] %}
+      {% set rt = r.get('report_type', 'monthly') if r is mapping else 'monthly' %}
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--gray);">
+        <div>
+          <span style="font-weight:600;">{{ r.month_label }}</span>
+          <span class="badge badge-{% if rt=='weekly' %}blue{% elif rt=='quarterly' %}amber{% else %}muted{% endif %}" style="font-size:9px;padding:1px 6px;margin-left:4px;">{{ rt | capitalize }}</span>
+          <span class="text-muted fs-sm"> · {{ r.brand_count }} brands</span>
+        </div>
+        <a href="/dashboard?report_id={{ r.id }}" class="btn btn-outline btn-sm">View</a>
+      </div>
+      {% else %}
+      <p class="text-muted fs-sm">No sales reports generated yet. Upload a Tally file to get started.</p>
+      {% endfor %}
+    </div>
+
     {% if latest %}
     <div class="card-sm" style="border-top:4px solid var(--navy);">
       <div class="text-muted fs-sm" style="margin-bottom:4px;">Latest Report</div>
@@ -123,32 +162,6 @@
       </div>
     </div>
     {% endif %}
-
-    <!-- Sales Report History -->
-    <div class="card-sm">
-      <div style="font-weight:600;color:var(--navy);margin-bottom:10px;">📊 Sales Report History</div>
-      {% for r in reports[:5] %}
-      {% set rt = r.get('report_type', 'monthly') if r is mapping else 'monthly' %}
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--gray);">
-        <div>
-          <span style="font-weight:600;">{{ r.month_label }}</span>
-          <span class="badge badge-{% if rt=='weekly' %}blue{% elif rt=='quarterly' %}amber{% else %}muted{% endif %}" style="font-size:9px;padding:1px 6px;margin-left:4px;">{{ rt | capitalize }}</span>
-          <span class="text-muted fs-sm"> · {{ r.brand_count }} brands</span>
-        </div>
-        <a href="/dashboard?report_id={{ r.id }}" class="btn btn-outline btn-sm">View</a>
-      </div>
-      {% else %}
-      <p class="text-muted fs-sm">No sales reports generated yet. Upload a Tally file to get started.</p>
-      {% endfor %}
-    </div>
-
-    <!-- Activity Report History -->
-    <div class="card-sm" style="border-top:3px solid var(--green);">
-      <div style="font-weight:600;color:var(--navy);margin-bottom:10px;">📋 Activity Report History</div>
-      <div id="activityHistoryList">
-        <p class="text-muted fs-sm">Loading activity history...</p>
-      </div>
-    </div>
   </div>
 
 </div>
@@ -161,6 +174,72 @@ const startDateInput = document.getElementById('homeStartDate');
 const endDateInput = document.getElementById('homeEndDate');
 const dateError = document.getElementById('dateError');
 let activeJobId = null;
+
+function _fmtDate(d) {
+  return d.toISOString().split('T')[0];
+}
+
+function _periodToDates(period) {
+  const today = new Date();
+  const start = new Date(today);
+  const end = new Date(today);
+  switch ((period || '').toLowerCase()) {
+    case 'weekly':
+      start.setDate(today.getDate() - 6);
+      break;
+    case 'biweekly':
+      start.setDate(today.getDate() - 13);
+      break;
+    case 'monthly':
+      start.setMonth(today.getMonth(), 1);
+      break;
+    case 'quarterly':
+      start.setDate(today.getDate() - 89);
+      break;
+    case 'halfyear':
+      start.setDate(today.getDate() - 182);
+      break;
+    case 'yearly':
+      start.setDate(today.getDate() - 364);
+      break;
+    default:
+      return null;
+  }
+  return { start: _fmtDate(start), end: _fmtDate(end) };
+}
+
+function setHomeReportPeriod(period) {
+  const normalized = (period || 'custom').toLowerCase();
+  const ranges = _periodToDates(normalized);
+  const reportTypeField = document.getElementById('homeReportType');
+  if (reportTypeField) reportTypeField.value = normalized;
+
+  if (ranges) {
+    startDateInput.value = ranges.start;
+    endDateInput.value = ranges.end;
+    startDateInput.disabled = false;
+    endDateInput.disabled = false;
+  } else if (normalized === 'auto') {
+    startDateInput.value = '';
+    endDateInput.value = '';
+    startDateInput.disabled = true;
+    endDateInput.disabled = true;
+  } else {
+    startDateInput.disabled = false;
+    endDateInput.disabled = false;
+  }
+
+  validateDates();
+}
+
+function onHomeDateChange() {
+  const select = document.getElementById('reportPeriodSelect');
+  const current = select ? select.value : 'custom';
+  if (current === 'auto') return;
+  const reportTypeField = document.getElementById('homeReportType');
+  if (reportTypeField) reportTypeField.value = 'custom';
+  if (select) select.value = 'custom';
+}
 
 async function parseJsonResponse(res) {
   const contentType = (res.headers.get('content-type') || '').toLowerCase();
@@ -277,10 +356,22 @@ async function pollImportJob(jobId, btn, status) {
 }
 
 function validateDates() {
+  const period = (document.getElementById('reportPeriodSelect')?.value || 'custom').toLowerCase();
+  if (period === 'auto') {
+    dateError.style.display = 'none';
+    return true;
+  }
+
   const start = new Date(startDateInput.value);
   const end = new Date(endDateInput.value);
   const today = new Date();
   today.setHours(23, 59, 59, 999); // End of today
+
+  if (!startDateInput.value || !endDateInput.value) {
+    dateError.textContent = '❌ Please choose a period or switch to auto-detect from file.';
+    dateError.style.display = 'block';
+    return false;
+  }
   
   // Check if end date is before start date
   if (end < start) {
@@ -308,6 +399,10 @@ function validateDates() {
 
 startDateInput.addEventListener('change', validateDates);
 endDateInput.addEventListener('change', validateDates);
+startDateInput.addEventListener('input', onHomeDateChange);
+endDateInput.addEventListener('input', onHomeDateChange);
+
+setHomeReportPeriod(document.getElementById('reportPeriodSelect')?.value || 'monthly');
 
 document.getElementById('uploadForm').addEventListener('submit', async function(e) {
   e.preventDefault();
@@ -325,12 +420,21 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
   status.innerHTML = '<div class="flash flash-success">Uploading file and queueing import...</div>';
 
   const fd = new FormData(this);
+  const reportType = (document.getElementById('reportPeriodSelect')?.value || 'custom').toLowerCase();
+  fd.append('report_type', reportType);
   fd.append('import_mode', 'fast');
   fd.append('generate_artifacts', '0');
   fd.append('generate_narratives', '0');
   fd.append('sync_sheets', '0');
   fd.append('refresh_copilot', '0');
   fd.append('launch_coach', '0');
+  if (reportType === 'auto') {
+    fd.delete('start_date');
+    fd.delete('end_date');
+  } else {
+    fd.set('start_date', startDateInput.value);
+    fd.set('end_date', endDateInput.value);
+  }
   try {
     const res = await fetch('/api/generate_async', {method:'POST', body:fd});
     const data = await parseJsonResponse(res);
