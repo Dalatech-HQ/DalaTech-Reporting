@@ -97,6 +97,8 @@ PDF_DIR     = os.path.join(OUTPUT_DIR, 'pdf')
 HTML_DIR    = os.path.join(OUTPUT_DIR, 'html')
 os.makedirs(PDF_DIR,  exist_ok=True)
 os.makedirs(HTML_DIR, exist_ok=True)
+ACTIVITY_OUTPUT_DIR = os.path.join(BASE_DIR, 'New Data to Feed', 'Output')
+os.makedirs(ACTIVITY_OUTPUT_DIR, exist_ok=True)
 
 ds = DataStore()
 REPORT_SOURCE_DIR = os.path.join(os.path.dirname(ds.db_path), 'report_sources')
@@ -3278,6 +3280,8 @@ def download_file(filename):
     """Download any file from output directory."""
     path = os.path.join(OUTPUT_DIR, filename)
     if not os.path.isfile(path):
+        path = os.path.join(ACTIVITY_OUTPUT_DIR, filename)
+    if not os.path.isfile(path):
         abort(404)
     return send_file(path, as_attachment=True, download_name=filename)
 
@@ -3824,11 +3828,12 @@ def _build_activity_report_assets(brand_name, report_id):
     )
     period_label = activity_data['identity']['period_label']
     filename = _activity_report_file_stem(brand_name, period_label)
-    pdf_path = os.path.join(PDF_DIR, f"{filename}.pdf")
-    html_path = os.path.join(HTML_DIR, f"{filename}.html")
-    excel_path = os.path.join(OUTPUT_DIR, f"{filename}.xlsx")
+    pdf_path = os.path.join(ACTIVITY_OUTPUT_DIR, f"{filename}.pdf")
+    html_path = os.path.join(ACTIVITY_OUTPUT_DIR, f"{filename}.html")
+    excel_path = os.path.join(ACTIVITY_OUTPUT_DIR, f"{filename}.xlsx")
     generated_path = generate_activity_report_html(
         output_path=pdf_path,
+        html_output_path=html_path,
         brand_name=brand_name,
         activity_data=activity_data,
         period_label=period_label,
@@ -3977,6 +3982,7 @@ def api_activity_report_bulk():
                 'html_url': None,
                 '_excel_file': os.path.basename(assets['excel_path']),
                 '_pdf_file': os.path.basename(assets['pdf_path']),
+                '_html_file': os.path.basename(assets['html_path']),
             }
             if 'excel' in formats:
                 report_result['excel_url'] = f"/api/activity/report_excel/{assets['report_id']}/{brand_name}"
@@ -4002,7 +4008,7 @@ def api_activity_report_bulk():
             
             zip_period = ds.get_report(report_id).get('month_label') if report_id and ds.get_report(report_id) else 'Current_Period'
             zip_filename = f"Activity_Reports_{zip_period.replace(' ', '_').replace(',', '')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
-            zip_path = os.path.join(OUTPUT_DIR, zip_filename)
+            zip_path = os.path.join(ACTIVITY_OUTPUT_DIR, zip_filename)
             
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for result in results:
@@ -4011,15 +4017,20 @@ def api_activity_report_bulk():
                     # Add Excel files
                     if result.get('excel_url'):
                         excel_filename = result.get('_excel_file')
-                        excel_path = os.path.join(OUTPUT_DIR, excel_filename)
+                        excel_path = os.path.join(ACTIVITY_OUTPUT_DIR, excel_filename)
                         if os.path.exists(excel_path):
                             zipf.write(excel_path, f"Excel/{excel_filename}")
                     # Add PDF files
                     if result.get('pdf_url'):
                         pdf_filename = result.get('_pdf_file')
-                        pdf_path = os.path.join(PDF_DIR, pdf_filename)
+                        pdf_path = os.path.join(ACTIVITY_OUTPUT_DIR, pdf_filename)
                         if os.path.exists(pdf_path):
                             zipf.write(pdf_path, f"PDF/{pdf_filename}")
+                    if result.get('html_url'):
+                        html_filename = result.get('_html_file')
+                        html_path = os.path.join(ACTIVITY_OUTPUT_DIR, html_filename)
+                        if os.path.exists(html_path):
+                            zipf.write(html_path, f"HTML/{html_filename}")
             
             zip_url = f"/download/{zip_filename}"
         except Exception as zip_err:
@@ -4697,6 +4708,7 @@ def api_activity_import():
 
     filename = uploaded.filename or 'activity_upload'
     explicit_report_id = request.form.get('report_id', type=int)
+    source_mode = (request.form.get('source_mode') or request.form.get('source_type') or 'auto').strip().lower()
     job_id = uuid.uuid4().hex
     ds.create_job(job_id)
     ds.update_job(job_id, progress=3, current_brand='Preparing activity import')
@@ -4705,7 +4717,7 @@ def api_activity_import():
         report_id = explicit_report_id
         try:
             ds.update_job(job_id, progress=8, current_brand='Reading activity file')
-            df, meta = load_activity_dataframe(file_bytes)
+            df, meta = load_activity_dataframe(file_bytes, expected_source=source_mode)
 
             ds.update_job(
                 job_id,
@@ -4814,7 +4826,8 @@ def api_activity_detect_brands():
         from modules.activity_intelligence import load_activity_dataframe
         
         file_bytes = uploaded.read()
-        df, meta = load_activity_dataframe(file_bytes)
+        source_mode = (request.form.get('source_mode') or request.form.get('source_type') or 'auto').strip().lower()
+        df, meta = load_activity_dataframe(file_bytes, expected_source=source_mode)
         
         if df.empty:
             return jsonify({'success': False, 'error': 'Could not read file or file is empty'}), 400
@@ -4837,7 +4850,9 @@ def api_activity_detect_brands():
             'brands': brands,
             'count': len(brands),
             'filename': uploaded.filename,
-            'row_count': len(df)
+            'row_count': len(df),
+            'source_type': meta.get('source_type'),
+            'source_selection': meta.get('source_selection', source_mode),
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

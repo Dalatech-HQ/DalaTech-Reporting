@@ -846,9 +846,11 @@ def _render_activity_report_html(activity_data: dict, *, include_full_details: b
     return template.render(**context)
 
 
-def generate_activity_report_html(output_path: str, brand_name: str, activity_data: dict, period_label: str = None, report_id: int = None) -> str:
+def generate_activity_report_html(output_path: str, brand_name: str, activity_data: dict, period_label: str = None,
+                                  report_id: int = None, html_output_path: str = None) -> str:
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    html_output_path = output_path.replace(f"{os.sep}pdf{os.sep}", f"{os.sep}html{os.sep}").replace('.pdf', '.html')
+    if not html_output_path:
+        html_output_path = output_path.replace(f"{os.sep}pdf{os.sep}", f"{os.sep}html{os.sep}").replace('.pdf', '.html')
     os.makedirs(os.path.dirname(html_output_path), exist_ok=True)
     html_content = _render_activity_report_html(activity_data, include_full_details=True, for_pdf=False)
     with open(html_output_path, 'w', encoding='utf-8') as handle:

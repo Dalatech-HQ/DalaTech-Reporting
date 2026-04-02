@@ -279,9 +279,17 @@ def _to_iso_date(value) -> str | None:
     return dt.strftime('%Y-%m-%d')
 
 
-def load_activity_dataframe(file_source) -> tuple[pd.DataFrame, dict]:
+def load_activity_dataframe(file_source, expected_source: str | None = None) -> tuple[pd.DataFrame, dict]:
     raw, filename = _coerce_bytes(file_source)
-    if _looks_like_zip(raw) or str(filename).lower().endswith('.zip'):
+    source_choice = str(expected_source or 'auto').strip().lower()
+    is_zip = _looks_like_zip(raw) or str(filename).lower().endswith('.zip')
+
+    if source_choice == 'cleaned_zip' and not is_zip:
+        raise ValueError('Expected a cleaned weekly zip file, but the uploaded file is not a zip archive.')
+    if source_choice == 'raw_export' and is_zip:
+        raise ValueError('Expected a raw activity export file, but the uploaded file is a zip archive.')
+
+    if is_zip:
         df, meta = _read_activity_zip(raw)
     else:
         df, source_type = _read_activity_file(raw, filename)
@@ -296,6 +304,7 @@ def load_activity_dataframe(file_source) -> tuple[pd.DataFrame, dict]:
             'source_type': source_type,
             'row_count': len(df),
         }
+    meta['source_selection'] = source_choice
     meta['filename'] = filename
     return df, meta
 

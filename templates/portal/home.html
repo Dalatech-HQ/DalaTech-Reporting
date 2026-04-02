@@ -19,7 +19,15 @@
     <form id="activityUploadForm" enctype="multipart/form-data">
       <div class="form-group">
         <label class="form-label">Activity File (.xls / .xlsx / .csv)</label>
-        <input type="file" name="activity_file" class="form-control" accept=".xls,.xlsx,.csv,.txt" required>
+        <input type="file" name="activity_file" class="form-control" accept=".xls,.xlsx,.csv,.txt,.zip" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Source Type</label>
+        <select name="source_mode" class="form-control" id="activitySourceSelect">
+          <option value="auto" selected>Auto-detect</option>
+          <option value="raw_export">Raw activity export</option>
+          <option value="cleaned_zip">Cleaned weekly zip</option>
+        </select>
       </div>
       <div id="activityPreviewNote" class="flash flash-success" style="display:none;margin-bottom:12px;"></div>
       <div class="form-group">
@@ -510,6 +518,7 @@ async function previewActivityFile(file) {
   
   const fd = new FormData();
   fd.append('file', file);
+  fd.append('source_mode', document.getElementById('activitySourceSelect').value || 'auto');
   
   try {
     const res = await fetch('/api/activity/detect-brands', { method: 'POST', body: fd });
@@ -531,9 +540,15 @@ async function previewActivityFile(file) {
     }
     
     // Show preview with detected brands
+    const detectedSource = data.source_type === 'zip_bundle'
+      ? 'Cleaned weekly zip'
+      : (data.source_type === 'excel' || data.source_type === 'text'
+          ? 'Raw activity export'
+          : (data.source_type || 'Auto-detected source'));
     preview.className = 'flash flash-success';
     preview.innerHTML = `
       ✅ Detected <strong>${brandCount} brand${brandCount !== 1 ? 's' : ''}</strong> in file
+      <br><span class="text-muted fs-sm">Source: ${detectedSource} · ${data.row_count || 0} rows</span>
       <br><span class="text-muted fs-sm">${detectedBrands.slice(0, 5).join(', ')}${brandCount > 5 ? '...' : ''}</span>
       <br><button type="button" class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="showBrandConfirm()">
         ✏️ Review/Edit Brands
@@ -601,6 +616,11 @@ function confirmBrands() {
 // File input change handler
 document.querySelector('input[name="activity_file"]').addEventListener('change', function() {
   const file = this.files && this.files[0];
+  if (file) previewActivityFile(file);
+});
+document.getElementById('activitySourceSelect').addEventListener('change', function() {
+  const input = document.querySelector('input[name="activity_file"]');
+  const file = input && input.files && input.files[0];
   if (file) previewActivityFile(file);
 });
 
