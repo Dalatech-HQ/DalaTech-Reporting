@@ -17,11 +17,51 @@ from cleaners.clean_journals import clean_journals
 from cleaners.io_utils import MASTER_COLUMNS, concat_frames, ensure_directory, write_styled_excel
 
 
+CANONICAL_MASTER_FILENAME = "MarchWeek3SalesReportDataset.xls"
+
+
 def _resolve_first_existing(candidates: list[Path]) -> Path | None:
     for candidate in candidates:
         if candidate.exists():
             return candidate
     return None
+
+
+def _load_master_source(master_path: Path) -> pd.DataFrame:
+    master = pd.read_excel(master_path, sheet_name="Itemwise Stock Details")
+    master = master.copy()
+    master["Date"] = pd.to_datetime(master["Date"], errors="coerce")
+    master["Brand Partners"] = master["Brand Partners"].astype(str).str.strip()
+    master["Particulars"] = master["Particulars"].astype(str).str.strip()
+    master["Retailers"] = master["Retailers"].astype(str).str.strip()
+    master["Vch Type"] = master["Vch Type"].astype(str).str.strip()
+    master["Vch No."] = master["Vch No."].astype(str).str.strip()
+    master["Quantity"] = pd.to_numeric(master["Quantity"], errors="coerce")
+    master["Sales_Value"] = pd.to_numeric(master["Sales_Value"], errors="coerce")
+    return master[MASTER_COLUMNS].copy()
+
+
+def _write_split_outputs(master: pd.DataFrame, output_dir: Path) -> dict[str, pd.DataFrame]:
+    frames = {
+        "Cleaned_Sales.xlsx": master[master["Vch Type"] == "Sales"].copy(),
+        "Cleaned_Inventory_Pickup.xlsx": master[master["Vch Type"] == "Inventory Pickup by Dala"].copy(),
+        "Cleaned_Inventory_Supplied.xlsx": master[master["Vch Type"] == "Inventory Supplied by Brands"].copy(),
+        "Cleaned_Journals.xlsx": master[master["Vch Type"] == "Journal"].copy(),
+        "Cleaned_Credit_Notes.xlsx": master[master["Vch Type"] == "Credit Note"].copy(),
+        "Cleaned_Available_Inventory.xlsx": master[master["Vch Type"] == "Available Inventory"].copy(),
+    }
+    sheet_names = {
+        "Cleaned_Sales.xlsx": "Itemwise Stock Details",
+        "Cleaned_Inventory_Pickup.xlsx": "Itemwise Stock Details",
+        "Cleaned_Inventory_Supplied.xlsx": "Itemwise Stock Details",
+        "Cleaned_Journals.xlsx": "Journal Register",
+        "Cleaned_Credit_Notes.xlsx": "Credit Note Register",
+        "Cleaned_Available_Inventory.xlsx": "Stock Category Summary",
+    }
+    for filename, frame in frames.items():
+        write_styled_excel(frame, output_dir / filename, sheet_name=sheet_names[filename])
+    write_styled_excel(master, output_dir / "Master_Dataset.xlsx", sheet_name="Master Dataset")
+    return frames
 
 
 def _default_inputs(base_dir: Path) -> dict[str, Path | None]:
@@ -54,6 +94,29 @@ def _default_inputs(base_dir: Path) -> dict[str, Path | None]:
 
 def run_all(base_dir: Path, output_dir: Path, strict: bool = False) -> dict[str, pd.DataFrame]:
     ensure_directory(output_dir)
+    canonical_master = base_dir / CANONICAL_MASTER_FILENAME
+    if canonical_master.exists():
+        master = _load_master_source(canonical_master)
+        outputs = _write_split_outputs(master, output_dir)
+        print("Using canonical master dataset:", canonical_master.name)
+        print("========================================")
+        print("  DALA CLEANING SYSTEM - RUN SUMMARY")
+        print("========================================")
+        print(f"Sales ................. {len(outputs['Cleaned_Sales.xlsx'])} rows")
+        print(f"Journals .............. {len(outputs['Cleaned_Journals.xlsx'])} rows")
+        print(f"Credit Notes .......... {len(outputs['Cleaned_Credit_Notes.xlsx'])} rows")
+        print(f"Available Inventory ... {len(outputs['Cleaned_Available_Inventory.xlsx'])} rows")
+        print(f"Inventory Pickup ...... {len(outputs['Cleaned_Inventory_Pickup.xlsx'])} rows")
+        print(f"Inventory Supplied .... {len(outputs['Cleaned_Inventory_Supplied.xlsx'])} rows")
+        print("                        ---------")
+        print(f"MASTER TOTAL .......... {len(master)} rows")
+        if "Sales_Value" in master.columns and not master.empty:
+            total_value = pd.to_numeric(master["Sales_Value"], errors="coerce").fillna(0).sum()
+            print(f"TOTAL SALES VALUE ..... NGN {total_value:,.2f}")
+        print("========================================")
+        print(f"Outputs saved to: {output_dir}")
+        return outputs
+
     inputs = _default_inputs(base_dir)
     missing = [name for name, path in inputs.items() if path is None]
     if missing and strict:

@@ -13,7 +13,7 @@
   <div style="display:flex;flex-direction:column;gap:16px;">
     <div class="card" style="border-top:4px solid var(--green);">
       <h3 style="color:var(--navy);margin-bottom:4px;">📊 Upload Activity Report</h3>
-      <p class="text-muted fs-sm" style="margin-bottom:20px;">Upload field activity data to generate Excel and PDF reports for all brand partners instantly.</p>
+      <p class="text-muted fs-sm" style="margin-bottom:20px;">Upload activity data to create clean, brand-level Excel and PDF outputs in one place.</p>
 
       <form id="activityUploadForm" enctype="multipart/form-data">
         <div class="form-group">
@@ -45,7 +45,7 @@
           🔥 Generate Activity Reports
         </button>
         <div class="text-muted fs-sm" style="margin-top:10px;">
-          Auto-detects brand partners from your file and generates Excel + PDF reports for each.
+          Brand partners are detected automatically, and each output stays organized by partner.
         </div>
       </form>
 
@@ -63,7 +63,7 @@
   <div style="display:flex;flex-direction:column;gap:16px;">
     <div class="card" style="border-top:4px solid var(--red);">
       <h3 style="color:var(--navy);margin-bottom:4px;">Generate New Reports</h3>
-      <p class="text-muted fs-sm" style="margin-bottom:20px;">Upload a Tally Excel export to save the report immediately. PDFs and interactive reports render on demand when opened.</p>
+      <p class="text-muted fs-sm" style="margin-bottom:20px;">Upload a Tally workbook to build the report set and keep the outputs neatly stored for later access.</p>
 
       <form id="uploadForm" enctype="multipart/form-data">
         <input type="hidden" id="homeReportType" value="{{ latest.report_type if latest and latest.report_type else 'monthly' }}">
@@ -84,7 +84,7 @@
             <option value="yearly" {% if latest and latest.report_type == 'yearly' %}selected{% endif %}>Yearly</option>
             <option value="custom">Custom Range</option>
           </select>
-          <div class="text-muted fs-sm" style="margin-top:6px;">Choose a period to auto-fill dates, or leave it on auto-detect if you want the file to define the range.</div>
+          <div class="text-muted fs-sm" style="margin-top:6px;">Choose a reporting period to shape the date range, or leave it on auto-detect for file-driven timing.</div>
         </div>
         <div class="grid-2" style="gap:12px;">
           <div class="form-group">
@@ -101,7 +101,7 @@
           ⚡ Generate All Reports
         </button>
         <div class="text-muted fs-sm" style="margin-top:10px;">
-          Fast import is used here. Report data is saved immediately; PDFs and interactive report files render on demand when opened.
+          PDFs, spreadsheets, and interactive views stay available from the report history.
         </div>
       </form>
 
@@ -295,10 +295,10 @@ function renderImportComplete(status) {
   const dashboardUrl = status.dashboard_url || (status.report_id ? `/dashboard?report_id=${status.report_id}` : '/dashboard');
   const portfolioUrl = status.portfolio_dashboard || dashboardUrl;
   const deferredNote = status.artifacts_deferred
-    ? '<br><span class="text-muted fs-sm">Downloads are generated on demand now, which keeps imports fast for weekly and monthly uploads.</span>'
+    ? '<br><span class="text-muted fs-sm">Report files stay available from history for later review.</span>'
     : '';
   const refreshNote = status.background_refresh_queued
-    ? '<br><span class="text-muted fs-sm">Alerts, reorder trends, and coach refresh are continuing in the background.</span>'
+    ? '<br><span class="text-muted fs-sm">Related insights continue updating in the background.</span>'
     : '';
   const workbookBrands = Number(status.workbook_brand_count || 0);
   const activeBrands = Number(status.active_brand_count || status.brands || 0);
