@@ -70,7 +70,18 @@
     border: 1px solid rgba(30,132,73,.2); border-radius: 8px;
     padding: 10px 18px; font-weight: 600; font-size: 14px; margin-top: 16px;
   }
-  #fileInput { display: none; }
+  #fileInputPrimary, #fileInputSecondary { display: none; }
+  .file-stack { display: grid; gap: 14px; }
+  .batch-status {
+    margin-top: 14px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: rgba(27,43,94,.06);
+    border: 1px solid rgba(27,43,94,.12);
+    color: var(--navy);
+    font-size: 12px;
+    font-weight: 600;
+  }
 
   /* ── ANALYSIS LOADER ─────────────────────────────────────────────────── */
   .analysis-steps {
@@ -204,7 +215,7 @@
 
 <!-- WIZARD STEPS BAR -->
 <div class="wizard-steps" id="wizardSteps">
-  <div class="wstep active" id="ws1"><div class="step-num">1</div><div class="step-label">Upload File</div></div>
+  <div class="wstep active" id="ws1"><div class="step-num">1</div><div class="step-label">Upload Files</div></div>
   <div class="wstep" id="ws2"><div class="step-num">2</div><div class="step-label">Analyzing…</div></div>
   <div class="wstep" id="ws3"><div class="step-num">3</div><div class="step-label">Review Data</div></div>
   <div class="wstep" id="ws4"><div class="step-num">4</div><div class="step-label">Configure</div></div>
@@ -214,26 +225,40 @@
 
 <!-- ── PANEL 1: UPLOAD ───────────────────────────────────────────────────── -->
 <div class="panel active card" id="panel1">
-  <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
-    <div class="drop-icon" id="dropIcon">📂</div>
-    <div class="drop-title">Drop your Tally Excel file here</div>
-    <div class="drop-sub">or click to browse &nbsp;·&nbsp; <strong>.xls</strong> or <strong>.xlsx</strong> supported</div>
-    <div id="fileBadge" style="display:none;" class="file-badge">
-      <span>📄</span><span id="fileNameDisplay"></span>
+  <div class="file-stack">
+    <div class="drop-zone" id="dropZonePrimary" onclick="document.getElementById('fileInputPrimary').click()">
+      <div class="drop-icon" id="dropIconPrimary">📂</div>
+      <div class="drop-title">File 1: primary sales report</div>
+      <div class="drop-sub">Drop the main sales workbook here, or click to browse &nbsp;·&nbsp; <strong>.xls</strong>, <strong>.xlsx</strong>, <strong>.csv</strong> supported</div>
+      <div id="fileBadgePrimary" style="display:none;" class="file-badge">
+        <span>📄</span><span id="fileNameDisplayPrimary"></span>
+      </div>
     </div>
+    <input type="file" id="fileInputPrimary" accept=".xls,.xlsx,.csv,.txt,.tsv" onchange="onFileSelect('primary', this)">
+
+    <div class="drop-zone" id="dropZoneSecondary" onclick="document.getElementById('fileInputSecondary').click()">
+      <div class="drop-icon" id="dropIconSecondary">📂</div>
+      <div class="drop-title">File 2: companion sales file</div>
+      <div class="drop-sub">Drop the second file here; we clean it separately, then combine both clean files for generation</div>
+      <div id="fileBadgeSecondary" style="display:none;" class="file-badge">
+        <span>📄</span><span id="fileNameDisplaySecondary"></span>
+      </div>
+    </div>
+    <input type="file" id="fileInputSecondary" accept=".xls,.xlsx,.csv,.txt,.tsv" onchange="onFileSelect('secondary', this)">
   </div>
-  <input type="file" id="fileInput" accept=".xls,.xlsx" onchange="onFileSelect(this)">
+  <div id="batchStatus" class="batch-status">0 of 2 files ready. Upload both files to unlock generation.</div>
 
   <!-- Quick period presets -->
   <div style="margin-top:20px;margin-bottom:12px;">
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:8px;">Quick Select Period</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;" id="presetBtns">
-      <button type="button" class="preset-btn" onclick="setPreset('this_week')">This Week</button>
-      <button type="button" class="preset-btn" onclick="setPreset('last_week')">Last Week</button>
-      <button type="button" class="preset-btn" onclick="setPreset('this_month')">This Month</button>
-      <button type="button" class="preset-btn" onclick="setPreset('last_month')">Last Month</button>
-      <button type="button" class="preset-btn" onclick="setPreset('last_3_months')">Last 3 Months</button>
-      <button type="button" class="preset-btn active" onclick="setPreset('custom')">Custom Range</button>
+      <button type="button" class="preset-btn" data-period="weekly" onclick="setPreset('weekly', event)">Weekly</button>
+      <button type="button" class="preset-btn" data-period="biweekly" onclick="setPreset('biweekly', event)">Bi-weekly</button>
+      <button type="button" class="preset-btn" data-period="monthly" onclick="setPreset('monthly', event)">Monthly</button>
+      <button type="button" class="preset-btn" data-period="quarterly" onclick="setPreset('quarterly', event)">Quarterly</button>
+      <button type="button" class="preset-btn" data-period="halfyear" onclick="setPreset('halfyear', event)">Half-year</button>
+      <button type="button" class="preset-btn" data-period="yearly" onclick="setPreset('yearly', event)">Yearly</button>
+      <button type="button" class="preset-btn active" data-period="custom" onclick="setPreset('custom', event)">Custom Range</button>
     </div>
     <div id="periodTypeBadge" style="margin-top:8px;display:none;">
       <span id="periodLabel" style="font-size:12px;font-weight:700;padding:3px 10px;border-radius:10px;background:rgba(27,43,94,.08);color:var(--navy);"></span>
@@ -249,10 +274,10 @@
       <label class="form-label">End Date</label>
       <input type="date" id="endDate" class="form-control" value="{{ latest.end_date if latest else '2026-02-28' }}" onchange="onDateChange()">
     </div>
-    <input type="hidden" id="reportType" value="monthly">
+    <input type="hidden" id="reportType" value="{{ latest.report_type if latest else 'monthly' }}">
     <div style="flex:1;"></div>
     <button class="btn btn-primary" id="analyzeBtn" onclick="startAnalysis()" disabled>
-      🔍 Analyze File
+      🔍 Analyze Primary File
     </button>
   </div>
   {% if known_brands %}
@@ -372,6 +397,20 @@
   <h3 style="color:var(--navy);margin-bottom:4px;">Configure Report Generation</h3>
   <p class="text-muted fs-sm" style="margin-bottom:20px;">Select which brands to generate reports for, and confirm the date range.</p>
 
+  <div class="form-group" style="margin-bottom:16px;max-width:320px;">
+    <label class="form-label">Report Period</label>
+    <select id="reportPeriodSelect" class="form-control" onchange="setReportPeriod(this.value)">
+      <option value="weekly">Weekly</option>
+      <option value="biweekly">Bi-weekly</option>
+      <option value="monthly">Monthly</option>
+      <option value="quarterly">Quarterly</option>
+      <option value="halfyear">Half-year</option>
+      <option value="yearly">Yearly</option>
+      <option value="custom">Custom Range</option>
+    </select>
+    <div class="text-muted fs-sm" style="margin-top:6px;">Choosing a period updates the date range and keeps comparison aligned to the same period type.</div>
+  </div>
+
   <div class="grid-2" style="margin-bottom:20px;gap:12px;">
     <div class="form-group" style="margin:0;">
       <label class="form-label">Start Date</label>
@@ -394,7 +433,7 @@
 
   <div style="display:flex;justify-content:flex-end;gap:12px;margin-top:24px;">
     <button class="btn btn-outline" onclick="goToStep(3)">← Back</button>
-    <button class="btn btn-primary" id="startGenBtn" onclick="startGeneration()">
+    <button class="btn btn-primary" id="startGenBtn" onclick="startGeneration()" disabled>
       ⚡ Generate Reports
     </button>
   </div>
@@ -440,91 +479,161 @@
 
 {% block scripts %}
 <script>
+let selectedFiles = { primary: null, secondary: null };
 let selectedFile  = null;
 let previewData   = null;
 let currentJobId  = null;
 let allBrands     = [];
 
 // ── File selection ──────────────────────────────────────────────────────────
-const dropZone = document.getElementById('dropZone');
-dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('dragover'); });
-dropZone.addEventListener('dragleave', ()=> dropZone.classList.remove('dragover'));
-dropZone.addEventListener('drop',      e => {
-  e.preventDefault(); dropZone.classList.remove('dragover');
-  const f = e.dataTransfer.files[0];
-  if (f) setFile(f);
-});
+function bindDropZone(slot, zoneId) {
+  const zone = document.getElementById(zoneId);
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    const f = e.dataTransfer.files[0];
+    if (f) setFile(slot, f);
+  });
+}
 
-function onFileSelect(input) { if (input.files[0]) setFile(input.files[0]); }
+bindDropZone('primary', 'dropZonePrimary');
+bindDropZone('secondary', 'dropZoneSecondary');
 
-// ── Period preset selector ───────────────────────────────────────────────────
-function setPreset(preset) {
+function onFileSelect(slot, input) {
+  if (input.files[0]) setFile(slot, input.files[0]);
+}
+
+function updateBatchStatus() {
+  const primary = selectedFiles.primary;
+  const secondary = selectedFiles.secondary;
+  const received = [primary, secondary].filter(Boolean).length;
+  const batchStatus = document.getElementById('batchStatus');
+  if (batchStatus) {
+    batchStatus.textContent = `${received} of 2 files ready.${received === 2 ? ' Ready to generate.' : ' The report will wait for the second clean file.'}`;
+  }
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  if (analyzeBtn) analyzeBtn.disabled = !primary;
+  const startGenBtn = document.getElementById('startGenBtn');
+  if (startGenBtn) startGenBtn.disabled = received < 2;
+}
+
+// ── Period selector ──────────────────────────────────────────────────────────
+function _periodToDates(period) {
   const today = new Date();
   const fmt = d => d.toISOString().split('T')[0];
-  let start, end, type = preset;
+  const end = new Date(today);
+  const start = new Date(today);
 
-  if (preset === 'this_week') {
-    const day = today.getDay() || 7; // Mon=1 … Sun=7
-    start = new Date(today); start.setDate(today.getDate() - day + 1);
-    end   = new Date(start); end.setDate(start.getDate() + 6);
-    type  = 'weekly';
-  } else if (preset === 'last_week') {
-    const day = today.getDay() || 7;
-    end   = new Date(today); end.setDate(today.getDate() - day);
-    start = new Date(end);   start.setDate(end.getDate() - 6);
-    type  = 'weekly';
-  } else if (preset === 'this_month') {
-    start = new Date(today.getFullYear(), today.getMonth(), 1);
-    end   = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-    type  = 'monthly';
-  } else if (preset === 'last_month') {
-    start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    end   = new Date(today.getFullYear(), today.getMonth(), 0);
-    type  = 'monthly';
-  } else if (preset === 'last_3_months') {
-    start = new Date(today.getFullYear(), today.getMonth() - 3, 1);
-    end   = new Date(today.getFullYear(), today.getMonth(), 0);
-    type  = 'quarterly';
-  } else {
-    // custom — just highlight the button, don't change dates
-    type = 'custom';
+  switch (period) {
+    case 'weekly':
+      start.setDate(today.getDate() - 6);
+      break;
+    case 'biweekly':
+      start.setDate(today.getDate() - 13);
+      break;
+    case 'monthly':
+      start.setMonth(today.getMonth(), 1);
+      break;
+    case 'quarterly':
+      start.setDate(today.getDate() - 89);
+      break;
+    case 'halfyear':
+      start.setDate(today.getDate() - 182);
+      break;
+    case 'yearly':
+      start.setDate(today.getDate() - 364);
+      break;
+    default:
+      return null;
   }
 
-  if (preset !== 'custom') {
-    document.getElementById('startDate').value = fmt(start);
-    document.getElementById('endDate').value   = fmt(end);
-  }
-  document.getElementById('reportType').value = type;
+  return { start: fmt(start), end: fmt(end) };
+}
 
-  // Update button styles
+function _setPeriodUI(period) {
+  document.getElementById('reportType').value = period;
+  const select = document.getElementById('reportPeriodSelect');
+  if (select && select.value !== period) select.value = period;
   document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
-  event.currentTarget.classList.add('active');
-
-  // Show period label
+  const activeBtn = document.querySelector(`.preset-btn[data-period="${CSS.escape(period)}"]`);
+  if (activeBtn) activeBtn.classList.add('active');
   const labels = {
-    weekly: 'Weekly Report', monthly: 'Monthly Report',
-    quarterly: 'Quarterly Report', custom: 'Custom Range', biweekly: '2-Week Report'
+    weekly: 'Weekly Report',
+    biweekly: 'Bi-weekly Report',
+    monthly: 'Monthly Report',
+    quarterly: 'Quarterly Report',
+    halfyear: 'Half-year Report',
+    yearly: 'Yearly Report',
+    custom: 'Custom Range',
   };
   const badge = document.getElementById('periodTypeBadge');
-  badge.style.display = 'block';
-  document.getElementById('periodLabel').textContent = labels[type] || type;
+  if (badge) badge.style.display = 'block';
+  const label = document.getElementById('periodLabel');
+  if (label) label.textContent = labels[period] || period;
+}
+
+function setReportPeriod(period) {
+  const ranges = _periodToDates(period);
+  _setPeriodUI(period);
+  if (ranges) {
+    document.getElementById('startDate').value = ranges.start;
+    document.getElementById('endDate').value = ranges.end;
+  } else {
+    const customBtn = document.querySelector('.preset-btn[data-period="custom"]');
+    if (customBtn) customBtn.classList.add('active');
+  }
+}
+
+function setPreset(preset, evt) {
+  const button = evt && evt.currentTarget ? evt.currentTarget : null;
+  const aliasMap = {
+    this_week: 'weekly',
+    last_week: 'weekly',
+    this_month: 'monthly',
+    last_month: 'monthly',
+    last_3_months: 'quarterly',
+  };
+  const period = aliasMap[preset] || preset;
+  _setPeriodUI(period);
+
+  if (period === 'custom') {
+    if (button) button.classList.add('active');
+    return;
+  }
+
+  const ranges = _periodToDates(period);
+  if (ranges) {
+    document.getElementById('startDate').value = ranges.start;
+    document.getElementById('endDate').value = ranges.end;
+  }
+
+  if (button) button.classList.add('active');
 }
 
 function onDateChange() {
   // When user edits dates manually, switch to custom
   document.getElementById('reportType').value = 'custom';
+  const select = document.getElementById('reportPeriodSelect');
+  if (select) select.value = 'custom';
   document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
-  const customBtn = document.querySelector('.preset-btn:last-child');
+  const customBtn = document.querySelector('.preset-btn[data-period="custom"]');
   if (customBtn) customBtn.classList.add('active');
 }
 
-function setFile(f) {
-  selectedFile = f;
-  document.getElementById('dropIcon').textContent = '📄';
-  dropZone.classList.add('has-file');
-  document.getElementById('fileBadge').style.display = 'inline-flex';
-  document.getElementById('fileNameDisplay').textContent = f.name + ' (' + (f.size/1024).toFixed(0) + ' KB)';
-  document.getElementById('analyzeBtn').disabled = false;
+function setFile(slot, f) {
+  selectedFiles[slot] = f;
+  if (slot === 'primary') selectedFile = f;
+  const zone = document.getElementById(slot === 'primary' ? 'dropZonePrimary' : 'dropZoneSecondary');
+  const icon = document.getElementById(slot === 'primary' ? 'dropIconPrimary' : 'dropIconSecondary');
+  const badge = document.getElementById(slot === 'primary' ? 'fileBadgePrimary' : 'fileBadgeSecondary');
+  const name = document.getElementById(slot === 'primary' ? 'fileNameDisplayPrimary' : 'fileNameDisplaySecondary');
+  if (icon) icon.textContent = '📄';
+  if (zone) zone.classList.add('has-file');
+  if (badge) badge.style.display = 'inline-flex';
+  if (name) name.textContent = f.name + ' (' + (f.size/1024).toFixed(0) + ' KB)';
+  updateBatchStatus();
 }
 
 // ── Step navigation ─────────────────────────────────────────────────────────
@@ -542,12 +651,12 @@ function goToStep(n) {
 
 // ── Analysis ────────────────────────────────────────────────────────────────
 async function startAnalysis() {
-  if (!selectedFile) return;
+  if (!selectedFiles.primary) return;
   goToStep(2);
   animateAnalysisSteps();
 
   const fd = new FormData();
-  fd.append('tally_file', selectedFile);
+  fd.append('tally_file', selectedFiles.primary);
   fd.append('start_date', document.getElementById('startDate').value);
   fd.append('end_date',   document.getElementById('endDate').value);
 
@@ -735,6 +844,10 @@ function renderReview(d) {
 function renderConfigure(d) {
   document.getElementById('configStart').value = d.date_min;
   document.getElementById('configEnd').value   = d.date_max;
+  const reportType = (document.getElementById('reportType').value || 'monthly').toLowerCase();
+  const periodSelect = document.getElementById('reportPeriodSelect');
+  if (periodSelect) periodSelect.value = reportType;
+  _setPeriodUI(reportType);
 
   const container = document.getElementById('brandCheckboxes');
   container.innerHTML = d.brand_stats.map((b, i) => `
@@ -751,7 +864,7 @@ function updateSelectedCount() {
   const total    = document.querySelectorAll('.brand-cb').length;
   const selected = document.querySelectorAll('.brand-cb:checked').length;
   document.getElementById('selectedCount').textContent = `(${selected}/${total} selected)`;
-  document.getElementById('startGenBtn').disabled = selected === 0;
+  updateBatchStatus();
 }
 
 function toggleAll(checked) {
@@ -762,6 +875,12 @@ function toggleAll(checked) {
 // ── Generation ──────────────────────────────────────────────────────────────
 async function startGeneration() {
   goToStep(5);
+
+  if (!selectedFiles.primary || !selectedFiles.secondary) {
+    alert('Please upload both files before generating the report.');
+    goToStep(1);
+    return;
+  }
 
   const selectedBrands = [...document.querySelectorAll('.brand-cb:checked')].map(cb => cb.value);
   const startDate = document.getElementById('configStart').value;
@@ -778,12 +897,14 @@ async function startGeneration() {
 
   // Submit
   const fd = new FormData();
-  fd.append('tally_file',       selectedFile);
+  fd.append('tally_files',       selectedFiles.primary);
+  fd.append('tally_files',       selectedFiles.secondary);
   fd.append('start_date',       startDate);
   fd.append('end_date',         endDate);
   fd.append('selected_brands',  selectedBrands.join(','));
-  fd.append('report_type',      document.getElementById('reportType').value || 'custom');
+  fd.append('report_type',      document.getElementById('reportPeriodSelect')?.value || document.getElementById('reportType').value || 'custom');
   fd.append('import_mode',      'full');
+  fd.append('batch_mode',       'paired');
 
   let data;
   try {

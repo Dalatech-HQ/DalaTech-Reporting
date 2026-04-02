@@ -519,6 +519,26 @@ class DataStore:
                     updated_at  TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS sales_import_batches (
+                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    status              TEXT DEFAULT 'draft',
+                    required_files      INTEGER DEFAULT 2,
+                    received_files      INTEGER DEFAULT 0,
+                    report_id           INTEGER,
+                    start_date          TEXT,
+                    end_date            TEXT,
+                    report_type         TEXT,
+                    selected_brands_json TEXT DEFAULT '[]',
+                    files_json          TEXT DEFAULT '[]',
+                    output_filename     TEXT,
+                    output_dir          TEXT,
+                    error_msg           TEXT,
+                    generated_at        TEXT,
+                    created_at          TEXT NOT NULL,
+                    updated_at          TEXT NOT NULL,
+                    FOREIGN KEY (report_id) REFERENCES reports(id)
+                );
+
                 CREATE TABLE IF NOT EXISTS brand_forecast_history (
                     id                INTEGER PRIMARY KEY AUTOINCREMENT,
                     report_id         INTEGER NOT NULL,
@@ -812,6 +832,23 @@ class DataStore:
             job_cols = [r[1] for r in conn.execute("PRAGMA table_info(generation_jobs)").fetchall()]
             if 'result_json' not in job_cols:
                 conn.execute("ALTER TABLE generation_jobs ADD COLUMN result_json TEXT DEFAULT '{}'")
+            batch_cols = [r[1] for r in conn.execute("PRAGMA table_info(sales_import_batches)").fetchall()]
+            if 'required_files' not in batch_cols:
+                conn.execute("ALTER TABLE sales_import_batches ADD COLUMN required_files INTEGER DEFAULT 2")
+            if 'received_files' not in batch_cols:
+                conn.execute("ALTER TABLE sales_import_batches ADD COLUMN received_files INTEGER DEFAULT 0")
+            if 'selected_brands_json' not in batch_cols:
+                conn.execute("ALTER TABLE sales_import_batches ADD COLUMN selected_brands_json TEXT DEFAULT '[]'")
+            if 'files_json' not in batch_cols:
+                conn.execute("ALTER TABLE sales_import_batches ADD COLUMN files_json TEXT DEFAULT '[]'")
+            if 'output_filename' not in batch_cols:
+                conn.execute("ALTER TABLE sales_import_batches ADD COLUMN output_filename TEXT")
+            if 'output_dir' not in batch_cols:
+                conn.execute("ALTER TABLE sales_import_batches ADD COLUMN output_dir TEXT")
+            if 'generated_at' not in batch_cols:
+                conn.execute("ALTER TABLE sales_import_batches ADD COLUMN generated_at TEXT")
+            if 'error_msg' not in batch_cols:
+                conn.execute("ALTER TABLE sales_import_batches ADD COLUMN error_msg TEXT")
             memory_cols = [r[1] for r in conn.execute("PRAGMA table_info(agent_memories)").fetchall()]
             if 'memory_layer' not in memory_cols:
                 conn.execute("ALTER TABLE agent_memories ADD COLUMN memory_layer TEXT DEFAULT 'session'")
@@ -908,7 +945,7 @@ class DataStore:
     @staticmethod
     def _infer_report_type(start_date, end_date, override=None):
         """Auto-detect report period type from date range, or use explicit override."""
-        if override and override in ('weekly', 'biweekly', 'monthly', 'quarterly', 'yearly'):
+        if override and override in ('weekly', 'biweekly', 'monthly', 'quarterly', 'halfyear', 'yearly', 'custom'):
             return override
         from datetime import date as _date
         try:
@@ -918,6 +955,11 @@ class DataStore:
             from datetime import timedelta as _td
             is_full_month = s.day == 1 and (e + _td(days=1)).day == 1
             is_full_year = s.month == 1 and s.day == 1 and e.month == 12 and e.day == 31
+            is_half_year = (
+                s.day == 1 and
+                s.month in (1, 7) and
+                ((s.month == 1 and e.month == 6 and e.day == 30) or (s.month == 7 and e.month == 12 and e.day == 31))
+            )
             is_quarter = (
                 s.day == 1 and
                 s.month in (1, 4, 7, 10) and
@@ -926,6 +968,8 @@ class DataStore:
             )
             if is_full_year or days in (365, 366):
                 return 'yearly'
+            if is_half_year or 178 <= days <= 184:
+                return 'halfyear'
             if is_quarter or 85 <= days <= 95:
                 return 'quarterly'
             if is_full_month or 28 <= days <= 31:
@@ -954,6 +998,9 @@ class DataStore:
                 return f"Q{((s.month - 1) // 3) + 1} {s.year}"
             if report_type == 'monthly':
                 return s.strftime('%b %Y')
+            if report_type == 'halfyear':
+                half_label = 'H1' if s.month <= 6 else 'H2'
+                return f"{half_label} {s.year}"
             return f"{s.strftime('%d %b %Y')} – {e.strftime('%d %b %Y')}"
         except Exception:
             return start_date
@@ -4131,6 +4178,84 @@ class DataStore:
                 (report_id,)
             ).fetchall()
             return {r['brand_name']: r['narrative'] for r in rows}
+
+    # ── Sales import batch state ───────────────────────────────────────────────
+
+    def create_sales_import_batch(self, *, required_files=2, start_date=None, end_date=None,
+                                  report_type=None, selected_brands=None):
+        now = datetime.now().isoformat(timespec='seconds')
+        selected_brands_json = json.dumps(list(selected_brands or []))
+        with self._connect() as conn:
+            cur = conn.execute(
+                """INSERT INTO sales_import_batches
+                   (status, required_files, received_files, report_id, start_date, end_date,
+                    report_type, selected_brands_json, files_json, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    'draft',
+                    int(required_files or 2),
+                    0,
+                    None,
+                    start_date,
+                    end_date,
+                    report_type,
+                    selected_brands_json,
+                    '[]',
+                    now,
+                    now,
+                )
+            )
+            return cur.lastrowid
+
+    def get_sales_import_batch(self, batch_id):
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM sales_import_batches WHERE id=?",
+                (batch_id,)
+            ).fetchone()
+        if not row:
+            return None
+        batch = dict(row)
+        for key in ('selected_brands_json', 'files_json'):
+            try:
+                batch[key] = json.loads(batch.get(key) or '[]')
+            except Exception:
+                batch[key] = []
+        return batch
+
+    def update_sales_import_batch(self, batch_id, **kwargs):
+        if not kwargs:
+            return
+        now = datetime.now().isoformat(timespec='seconds')
+        for key in ('selected_brands_json', 'files_json'):
+            if key in kwargs and isinstance(kwargs[key], (list, dict)):
+                kwargs[key] = json.dumps(kwargs[key])
+        kwargs['updated_at'] = now
+        cols = ', '.join(f"{k}=?" for k in kwargs)
+        vals = list(kwargs.values()) + [batch_id]
+        with self._connect() as conn:
+            conn.execute(f"UPDATE sales_import_batches SET {cols} WHERE id=?", vals)
+
+    def upsert_sales_import_batch_file(self, batch_id, file_index, **file_meta):
+        batch = self.get_sales_import_batch(batch_id)
+        if not batch:
+            return None
+        files = list(batch.get('files_json') or [])
+        file_index = int(file_index)
+        files = [item for item in files if int(item.get('file_index') or 0) != file_index]
+        entry = {'file_index': file_index}
+        entry.update({k: v for k, v in file_meta.items() if v is not None})
+        files.append(entry)
+        files.sort(key=lambda item: int(item.get('file_index') or 0))
+        received_files = len(files)
+        status = 'ready' if received_files >= int(batch.get('required_files') or 2) else 'draft'
+        self.update_sales_import_batch(
+            batch_id,
+            files_json=files,
+            received_files=received_files,
+            status=status,
+        )
+        return self.get_sales_import_batch(batch_id)
 
     # ── SQLite-backed Job Tracking ─────────────────────────────────────────────
 

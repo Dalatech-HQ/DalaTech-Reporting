@@ -99,6 +99,8 @@ os.makedirs(PDF_DIR,  exist_ok=True)
 os.makedirs(HTML_DIR, exist_ok=True)
 ACTIVITY_OUTPUT_DIR = os.path.join(BASE_DIR, 'New Data to Feed', 'Output')
 os.makedirs(ACTIVITY_OUTPUT_DIR, exist_ok=True)
+BATCH_STAGE_DIR = os.path.join(BASE_DIR, 'tmp', 'sales_import_batches')
+os.makedirs(BATCH_STAGE_DIR, exist_ok=True)
 
 ds = DataStore()
 REPORT_SOURCE_DIR = os.path.join(os.path.dirname(ds.db_path), 'report_sources')
@@ -114,6 +116,52 @@ def _archive_report_source(file_bytes, report_id, filename):
         'path': path,
         'size_bytes': len(file_bytes or b''),
         'sha1': hashlib.sha1(file_bytes or b'').hexdigest(),
+    }
+
+
+def _sales_import_batch_path(batch_id):
+    path = os.path.join(BATCH_STAGE_DIR, f"batch_{batch_id}")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _bundle_source_files(file_entries):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        for entry in file_entries:
+            filename = os.path.basename(entry.get('filename') or f"file_{entry.get('file_index', 0)}.xlsx")
+            archive.writestr(filename, entry.get('file_bytes') or b'')
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+def _stage_sales_import_file(batch_id, file_index, filename, file_bytes, cleaned_df):
+    batch_dir = _sales_import_batch_path(batch_id)
+    safe_name = ''.join(ch if ch.isalnum() or ch in ('-', '_', '.') else '_' for ch in os.path.basename(filename or f'file_{file_index}.xlsx'))
+    raw_path = os.path.join(batch_dir, f"{file_index:02d}_{safe_name}")
+    clean_path = os.path.join(batch_dir, f"{file_index:02d}_{os.path.splitext(safe_name)[0]}_clean.csv")
+
+    with open(raw_path, 'wb') as raw_handle:
+        raw_handle.write(file_bytes or b'')
+    cleaned_df.to_csv(clean_path, index=False)
+
+    sha1 = hashlib.sha1(file_bytes or b'').hexdigest()
+    ds.upsert_sales_import_batch_file(
+        batch_id,
+        file_index,
+        source_filename=filename,
+        raw_path=raw_path,
+        clean_path=clean_path,
+        row_count=int(len(cleaned_df)),
+        sha1=sha1,
+    )
+    return {
+        'file_index': file_index,
+        'filename': filename,
+        'raw_path': raw_path,
+        'clean_path': clean_path,
+        'row_count': int(len(cleaned_df)),
+        'sha1': sha1,
     }
 
 
@@ -466,10 +514,14 @@ def _report_summary_payload(brand_name: str, kpis: dict, report: dict | None) ->
     def _comparison_label(kind: str) -> str:
         if kind == 'weekly':
             return 'prior week'
+        if kind == 'biweekly':
+            return 'prior 2-week period'
         if kind == 'monthly':
             return 'prior month'
         if kind == 'quarterly':
             return 'prior quarter'
+        if kind == 'halfyear':
+            return 'prior half-year'
         if kind == 'yearly':
             return 'prior year'
         return 'prior comparable period'
@@ -1483,7 +1535,7 @@ def api_preview():
 
 # ── Async generate ────────────────────────────────────────────────────────────
 
-def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, filename, report_type=None, options=None):
+def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, filename, report_type=None, options=None, data_frame=None, archive_bytes=None):
     """Queued background import. Persists report data first and can defer heavy extras."""
     options = options or {}
 
@@ -1498,7 +1550,12 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
 
     try:
         _upd(status='running', current_brand='Validating workbook...', progress=2)
-        df_all = load_and_clean(io.BytesIO(file_bytes))
+        if data_frame is not None:
+            df_all = data_frame.copy()
+            source_archive_bytes = archive_bytes if archive_bytes is not None else file_bytes
+        else:
+            df_all = load_and_clean(io.BytesIO(file_bytes))
+            source_archive_bytes = file_bytes
         df_ranged = filter_by_date(df_all, start_date, end_date)
         if df_ranged.empty:
             raise ValueError(f'No data between {start_date} and {end_date}.')
@@ -1567,7 +1624,7 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
         )
         report_meta = ds.get_report(report_id) or {}
         import_audit = ds.get_report_import_audit(report_id) or {}
-        source_meta = _archive_report_source(file_bytes, report_id, filename)
+        source_meta = _archive_report_source(source_archive_bytes or b'', report_id, filename)
         ds.save_agent_memory(
             scope_type='report',
             scope_key=str(report_id),
@@ -1838,7 +1895,7 @@ def _run_generation(job_id, file_bytes, start_date, end_date, selected_brands, f
         _upd(status='error', error_msg=str(exc), current_brand=None)
 
 
-def _submit_generation_job(file_bytes, start_date, end_date, selected_brands, filename, report_type=None, options=None):
+def _submit_generation_job(file_bytes, start_date, end_date, selected_brands, filename, report_type=None, options=None, data_frame=None, archive_bytes=None):
     options = options or {}
     job_id = uuid.uuid4().hex
     ds.create_job(job_id)
@@ -1860,24 +1917,161 @@ def _submit_generation_job(file_bytes, start_date, end_date, selected_brands, fi
         filename,
         report_type,
         options,
+        data_frame,
+        archive_bytes,
     )
     return job_id
+
+
+def _run_generation_batch(job_id, batch_id, file_entries, start_date, end_date, selected_brands, filename, report_type=None, options=None):
+    """Clean two files separately, stage them, then run the existing generator on the combined data."""
+    options = options or {}
+    required_files = max(2, len(file_entries or []))
+    combined_frames = []
+    staged_entries = []
+
+    try:
+        ds.update_sales_import_batch(
+            batch_id,
+            status='running',
+            start_date=start_date,
+            end_date=end_date,
+            report_type=report_type,
+            selected_brands_json=list(selected_brands or []),
+        )
+        ds.update_job(
+            job_id,
+            status='running',
+            progress=1,
+            total=required_files,
+            current_brand='Staging files...',
+            result_json={'batch_id': batch_id, 'import_mode': options.get('import_mode', 'full')},
+        )
+
+        for index, entry in enumerate(file_entries, start=1):
+            filename_i = entry.get('filename') or f'file_{index}.xlsx'
+            file_bytes_i = entry.get('file_bytes') or b''
+            ds.update_job(
+                job_id,
+                progress=max(1, min(18, int(((index - 1) / max(required_files, 1)) * 18))),
+                current_brand=f'Cleaning file {index} of {required_files}',
+            )
+            cleaned_df = load_and_clean(io.BytesIO(file_bytes_i))
+            staged_entries.append(_stage_sales_import_file(batch_id, index, filename_i, file_bytes_i, cleaned_df))
+            combined_frames.append(cleaned_df)
+            ds.update_sales_import_batch(
+                batch_id,
+                received_files=index,
+                status='ready' if index >= required_files else 'draft',
+            )
+
+        combined_df = pd.concat(combined_frames, ignore_index=True) if combined_frames else pd.DataFrame()
+        bundle_bytes = _bundle_source_files(file_entries)
+        ds.update_sales_import_batch(batch_id, status='running')
+
+        _run_generation(
+            job_id,
+            b'',
+            start_date,
+            end_date,
+            selected_brands,
+            filename,
+            report_type,
+            options,
+            data_frame=combined_df,
+            archive_bytes=bundle_bytes,
+        )
+
+        job = ds.get_job(job_id) or {}
+        job_status = job.get('status')
+        if job_status == 'done':
+            result_json = job.get('result_json') or {}
+            ds.update_sales_import_batch(
+                batch_id,
+                status='completed',
+                report_id=result_json.get('report_id'),
+                output_filename=result_json.get('portfolio_file') or filename,
+                generated_at=datetime.now().isoformat(timespec='seconds'),
+                error_msg=None,
+            )
+        else:
+            ds.update_sales_import_batch(
+                batch_id,
+                status='error',
+                error_msg=job.get('error_msg') or 'Batch generation failed',
+            )
+    except Exception as exc:
+        ds.update_sales_import_batch(batch_id, status='error', error_msg=str(exc))
+        ds.update_job(job_id, status='error', error_msg=str(exc), current_brand='Batch generation failed')
 
 
 @app.route('/api/generate_async', methods=['POST'])
 def generate_async():
     """Start background generation. Returns {job_id} immediately."""
-    file = request.files.get('tally_file')
+    files = request.files.getlist('tally_files')
+    if not files:
+        single = request.files.get('tally_file')
+        if single and single.filename:
+            files = [single]
     start_date = request.form.get('start_date', '').strip()
     end_date = request.form.get('end_date', '').strip()
     selected_raw = request.form.get('selected_brands', '')
     selected_brands = [b.strip() for b in selected_raw.split(',') if b.strip()] if selected_raw else []
     report_type = request.form.get('report_type', '').strip() or None
     options = _parse_generation_options(request.form)
+    batch_mode = (request.form.get('batch_mode') or '').strip().lower()
 
-    if not file or not start_date or not end_date:
+    if not files or not start_date or not end_date:
         return jsonify({'success': False, 'error': 'Missing file or dates'}), 400
 
+    if batch_mode == 'paired' or len(files) > 1:
+        if len(files) < 2:
+            return jsonify({'success': False, 'error': 'Please upload both files before generating the report.'}), 400
+
+        batch_id = ds.create_sales_import_batch(
+            required_files=2,
+            start_date=start_date,
+            end_date=end_date,
+            report_type=report_type,
+            selected_brands=selected_brands,
+        )
+        job_id = uuid.uuid4().hex
+        ds.create_job(job_id)
+        ds.update_job(
+            job_id,
+            status='queued',
+            progress=0,
+            total=2,
+            current_brand='Queued for staging...',
+            report_id=None,
+            result_json={'import_mode': options.get('import_mode', 'full'), 'batch_id': batch_id},
+        )
+        file_entries = []
+        for uploaded in files[:2]:
+            file_entries.append({'filename': uploaded.filename, 'file_bytes': uploaded.read()})
+        GENERATION_EXECUTOR.submit(
+            _run_generation_batch,
+            job_id,
+            batch_id,
+            file_entries,
+            start_date,
+            end_date,
+            selected_brands,
+            f"Sales_Import_Batch_{batch_id}",
+            report_type,
+            options,
+        )
+        return jsonify({
+            'success': True,
+            'job_id': job_id,
+            'batch_id': batch_id,
+            'required_files': 2,
+            'received_files': len(file_entries),
+            'ready': len(file_entries) >= 2,
+            'import_mode': options.get('import_mode', 'full'),
+        })
+
+    file = files[0]
     file_bytes = file.read()
     job_id = _submit_generation_job(
         file_bytes=file_bytes,
@@ -4014,23 +4208,24 @@ def api_activity_report_bulk():
                 for result in results:
                     if not result.get('success'):
                         continue
+                    brand_folder = _safe_name(result.get('brand') or 'brand')
                     # Add Excel files
                     if result.get('excel_url'):
                         excel_filename = result.get('_excel_file')
                         excel_path = os.path.join(ACTIVITY_OUTPUT_DIR, excel_filename)
                         if os.path.exists(excel_path):
-                            zipf.write(excel_path, f"Excel/{excel_filename}")
+                            zipf.write(excel_path, f"{brand_folder}/{excel_filename}")
                     # Add PDF files
                     if result.get('pdf_url'):
                         pdf_filename = result.get('_pdf_file')
                         pdf_path = os.path.join(ACTIVITY_OUTPUT_DIR, pdf_filename)
                         if os.path.exists(pdf_path):
-                            zipf.write(pdf_path, f"PDF/{pdf_filename}")
+                            zipf.write(pdf_path, f"{brand_folder}/{pdf_filename}")
                     if result.get('html_url'):
                         html_filename = result.get('_html_file')
                         html_path = os.path.join(ACTIVITY_OUTPUT_DIR, html_filename)
                         if os.path.exists(html_path):
-                            zipf.write(html_path, f"HTML/{html_filename}")
+                            zipf.write(html_path, f"{brand_folder}/{html_filename}")
             
             zip_url = f"/download/{zip_filename}"
         except Exception as zip_err:
