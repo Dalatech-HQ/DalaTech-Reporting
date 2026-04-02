@@ -32,12 +32,12 @@
     .page {
       display: grid;
       gap: 10px;
-      grid-template-columns: 1.75fr 1.25fr;
+      grid-template-columns: 1fr 1fr;
       grid-template-areas:
         "hero hero"
         "kpis kpis"
         "trend mix"
-        "stores geo"
+        "stores stores"
         "summary detail";
     }
     .panel {
@@ -82,7 +82,7 @@
     }
     .note-card h3 { margin: 0 0 6px; color: var(--navy); font-size: 13px; }
     .note-card ul { margin: 0; padding-left: 18px; font-size: 11px; line-height: 1.45; color: #344054; }
-    .kpis { grid-area: kpis; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; }
+    .kpis { grid-area: kpis; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
     .kpi-card {
       background: linear-gradient(180deg, #fbfdff 0%, #f4f8fd 100%);
       border: 1px solid var(--line);
@@ -101,7 +101,6 @@
     .trend { grid-area: trend; }
     .mix { grid-area: mix; }
     .stores { grid-area: stores; }
-    .geo { grid-area: geo; }
     .summary { grid-area: summary; }
     .detail { grid-area: detail; }
     .panel-title { padding: 10px 14px 0; color: var(--navy); font-size: 11px; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 800; }
@@ -143,7 +142,7 @@
     }
     @media screen and (max-width: 1180px) {
       .page, .hero-inner, .hero-notes, .kpis, .split-grid, .summary-grid { grid-template-columns: 1fr; }
-      .page { grid-template-areas: "hero" "kpis" "trend" "mix" "stores" "geo" "summary" "detail"; }
+      .page { grid-template-areas: "hero" "kpis" "trend" "mix" "stores" "summary" "detail"; }
       .hero-meta { grid-template-columns: repeat(2, minmax(0,1fr)); }
     }
   </style>
@@ -247,25 +246,6 @@
               <strong>Top issue store:</strong> {{ store_breakdown.rows[0].retailer_name if store_breakdown.rows else 'No data' }}<br><br>
               <strong>Coverage:</strong> {{ kpis.stores_visited }} stores visited with {{ kpis.brand_mentions }} brand mentions captured across the period.
             </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel geo">
-        <div class="panel-title">Geography & Team</div>
-        <div class="split-grid">
-          <div class="mini-card">
-            <h4>Geographic Distribution</h4>
-            <canvas id="stateChart"></canvas>
-            <div class="copy" style="margin-top:6px;">Top state: <strong>{{ geography.top_state }}</strong> | Top city: <strong>{{ geography.top_city }}</strong></div>
-          </div>
-          <div class="mini-card">
-            <h4>Field Team Performance</h4>
-            {% if field_team.available %}
-            <canvas id="fieldActivityChart"></canvas>
-            {% else %}
-            <div class="copy">{{ field_team.note }}</div>
-            {% endif %}
           </div>
         </div>
       </section>

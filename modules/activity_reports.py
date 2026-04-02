@@ -328,18 +328,16 @@ def _build_comparisons(ds, brand_name, report):
 def _build_kpi_cards(current, previous_metrics, trailing_metrics, source_quality):
     trailing_avg = {
         key: _average_metric(trailing_metrics, key)
-        for key in ['stores_visited', 'activities_logged', 'distinct_salesmen', 'issues_found',
-                    'opportunities_found', 'images_captured', 'states_covered', 'cities_covered']
+        for key in ['stores_visited', 'activities_logged', 'issues_found',
+                    'opportunities_found', 'images_captured', 'cities_covered']
     }
     previous = previous_metrics['current'] if previous_metrics else {}
     cards = [
         ('Stores Visited', current['stores_visited'], 'stores', 'stores_visited'),
         ('Activities Logged', current['activities_logged'], 'survey rows', 'activities_logged'),
-        ('Distinct Salesmen', current['distinct_salesmen'], 'sales reps', 'distinct_salesmen'),
         ('Issues Found', current['issues_found'], 'logged issues', 'issues_found'),
         ('Opportunities Found', current['opportunities_found'], 'logged opportunities', 'opportunities_found'),
         ('Images Captured', current['images_captured'], 'photos', 'images_captured'),
-        ('States Covered', current['states_covered'], 'states', 'states_covered'),
         ('Cities Covered', current['cities_covered'], 'cities', 'cities_covered'),
     ]
     result = []
@@ -347,9 +345,6 @@ def _build_kpi_cards(current, previous_metrics, trailing_metrics, source_quality
         prev_change = _calc_pct_change(value, previous.get(key))
         trailing_value = trailing_avg.get(key)
         trailing_change = _calc_pct_change(value, trailing_value)
-        note = None
-        if key == 'distinct_salesmen' and value == 0 and source_quality != 'Full fidelity':
-            note = 'Unavailable from cleaned source'
         result.append({
             'label': label,
             'value': value,
@@ -359,7 +354,7 @@ def _build_kpi_cards(current, previous_metrics, trailing_metrics, source_quality
             'prev_change_label': _format_delta(prev_change),
             'trailing_change_label': _format_delta(trailing_change),
             'trend': _trend_direction(prev_change),
-            'note': note,
+            'note': None,
         })
     return result, trailing_avg
 
