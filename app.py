@@ -4091,6 +4091,24 @@ def _build_activity_report_assets(brand_name, report_id):
     if not report:
         raise ValueError('No report found')
     report_id = report['id']
+    cached = _activity_report_cached_paths(brand_name, report)
+    if cached['cached']:
+        activity_summary = ds.get_activity_summary(report_id=report_id, brand_name=brand_name)
+        return {
+            'report': report,
+            'report_id': report_id,
+            'period_label': cached['period_label'],
+            'filename': cached['filename'],
+            'pdf_path': cached['pdf_path'],
+            'html_path': cached['html_path'],
+            'excel_path': cached['excel_path'],
+            'generated_path': cached['pdf_path'],
+            'activity_data': {
+                'identity': {'period_label': cached['period_label']},
+                'kpis': dict(activity_summary.get('totals') or {}),
+            },
+        }
+
     activity_summary = ds.get_activity_summary(report_id=report_id, brand_name=brand_name)
     if not activity_summary or not activity_summary.get('totals', {}).get('events'):
         raise FileNotFoundError(f'No activity data found for {brand_name} in this period')
@@ -4127,6 +4145,40 @@ def _build_activity_report_assets(brand_name, report_id):
         'generated_path': generated_path,
         'activity_data': activity_data,
     }
+
+
+def _list_activity_brands_for_report(report_id):
+    if not report_id:
+        return []
+    with ds._connect() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT brand_name FROM activity_issues WHERE report_id = ? AND brand_name IS NOT NULL AND TRIM(brand_name) != '' ORDER BY brand_name",
+            (report_id,)
+        ).fetchall()
+    return [row['brand_name'] for row in rows if row['brand_name']]
+
+
+def _warm_activity_report_assets(report_id, brand_names=None):
+    brands = list(brand_names or _list_activity_brands_for_report(report_id))
+    if not brands:
+        return {'report_id': report_id, 'brands': 0, 'generated': 0, 'cached': 0}
+
+    generated = 0
+    cached = 0
+    for brand_name in brands:
+        try:
+            report = ds.get_report(report_id) if report_id else ds.get_latest_report()
+            if not report:
+                continue
+            asset_paths = _activity_report_cached_paths(brand_name, report)
+            if asset_paths['cached']:
+                cached += 1
+                continue
+            _build_activity_report_assets(brand_name, report_id)
+            generated += 1
+        except Exception:
+            continue
+    return {'report_id': report_id, 'brands': len(brands), 'generated': generated, 'cached': cached}
 
 
 @app.route('/api/activity/report_html/<int:report_id>/<path:brand_name>')
@@ -5134,6 +5186,13 @@ def api_activity_import():
                 include_pairs=True,
                 source='activity_import',
             ) if report_id else None
+
+            if report_id:
+                threading.Thread(
+                    target=_warm_activity_report_assets,
+                    args=(report_id,),
+                    daemon=True,
+                ).start()
 
             ds.update_job(
                 job_id,
