@@ -4287,20 +4287,20 @@ def api_activity_report(brand_name):
 
 @app.route('/api/activity/report_bulk', methods=['POST'])
 def api_activity_report_bulk():
-    """Generate activity reports for multiple brands."""
+    """Queue activity reports for multiple brands and return a job id immediately."""
     data = request.get_json() or {}
     brand_names = data.get('brands', [])
     batch_id = data.get('batch_id')
     report_id = data.get('report_id')
     formats = data.get('formats', ['pdf', 'excel', 'html'])
-    report = None
-    
+    return_zip = bool(data.get('return_zip'))
+
     # If batch_id provided, get report_id and brand list from batch
     if batch_id:
         batch = next((item for item in ds.get_activity_batches(limit=50) if str(item.get('id')) == str(batch_id)), None)
         if batch:
             report_id = batch.get('report_id') or report_id
-    
+
     # If no report_id, use latest
     if not report_id:
         latest = ds.get_latest_report()
@@ -4308,10 +4308,10 @@ def api_activity_report_bulk():
 
     if report_id:
         report = ds.get_report(report_id)
-    
+
     if not report_id:
         return jsonify({'error': 'No report found'}), 404
-    
+
     # If no brands specified, get all brands with activity data
     if not brand_names:
         # Prefer all activity-linked brand sources so clean files with no issues still generate reports.
@@ -4329,98 +4329,125 @@ def api_activity_report_bulk():
                 (report_id, report_id)
             )
             brand_names = [row['brand_name'] for row in cursor.fetchall() if row['brand_name']]
-    
+
     if not brand_names:
         return jsonify({'error': 'No brands with activity data found'}), 404
-    
-    results = []
-    errors = []
-    
-    for brand_name in brand_names:
-        try:
-            cached = _activity_report_cached_paths(brand_name, report)
-            if cached['cached']:
-                assets = cached
-            else:
-                assets = _build_activity_report_assets(brand_name, report_id)
-                cached = _activity_report_cached_paths(brand_name, ds.get_report(report_id))
-            report_result = {
-                'brand': brand_name,
-                'success': True,
-                'excel_url': None,
-                'pdf_url': None,
-                'html_url': None,
-                '_excel_file': os.path.basename(assets['excel_path']),
-                '_pdf_file': os.path.basename(assets['pdf_path']),
-                '_html_file': os.path.basename(assets['html_path']),
-            }
-            if 'excel' in formats:
-                report_result['excel_url'] = f"/api/activity/report_excel/{assets['report_id']}/{brand_name}"
-            if 'pdf' in formats:
-                report_result['pdf_url'] = f"/api/activity/report_pdf/{assets['report_id']}/{brand_name}"
-            if 'html' in formats or 'pdf' in formats:
-                report_result['html_url'] = f"/api/activity/report_html/{assets['report_id']}/{brand_name}"
-                report_result['html_download_url'] = f"/api/activity/report_html/{assets['report_id']}/{brand_name}?download=1"
-            report_result['period'] = assets['period_label']
-            results.append(report_result)
-            
-        except FileNotFoundError:
-            errors.append({'brand': brand_name, 'error': 'No activity data'})
-        except Exception as e:
-            errors.append({'brand': brand_name, 'error': str(e)})
-    
-    # Generate ZIP file if requested and files were created
-    zip_url = None
-    if data.get('return_zip') and results:
-        try:
-            import zipfile
-            from datetime import datetime
-            
-            zip_period = (report or {}).get('month_label') or 'Current_Period'
-            zip_filename = f"Activity_Reports_{zip_period.replace(' ', '_').replace(',', '')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
-            zip_path = os.path.join(ACTIVITY_OUTPUT_DIR, zip_filename)
-            
-            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                for result in results:
-                    if not result.get('success'):
-                        continue
-                    brand_folder = _safe_name(result.get('brand') or 'brand')
-                    # Add Excel files
-                    if result.get('excel_url'):
-                        excel_filename = result.get('_excel_file')
-                        excel_path = os.path.join(ACTIVITY_OUTPUT_DIR, excel_filename)
-                        if os.path.exists(excel_path):
-                            zipf.write(excel_path, f"{brand_folder}/{excel_filename}")
-                    # Add PDF files
-                    if result.get('pdf_url'):
-                        pdf_filename = result.get('_pdf_file')
-                        pdf_path = os.path.join(ACTIVITY_OUTPUT_DIR, pdf_filename)
-                        if os.path.exists(pdf_path):
-                            zipf.write(pdf_path, f"{brand_folder}/{pdf_filename}")
-                    if result.get('html_url'):
-                        html_filename = result.get('_html_file')
-                        html_path = os.path.join(ACTIVITY_OUTPUT_DIR, html_filename)
-                        if os.path.exists(html_path):
-                            zipf.write(html_path, f"{brand_folder}/{html_filename}")
-            
-            zip_url = f"/download/{zip_filename}"
-        except Exception as zip_err:
-            print(f"ZIP generation failed: {zip_err}")
-    
-    public_results = []
-    for item in results:
-        sanitized = {k: v for k, v in item.items() if not k.startswith('_')}
-        public_results.append(sanitized)
 
-    return jsonify({
-        'success': len(results) > 0,
-        'period_label': ds.get_report(report_id).get('month_label') if report_id and ds.get_report(report_id) else 'Current Period',
-        'reports': public_results,
-        'errors': errors,
-        'total': len(brand_names),
-        'success_count': len([r for r in results if r.get('success')]),
-        'zip_url': zip_url
-    })
+    job_id = uuid.uuid4().hex
+    ds.create_job(job_id)
+    ds.update_job(
+        job_id,
+        status='running',
+        progress=1,
+        total=len(brand_names),
+        current_brand='Preparing activity bulk export',
+        report_id=report_id,
+        result_json={'brand_count': len(brand_names), 'batch_id': batch_id, 'return_zip': return_zip},
+    )
+
+    def _run_activity_bulk_job():
+        try:
+            results = []
+            errors = []
+            total = len(brand_names)
+            report_obj = ds.get_report(report_id)
+            report_period = (report_obj or {}).get('month_label') or 'Current Period'
+
+            for idx, brand_name in enumerate(brand_names, start=1):
+                try:
+                    ds.update_job(
+                        job_id,
+                        progress=max(1, min(95, int(((idx - 1) / max(total, 1)) * 90) + 5)),
+                        current_brand=f'Building {brand_name}',
+                        report_id=report_id,
+                    )
+                    cached = _activity_report_cached_paths(brand_name, report_obj)
+                    assets = cached if cached['cached'] else _build_activity_report_assets(brand_name, report_id)
+                    if not cached['cached']:
+                        cached = _activity_report_cached_paths(brand_name, ds.get_report(report_id))
+
+                    report_result = {
+                        'brand': brand_name,
+                        'success': True,
+                        'excel_url': None,
+                        'pdf_url': None,
+                        'html_url': None,
+                        '_excel_file': os.path.basename(assets['excel_path']),
+                        '_pdf_file': os.path.basename(assets['pdf_path']),
+                        '_html_file': os.path.basename(assets['html_path']),
+                    }
+                    if 'excel' in formats:
+                        report_result['excel_url'] = f"/api/activity/report_excel/{assets['report_id']}/{brand_name}"
+                    if 'pdf' in formats:
+                        report_result['pdf_url'] = f"/api/activity/report_pdf/{assets['report_id']}/{brand_name}"
+                    if 'html' in formats or 'pdf' in formats:
+                        report_result['html_url'] = f"/api/activity/report_html/{assets['report_id']}/{brand_name}"
+                        report_result['html_download_url'] = f"/api/activity/report_html/{assets['report_id']}/{brand_name}?download=1"
+                    report_result['period'] = assets['period_label']
+                    results.append(report_result)
+                except FileNotFoundError:
+                    errors.append({'brand': brand_name, 'error': 'No activity data'})
+                except Exception as e:
+                    errors.append({'brand': brand_name, 'error': str(e)})
+
+            zip_url = None
+            if return_zip and results:
+                try:
+                    import zipfile
+                    zip_filename = f"Activity_Reports_{report_period.replace(' ', '_').replace(',', '')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+                    zip_path = os.path.join(ACTIVITY_OUTPUT_DIR, zip_filename)
+
+                    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                        for result in results:
+                            if not result.get('success'):
+                                continue
+                            brand_folder = _safe_name(result.get('brand') or 'brand')
+                            if result.get('excel_url'):
+                                excel_filename = result.get('_excel_file')
+                                excel_path = os.path.join(ACTIVITY_OUTPUT_DIR, excel_filename)
+                                if os.path.exists(excel_path):
+                                    zipf.write(excel_path, f"{brand_folder}/{excel_filename}")
+                            if result.get('pdf_url'):
+                                pdf_filename = result.get('_pdf_file')
+                                pdf_path = os.path.join(ACTIVITY_OUTPUT_DIR, pdf_filename)
+                                if os.path.exists(pdf_path):
+                                    zipf.write(pdf_path, f"{brand_folder}/{pdf_filename}")
+                            if result.get('html_url'):
+                                html_filename = result.get('_html_file')
+                                html_path = os.path.join(ACTIVITY_OUTPUT_DIR, html_filename)
+                                if os.path.exists(html_path):
+                                    zipf.write(html_path, f"{brand_folder}/{html_filename}")
+
+                    zip_url = f"/download/{zip_filename}"
+                except Exception as zip_err:
+                    errors.append({'brand': None, 'error': f'ZIP generation failed: {zip_err}'})
+
+            public_results = []
+            for item in results:
+                sanitized = {k: v for k, v in item.items() if not k.startswith('_')}
+                public_results.append(sanitized)
+
+            ds.update_job(
+                job_id,
+                status='done',
+                progress=100,
+                current_brand='Activity bulk export ready',
+                report_id=report_id,
+                result_json={
+                    'success': len(results) > 0,
+                    'period_label': report_period,
+                    'reports': public_results,
+                    'errors': errors,
+                    'total': total,
+                    'success_count': len([r for r in results if r.get('success')]),
+                    'zip_url': zip_url,
+                },
+            )
+        except Exception as exc:
+            ds.update_job(job_id, status='error', progress=100, current_brand='Activity bulk export failed', report_id=report_id, error_msg=str(exc))
+
+    threading.Thread(target=_run_activity_bulk_job, daemon=True).start()
+    return jsonify({'success': True, 'job_id': job_id, 'total': len(brand_names)})
 
 
 @app.route('/files')

@@ -525,60 +525,101 @@ async function generateActivityReports(batchId, btn, status) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
-        brands: [], // Empty = all brands
+        brands: [],
         batch_id: batchId,
         formats: ['excel', 'pdf'],
         return_zip: true
       })
     });
     const data = await parseJsonResponse(res);
-    if (!data.success) {
+    if (!res.ok || !data.success) {
       status.innerHTML = `<div class="flash flash-error">❌ ${data.error || 'Report generation failed.'}</div>`;
+      btn.disabled = false;
+      btn.textContent = '🔥 Generate Activity Reports';
       return;
     }
-    
-    // Update progress as we process
-    const reports = data.reports || [];
-    const total = reports.length;
-    let completed = 0;
-    
-    // Simulate progress updates (in a real implementation, this would be a streaming response)
-    for (let i = 0; i < total; i++) {
-      completed++;
-      const pct = Math.round((completed / total) * 100);
-      progressBar.style.width = `${pct}%`;
-      progressPct.textContent = `${pct}%`;
-      progressBrand.textContent = reports[i].brand;
-      progressDetail.textContent = `Generated ${completed} of ${total} brands...`;
-      await new Promise(resolve => setTimeout(resolve, 50)); // Small delay for visual effect
+    if (data.job_id) {
+      await pollActivityBulkJob(data.job_id, btn, status, progressBrand, progressPct, progressBar, progressDetail);
+      return;
     }
-    
-    const successCount = reports.filter(r => r.success).length;
-    
-    status.innerHTML = `<div class="flash flash-success">
-      ✅ Generated ${successCount} brand reports!
-      <br><span class="text-muted fs-sm">Period: ${data.period_label || 'Current Period'}</span>
-      <br><br>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
-        ${data.zip_url ? `<a href="${data.zip_url}" class="btn btn-primary" style="background:var(--green);">📦 Download All Reports (ZIP)</a>` : ''}
-        <a href="/activity-intelligence" class="btn btn-outline">View Activity Dashboard</a>
-      </div>
-      <br>
-      <details style="text-align:left;margin-top:12px;">
-        <summary style="cursor:pointer;color:var(--navy);font-weight:600;">View Individual Downloads (${successCount} brands)</summary>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;max-height:200px;overflow-y:auto;padding:8px;background:#f8f9fa;border-radius:8px;">
-          ${reports.filter(r => r.success).map(r => `
-            <div style="display:flex;gap:4px;align-items:center;width:100%;padding:4px;border-bottom:1px solid #eee;">
-              <span style="flex:1;font-weight:600;">${r.brand}</span>
-              ${r.excel_url ? `<a href="${r.excel_url}" class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11px;">Excel</a>` : ''}
-              ${r.pdf_url ? `<a href="${r.pdf_url}" class="btn btn-navy btn-sm" style="padding:2px 8px;font-size:11px;">PDF</a>` : ''}
-            </div>
-          `).join('')}
-        </div>
-      </details>
-    </div>`;
+    renderActivityBulkResult(data, btn, status, progressBrand, progressPct, progressBar, progressDetail);
   } catch (err) {
     status.innerHTML = `<div class="flash flash-error">❌ Report generation failed: ${err.message}</div>`;
+    btn.disabled = false;
+    btn.textContent = '🔥 Generate Activity Reports';
+  }
+}
+
+function renderActivityBulkResult(data, btn, status, progressBrand, progressPct, progressBar, progressDetail) {
+  const reports = data.reports || [];
+  const successCount = reports.filter(r => r.success).length;
+  progressBar.style.width = '100%';
+  progressPct.textContent = '100%';
+  progressBrand.textContent = 'Done';
+  progressDetail.textContent = 'Activity reports ready';
+
+  status.innerHTML = `<div class="flash flash-success">
+    ✅ Generated ${successCount} brand reports!
+    <br><span class="text-muted fs-sm">Period: ${data.period_label || 'Current Period'}</span>
+    <br><br>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
+      ${data.zip_url ? `<a href="${data.zip_url}" class="btn btn-primary" style="background:var(--green);">📦 Download All Reports (ZIP)</a>` : ''}
+      <a href="/activity-intelligence" class="btn btn-outline">View Activity Dashboard</a>
+    </div>
+    <br>
+    <details style="text-align:left;margin-top:12px;">
+      <summary style="cursor:pointer;color:var(--navy);font-weight:600;">View Individual Downloads (${successCount} brands)</summary>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;max-height:200px;overflow-y:auto;padding:8px;background:#f8f9fa;border-radius:8px;">
+        ${reports.filter(r => r.success).map(r => `
+          <div style="display:flex;gap:4px;align-items:center;width:100%;padding:4px;border-bottom:1px solid #eee;">
+            <span style="flex:1;font-weight:600;">${r.brand}</span>
+            ${r.excel_url ? `<a href="${r.excel_url}" class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11px;">Excel</a>` : ''}
+            ${r.pdf_url ? `<a href="${r.pdf_url}" class="btn btn-navy btn-sm" style="padding:2px 8px;font-size:11px;">PDF</a>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    </details>
+  </div>`;
+  btn.disabled = false;
+  btn.textContent = '🔥 Generate Activity Reports';
+}
+
+async function pollActivityBulkJob(jobId, btn, status, progressBrand, progressPct, progressBar, progressDetail) {
+  while (true) {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    let payload;
+    try {
+      const res = await fetch(`/api/activity/job/${jobId}`, { cache: 'no-store' });
+      payload = await parseJsonResponse(res);
+      if (!res.ok) {
+        throw new Error(payload.error || 'Could not read bulk export progress.');
+      }
+    } catch (err) {
+      status.innerHTML = `<div class="flash flash-error">❌ ${err.message}</div>`;
+      btn.disabled = false;
+      btn.textContent = '🔥 Generate Activity Reports';
+      return;
+    }
+
+    const progress = Math.max(0, Math.min(100, Number(payload.progress || 0)));
+    progressBar.style.width = `${progress}%`;
+    progressPct.textContent = `${Math.round(progress)}%`;
+    progressBrand.textContent = payload.current_brand || 'Generating...';
+    progressDetail.textContent = payload.status === 'done'
+      ? 'Finalizing download package'
+      : (payload.current_brand || 'Preparing...');
+
+    if (payload.status === 'error') {
+      status.innerHTML = `<div class="flash flash-error">❌ ${payload.error_msg || 'Report generation failed.'}</div>`;
+      btn.disabled = false;
+      btn.textContent = '🔥 Generate Activity Reports';
+      return;
+    }
+
+    if (payload.status === 'done') {
+      renderActivityBulkResult(payload.result_json || {}, btn, status, progressBrand, progressPct, progressBar, progressDetail);
+      return;
+    }
   }
 }
 
