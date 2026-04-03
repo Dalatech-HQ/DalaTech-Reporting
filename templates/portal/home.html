@@ -834,39 +834,35 @@ document.getElementById('activityUploadForm').addEventListener('submit', async f
     fd.append('brands', JSON.stringify(window.selectedActivityBrands));
   }
 
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', '/api/activity/import', true);
-  xhr.responseType = 'json';
-  xhr.upload.onprogress = (event) => {
-    if (!event.lengthComputable) return;
-    const pct = Math.max(1, Math.min(99, Math.round((event.loaded / event.total) * 100)));
-    btn.textContent = `Uploading... ${pct}%`;
-    status.innerHTML = `<div class="flash flash-success">Uploading activity file... ${pct}%</div>`;
-  };
-  xhr.onload = async () => {
-    try {
-      const data = xhr.response || JSON.parse(xhr.responseText || '{}');
-      if (xhr.status < 200 || xhr.status >= 300 || !data.success || !data.job_id) {
-        status.innerHTML = `<div class="flash flash-error">❌ ${data.error || 'Could not upload file.'}</div>`;
-        btn.disabled = false;
-        btn.textContent = '🔥 Generate Activity Reports';
-        return;
-      }
-      btn.textContent = 'Uploading... 100%';
-      await pollActivityJob(data.job_id, btn, status);
-      await loadActivityHistory();
-    } catch (err) {
-      status.innerHTML = `<div class="flash flash-error">❌ Upload failed: ${err.message}</div>`;
+  let pct = 0;
+  const uploadTicker = window.setInterval(() => {
+    if (pct < 15) {
+      pct += 1;
+      btn.textContent = `Uploading... ${pct}%`;
+      status.innerHTML = `<div class="flash flash-success">Uploading activity file... ${pct}%</div>`;
+    }
+  }, 800);
+
+  try {
+    const res = await fetch('/api/activity/import', { method: 'POST', body: fd, cache: 'no-store' });
+    const data = await parseJsonResponse(res);
+    window.clearInterval(uploadTicker);
+    if (!res.ok || !data.success || !data.job_id) {
+      status.innerHTML = `<div class="flash flash-error">❌ ${data.error || 'Could not upload file.'}</div>`;
       btn.disabled = false;
       btn.textContent = '🔥 Generate Activity Reports';
+      return;
     }
-  };
-  xhr.onerror = () => {
-    status.innerHTML = '<div class="flash flash-error">❌ Upload failed. Please try again.</div>';
+    btn.textContent = 'Uploading... 100%';
+    status.innerHTML = '<div class="flash flash-success">Upload complete. Starting import...</div>';
+    await pollActivityJob(data.job_id, btn, status);
+    await loadActivityHistory();
+  } catch (err) {
+    window.clearInterval(uploadTicker);
+    status.innerHTML = `<div class="flash flash-error">❌ Upload failed: ${err.message}</div>`;
     btn.disabled = false;
     btn.textContent = '🔥 Generate Activity Reports';
-  };
-  xhr.send(fd);
+  }
 });
 
 // Load activity history on page load

@@ -341,29 +341,31 @@ document.getElementById('activityImportForm')?.addEventListener('submit', async 
   setProgress(3, 'Preparing activity import', 'We will show each step here.');
 
   const fd = new FormData(form);
-  const data = await new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/activity/import', true);
-    xhr.responseType = 'json';
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable) return;
-      const pct = Math.max(1, Math.min(99, Math.round((event.loaded / event.total) * 100)));
+  let pct = 0;
+  const uploadTicker = window.setInterval(() => {
+    if (pct < 15) {
+      pct += 1;
       btn.textContent = `Importing... ${pct}%`;
       setProgress(pct, 'Uploading activity file', 'Sending workbook to the server...');
-    };
-    xhr.onload = () => {
-      const payload = xhr.response || (() => {
-        try { return JSON.parse(xhr.responseText || '{}'); } catch (_) { return {}; }
-      })();
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(payload);
-      } else {
-        reject(new Error(payload.error || 'Import failed.'));
-      }
-    };
-    xhr.onerror = () => reject(new Error('Import failed.'));
-    xhr.send(fd);
-  });
+    }
+  }, 800);
+
+  let data;
+  try {
+    const res = await fetch('/api/activity/import', { method: 'POST', body: fd, cache: 'no-store' });
+    data = await parseJsonResponse(res);
+    window.clearInterval(uploadTicker);
+    if (!res.ok) {
+      throw new Error(data.error || 'Import failed.');
+    }
+  } catch (err) {
+    window.clearInterval(uploadTicker);
+    btn.disabled = false;
+    msg.textContent = err.message || 'Import failed.';
+    setProgress(0, 'Import did not start', err.message || 'Please try again.');
+    btn.textContent = 'Import Activity';
+    return;
+  }
   if (!data.success || !data.job_id) {
     btn.disabled = false;
     msg.textContent = data.error || 'Import failed.';
