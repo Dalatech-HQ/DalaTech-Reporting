@@ -752,12 +752,7 @@ async function previewActivityFile(file) {
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
         <strong>Large workbook detected</strong>
       </div>
-      <div class="text-muted fs-sm" style="margin-top:8px;">
-        Brand preview is skipped for larger files to keep uploads responsive. Brands will be resolved during import.
-      </div>
-      <div class="text-muted fs-sm" style="margin-top:6px;">
-        File size: ${(file.size / (1024 * 1024)).toFixed(1)} MB
-      </div>
+      <div class="text-muted fs-sm" style="margin-top:8px;">Preview paused for larger files.</div>
     `;
     return;
   }

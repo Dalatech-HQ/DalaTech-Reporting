@@ -829,10 +829,15 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
         })
 
     if progress_cb:
-        progress_cb(78, 'Checking brand and SKU matches')
+        progress_cb(78, 'Reviewing brand matches')
 
     if ds:
-        for brand_name in sorted(unmatched_brand_candidates):
+        brand_candidates = sorted(unmatched_brand_candidates)
+        sku_candidates = sorted(unmatched_sku_candidates)
+        total_matches = max(len(brand_candidates) + len(sku_candidates), 1)
+        processed_matches = 0
+
+        for brand_name in brand_candidates:
             candidate = ds.find_brand_duplicate_candidate(brand_name)
             ds.queue_catalog_candidate(
                 'brand',
@@ -845,7 +850,11 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
                 suggested_match_name=candidate['brand']['canonical_name'] if candidate else None,
                 similarity_score=candidate['score'] if candidate else 0.0,
             )
-        for brand_name, sku_name in sorted(unmatched_sku_candidates):
+            processed_matches += 1
+            if progress_cb:
+                progress_cb(78 + int((processed_matches / total_matches) * 8), f'Reviewing brand matches ({processed_matches}/{total_matches})')
+
+        for brand_name, sku_name in sku_candidates:
             brand = ds.resolve_brand_master(brand_name)
             candidate = ds.find_sku_duplicate_candidate(brand['id'], sku_name) if brand else None
             ds.queue_catalog_candidate(
@@ -859,6 +868,9 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
                 suggested_match_name=candidate['sku']['sku_name'] if candidate else None,
                 similarity_score=candidate['score'] if candidate else 0.0,
             )
+            processed_matches += 1
+            if progress_cb:
+                progress_cb(78 + int((processed_matches / total_matches) * 8), f'Reviewing brand matches ({processed_matches}/{total_matches})')
 
     if progress_cb:
         progress_cb(88, 'Preparing summary')
