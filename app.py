@@ -4069,6 +4069,23 @@ def _activity_report_file_stem(brand_name, period_label):
     return f"{safe_brand}_Activity_Report_{period_safe}"
 
 
+def _activity_report_cached_paths(brand_name, report):
+    period_label = (report or {}).get('month_label') or 'Current_Period'
+    filename = _activity_report_file_stem(brand_name, period_label)
+    pdf_path = os.path.join(ACTIVITY_OUTPUT_DIR, f"{filename}.pdf")
+    html_path = os.path.join(ACTIVITY_OUTPUT_DIR, f"{filename}.html")
+    excel_path = os.path.join(ACTIVITY_OUTPUT_DIR, f"{filename}.xlsx")
+    return {
+        'report_id': (report or {}).get('id'),
+        'period_label': period_label,
+        'filename': filename,
+        'pdf_path': pdf_path,
+        'html_path': html_path,
+        'excel_path': excel_path,
+        'cached': all(os.path.isfile(path) for path in (pdf_path, html_path, excel_path)),
+    }
+
+
 def _build_activity_report_assets(brand_name, report_id):
     report = ds.get_report(report_id) if report_id else ds.get_latest_report()
     if not report:
@@ -4115,6 +4132,15 @@ def _build_activity_report_assets(brand_name, report_id):
 @app.route('/api/activity/report_html/<int:report_id>/<path:brand_name>')
 def api_activity_report_html(report_id, brand_name):
     try:
+        report = ds.get_report(report_id)
+        cached = _activity_report_cached_paths(brand_name, report)
+        if cached['cached']:
+            return send_file(
+                cached['html_path'],
+                as_attachment=request.args.get('download') == '1',
+                download_name=os.path.basename(cached['html_path']) if request.args.get('download') == '1' else None,
+                mimetype='text/html'
+            )
         assets = _build_activity_report_assets(brand_name, report_id)
     except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 404
@@ -4132,6 +4158,15 @@ def api_activity_report_html(report_id, brand_name):
 @app.route('/api/activity/report_pdf/<int:report_id>/<path:brand_name>')
 def api_activity_report_pdf(report_id, brand_name):
     try:
+        report = ds.get_report(report_id)
+        cached = _activity_report_cached_paths(brand_name, report)
+        if cached['cached']:
+            return send_file(
+                cached['pdf_path'],
+                as_attachment=True,
+                download_name=os.path.basename(cached['pdf_path']),
+                mimetype='application/pdf'
+            )
         assets = _build_activity_report_assets(brand_name, report_id)
     except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 404
@@ -4148,6 +4183,15 @@ def api_activity_report_pdf(report_id, brand_name):
 @app.route('/api/activity/report_excel/<int:report_id>/<path:brand_name>')
 def api_activity_report_excel(report_id, brand_name):
     try:
+        report = ds.get_report(report_id)
+        cached = _activity_report_cached_paths(brand_name, report)
+        if cached['cached']:
+            return send_file(
+                cached['excel_path'],
+                as_attachment=True,
+                download_name=os.path.basename(cached['excel_path']),
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
         assets = _build_activity_report_assets(brand_name, report_id)
     except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 404
@@ -4197,6 +4241,7 @@ def api_activity_report_bulk():
     batch_id = data.get('batch_id')
     report_id = data.get('report_id')
     formats = data.get('formats', ['pdf', 'excel', 'html'])
+    report = None
     
     # If batch_id provided, get report_id and brand list from batch
     if batch_id:
@@ -4208,6 +4253,9 @@ def api_activity_report_bulk():
     if not report_id:
         latest = ds.get_latest_report()
         report_id = latest['id'] if latest else None
+
+    if report_id:
+        report = ds.get_report(report_id)
     
     if not report_id:
         return jsonify({'error': 'No report found'}), 404
@@ -4230,7 +4278,12 @@ def api_activity_report_bulk():
     
     for brand_name in brand_names:
         try:
-            assets = _build_activity_report_assets(brand_name, report_id)
+            cached = _activity_report_cached_paths(brand_name, report)
+            if cached['cached']:
+                assets = cached
+            else:
+                assets = _build_activity_report_assets(brand_name, report_id)
+                cached = _activity_report_cached_paths(brand_name, ds.get_report(report_id))
             report_result = {
                 'brand': brand_name,
                 'success': True,
@@ -4263,7 +4316,7 @@ def api_activity_report_bulk():
             import zipfile
             from datetime import datetime
             
-            zip_period = ds.get_report(report_id).get('month_label') if report_id and ds.get_report(report_id) else 'Current_Period'
+            zip_period = (report or {}).get('month_label') or 'Current_Period'
             zip_filename = f"Activity_Reports_{zip_period.replace(' ', '_').replace(',', '')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
             zip_path = os.path.join(ACTIVITY_OUTPUT_DIR, zip_filename)
             
