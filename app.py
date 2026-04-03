@@ -56,7 +56,7 @@ from modules.period_comparison import build_period_comparison, comparison_basis_
 from modules.alerts           import check_and_save_alerts, run_portfolio_alerts
 from modules.predictor        import build_brand_forecasts, stock_depletion_date, growth_label, growth_color
 from modules.gmv              import build_gmv_window
-from modules.activity_intelligence import load_activity_dataframe, build_activity_payload
+from modules.activity_intelligence import load_activity_dataframe, build_activity_payload, extract_activity_brands
 from modules.agent_copilot    import build_default_agent_actions, answer_admin_query, execute_admin_request
 from modules.coach_features   import (
     history_available as coach_history_available,
@@ -5080,42 +5080,56 @@ def api_activity_detect_brands():
     uploaded = request.files.get('file')
     if not uploaded or uploaded.filename == '':
         return jsonify({'success': False, 'error': 'No file uploaded'}), 400
-    
-    try:
-        import pandas as pd
-        from modules.activity_intelligence import load_activity_dataframe
-        
-        file_bytes = uploaded.read()
-        source_mode = (request.form.get('source_mode') or request.form.get('source_type') or 'auto').strip().lower()
-        df, meta = load_activity_dataframe(file_bytes, expected_source=source_mode)
-        
-        if df.empty:
-            return jsonify({'success': False, 'error': 'Could not read file or file is empty'}), 400
-        
-        # Extract unique brand names from survey_name column
-        brand_surveys = df['survey_name'].dropna().unique() if 'survey_name' in df.columns else []
-        
-        # Clean up brand names (remove "Feedback" suffix)
-        brands = []
-        for survey in brand_surveys:
-            brand = survey.replace(' Feedback', '').strip()
-            if brand and brand not in brands:
-                brands.append(brand)
-        
-        # Sort alphabetically
-        brands.sort()
-        
-        return jsonify({
-            'success': True,
-            'brands': brands,
-            'count': len(brands),
-            'filename': uploaded.filename,
-            'row_count': len(df),
-            'source_type': meta.get('source_type'),
-            'source_selection': meta.get('source_selection', source_mode),
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+
+    file_bytes = uploaded.read()
+    if not file_bytes:
+        return jsonify({'success': False, 'error': 'The uploaded activity file is empty.'}), 400
+
+    source_mode = (request.form.get('source_mode') or request.form.get('source_type') or 'auto').strip().lower()
+    job_id = uuid.uuid4().hex
+    ds.create_job(job_id)
+    ds.update_job(job_id, progress=3, current_brand='Detecting brand partners')
+
+    def _run():
+        try:
+            ds.update_job(job_id, progress=10, current_brand='Reading activity file')
+            brands, meta = extract_activity_brands(file_bytes, expected_source=source_mode)
+            if not brands:
+                ds.update_job(
+                    job_id,
+                    status='error',
+                    progress=100,
+                    current_brand='Brand detection failed',
+                    error_msg='Could not read file or file is empty',
+                    result_json={'brands': [], 'count': 0, 'filename': uploaded.filename, 'source_meta': meta},
+                )
+                return
+
+            ds.update_job(
+                job_id,
+                status='done',
+                progress=100,
+                current_brand='Brand detection complete',
+                result_json={
+                    'brands': brands,
+                    'count': len(brands),
+                    'filename': uploaded.filename,
+                    'row_count': meta.get('row_count', 0),
+                    'source_type': meta.get('source_type'),
+                    'source_selection': meta.get('source_selection', source_mode),
+                },
+            )
+        except Exception as e:
+            ds.update_job(
+                job_id,
+                status='error',
+                progress=100,
+                current_brand='Brand detection failed',
+                error_msg=str(e),
+            )
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({'success': True, 'job_id': job_id})
 
 
 @app.route('/api/activity/batches')

@@ -615,6 +615,58 @@ async function loadActivityHistory() {
 let detectedBrands = [];
 let brandConfirmCallback = null;
 
+async function pollActivityDetectJob(jobId, preview) {
+  const jobRes = await fetch(`/api/activity/job/${jobId}`);
+  const job = await parseJsonResponse(jobRes);
+  if (!jobRes.ok) {
+    preview.className = 'flash flash-error';
+    preview.textContent = job.error || 'Could not read brand detection progress.';
+    return;
+  }
+
+  if (job.status === 'error') {
+    preview.className = 'flash flash-error';
+    preview.textContent = job.error_msg || 'Could not analyze file.';
+    return;
+  }
+
+  if (job.status !== 'done') {
+    preview.className = 'flash flash-info';
+    preview.textContent = job.current_brand || 'Detecting brand partners...';
+    window.setTimeout(() => pollActivityDetectJob(jobId, preview), 900);
+    return;
+  }
+
+  const result = job.result_json || {};
+  detectedBrands = result.brands || [];
+  const brandCount = detectedBrands.length;
+
+  if (brandCount === 0) {
+    preview.className = 'flash flash-error';
+    preview.innerHTML = '❌ No brand partners detected in this file. Please check the file format.';
+    return;
+  }
+
+  const detectedSource = result.source_type === 'zip_bundle'
+    ? 'Cleaned weekly zip'
+    : (result.source_type === 'excel' || result.source_type === 'text'
+        ? 'Raw activity export'
+        : (result.source_type || 'Auto-detected source'));
+  preview.className = 'flash flash-success';
+  preview.innerHTML = `
+    ✅ Detected <strong>${brandCount} brand${brandCount !== 1 ? 's' : ''}</strong> in file
+    <br><span class="text-muted fs-sm">Source: ${detectedSource} · ${result.row_count || 0} rows</span>
+    <br><span class="text-muted fs-sm">${detectedBrands.slice(0, 5).join(', ')}${brandCount > 5 ? '...' : ''}</span>
+    <br><button type="button" class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="showBrandConfirm()">
+      ✏️ Review/Edit Brands
+    </button>
+  `;
+
+  if (brandCount > 30 || brandCount < 1) {
+    showBrandConfirm();
+  }
+}
+
 async function previewActivityFile(file) {
   const preview = document.getElementById('activityPreviewNote');
   preview.style.display = 'block';
@@ -633,37 +685,14 @@ async function previewActivityFile(file) {
       preview.textContent = data.error || 'Could not analyze file.';
       return;
     }
-    
-    detectedBrands = data.brands || [];
-    const brandCount = detectedBrands.length;
-    
-    if (brandCount === 0) {
-      preview.className = 'flash flash-error';
-      preview.innerHTML = '❌ No brand partners detected in this file. Please check the file format.';
+    if (data.job_id) {
+      preview.className = 'flash flash-info';
+      preview.textContent = 'Detecting brand partners...';
+      await pollActivityDetectJob(data.job_id, preview);
       return;
     }
-    
-    // Show preview with detected brands
-    const detectedSource = data.source_type === 'zip_bundle'
-      ? 'Cleaned weekly zip'
-      : (data.source_type === 'excel' || data.source_type === 'text'
-          ? 'Raw activity export'
-          : (data.source_type || 'Auto-detected source'));
-    preview.className = 'flash flash-success';
-    preview.innerHTML = `
-      ✅ Detected <strong>${brandCount} brand${brandCount !== 1 ? 's' : ''}</strong> in file
-      <br><span class="text-muted fs-sm">Source: ${detectedSource} · ${data.row_count || 0} rows</span>
-      <br><span class="text-muted fs-sm">${detectedBrands.slice(0, 5).join(', ')}${brandCount > 5 ? '...' : ''}</span>
-      <br><button type="button" class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="showBrandConfirm()">
-        ✏️ Review/Edit Brands
-      </button>
-    `;
-    
-    // If more than 30 brands or less than 1, show confirmation
-    if (brandCount > 30 || brandCount < 1) {
-      showBrandConfirm();
-    }
-    
+    preview.className = 'flash flash-error';
+    preview.textContent = data.error || 'Could not analyze file.';
   } catch (err) {
     preview.className = 'flash flash-error';
     preview.textContent = 'Could not analyze file: ' + err.message;

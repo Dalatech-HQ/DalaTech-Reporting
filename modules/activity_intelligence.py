@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Iterable
 
 import pandas as pd
+from openpyxl import load_workbook
 
 from .brand_names import canonicalize_brand_name
 
@@ -208,6 +209,96 @@ def _read_activity_file(raw: bytes, filename: str = '') -> tuple[pd.DataFrame, s
             continue
 
     return _read_text_table(raw), 'text'
+
+
+def _normalize_header_key(value) -> str:
+    return re.sub(r'[^a-z0-9]+', '_', str(value or '').strip().lower()).strip('_')
+
+
+def _extract_brands_from_workbook(raw: bytes) -> tuple[list[str], int]:
+    brands = []
+    row_count = 0
+    wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    try:
+        ws = wb[wb.sheetnames[0]]
+        header = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())
+        survey_idx = None
+        for idx, value in enumerate(header):
+            if _normalize_header_key(value) in {'survey_name', 'surveyname'}:
+                survey_idx = idx
+                break
+        if survey_idx is None:
+            return [], 0
+        for row in ws.iter_rows(min_row=2, min_col=survey_idx + 1, max_col=survey_idx + 1, values_only=True):
+            row_count += 1
+            value = row[0] if row else None
+            if value:
+                brand = str(value).replace(' Feedback', '').strip()
+                if brand and brand not in brands:
+                    brands.append(brand)
+        return brands, row_count
+    finally:
+        try:
+            wb.close()
+        except Exception:
+            pass
+
+
+def extract_activity_brands(file_source, expected_source: str | None = None) -> tuple[list[str], dict]:
+    raw, filename = _coerce_bytes(file_source)
+    source_choice = str(expected_source or 'auto').strip().lower()
+    ext = os.path.splitext(filename or '')[1].lower()
+
+    if ext in ('.xlsx', '.xlsm', '.xltx', '.xltm'):
+        brands, row_count = _extract_brands_from_workbook(raw)
+        return brands, {
+            'source_type': 'excel',
+            'source_selection': source_choice,
+            'filename': filename,
+            'row_count': row_count,
+        }
+
+    if _looks_like_zip(raw) and filename.lower().endswith('.zip'):
+        try:
+            df, meta = _read_activity_zip(raw)
+            brands = []
+            if 'survey_name' in df.columns:
+                for survey in df['survey_name'].dropna().unique():
+                    brand = str(survey).replace(' Feedback', '').strip()
+                    if brand and brand not in brands:
+                        brands.append(brand)
+            meta = dict(meta)
+            meta['filename'] = filename
+            meta['source_selection'] = source_choice
+            return sorted(brands), meta
+        except Exception:
+            return [], {
+                'source_type': 'zip_bundle',
+                'source_selection': source_choice,
+                'filename': filename,
+                'row_count': 0,
+            }
+
+    df, source_type = _read_activity_file(raw, filename)
+    df = _normalise_columns(df)
+    if df.empty or 'survey_name' not in df.columns:
+        return [], {
+            'source_type': source_type,
+            'source_selection': source_choice,
+            'filename': filename,
+            'row_count': int(len(df)),
+        }
+    brands = []
+    for survey in df['survey_name'].dropna().unique():
+        brand = str(survey).replace(' Feedback', '').strip()
+        if brand and brand not in brands:
+            brands.append(brand)
+    return sorted(brands), {
+        'source_type': source_type,
+        'source_selection': source_choice,
+        'filename': filename,
+        'row_count': int(len(df)),
+    }
 
 
 def _infer_zip_survey_name(member_name: str) -> str:
