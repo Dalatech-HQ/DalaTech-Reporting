@@ -22,6 +22,12 @@
   .summary-banner-kicker { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); margin-bottom:8px; }
   .summary-banner-text { font-size:15px; line-height:1.65; color:var(--text); }
   .summary-banner-meta { display:flex; gap:8px; flex-wrap:wrap; }
+  .workflow-band { display:grid; grid-template-columns:1.2fr .8fr; gap:20px; }
+  .workflow-panel { display:flex; flex-direction:column; gap:14px; }
+  .workflow-actions { display:flex; gap:10px; flex-wrap:wrap; }
+  .brand-report-list { display:flex; flex-direction:column; gap:8px; max-height:320px; overflow:auto; }
+  .brand-report-row { display:grid; grid-template-columns:1.4fr .5fr auto; gap:10px; align-items:center; padding:10px 0; border-bottom:1px solid var(--gray); }
+  .brand-report-row:last-child { border-bottom:none; }
   .activity-progress { margin-top:16px; padding:16px; border-radius:12px; border:1px solid rgba(27,43,94,.08); background:linear-gradient(180deg,#ffffff 0%,#f7f9fe 100%); }
   .activity-progress[hidden] { display:none; }
   .activity-progress-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
@@ -33,6 +39,7 @@
   .scope-card form { display:grid; grid-template-columns:1.1fr 1fr auto; gap:16px; align-items:end; }
   .scope-note { margin-top:10px; font-size:12px; color:var(--muted); line-height:1.6; }
   @media(max-width:900px){ .scope-card form { grid-template-columns:1fr; } }
+  @media(max-width:900px){ .workflow-band { grid-template-columns:1fr; } }
   @media(max-width:900px){ .summary-grid,.split-grid { grid-template-columns:1fr; } }
 </style>
 {% endblock %}
@@ -119,6 +126,86 @@
     {% else %}
     You are viewing the full activity summary across the selected report context.
     {% endif %}
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="summary-banner">
+    <div class="summary-banner-copy">
+      <div class="summary-banner-kicker">Activity Report Pack</div>
+      <div class="summary-banner-text">
+        {% if batch_row %}
+        Batch {{ batch_row.id }} is linked to {{ report.month_label if report else batch_row.report_label }} and includes {{ batch_row.row_count }} rows from {{ batch_row.source_label }}.
+        {% else %}
+        Use the batch below to open a proper activity report workspace, download brand outputs individually, or build a bulk ZIP pack.
+        {% endif %}
+      </div>
+    </div>
+    <div class="summary-banner-meta">
+      {% if batch_row %}
+      <span class="badge badge-blue">Batch {{ batch_row.id }}</span>
+      <span class="badge badge-green">{{ batch_row.status_label }}</span>
+      <span class="badge badge-amber">{{ batch_row.brand_count }} brands</span>
+      {% endif %}
+      {% if report %}
+      <span class="badge badge-blue">{{ report.month_label }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="workflow-band" style="margin-top:16px;">
+    <div class="workflow-panel">
+      <div class="workflow-actions">
+        <button class="btn btn-primary" type="button" id="generateActivityZipBtn" onclick="generateActivityZip()">
+          📦 Generate Bulk ZIP
+        </button>
+        <a class="btn btn-outline" href="/activity-intelligence">
+          View Full Workspace
+        </a>
+      </div>
+      <div id="activityZipStatus" class="scope-note" style="margin-top:0;"></div>
+      <div id="activityZipProgress" class="activity-progress" hidden style="margin-top:0;">
+        <div class="activity-progress-top">
+          <div>
+            <div class="summary-banner-kicker" style="margin-bottom:4px;">Bulk ZIP</div>
+            <div id="activityZipStage" class="text-navy fw-bold">Preparing pack</div>
+          </div>
+          <div id="activityZipPct" class="kpi-value-sm">0%</div>
+        </div>
+        <div class="activity-progress-track">
+          <div id="activityZipFill" class="activity-progress-fill"></div>
+        </div>
+        <div id="activityZipNote" class="activity-progress-note">We are packaging the current batch into per-brand folders.</div>
+      </div>
+    </div>
+
+    <div class="card" style="box-shadow:none;border:1px solid var(--gray);">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-navy fw-bold">Brand Outputs</h3>
+        <span class="badge badge-blue">{{ report_brands|length }} ready</span>
+      </div>
+      {% if report_brands %}
+      <div class="brand-report-list">
+        {% for brand in report_brands %}
+        <div class="brand-report-row">
+          <div>
+            <strong>{{ brand.brand_name }}</strong>
+            <div class="text-muted fs-sm">{{ brand.count }} mentions</div>
+          </div>
+          <div class="badge badge-green">Ready</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;">
+            <a href="{{ brand.detail_url }}" class="btn btn-outline btn-sm">Detail</a>
+            {% if brand.html_url %}<a href="{{ brand.html_url }}" target="_blank" class="btn btn-outline btn-sm">HTML</a>{% endif %}
+            {% if brand.pdf_url %}<a href="{{ brand.pdf_url }}" class="btn btn-outline btn-sm">PDF</a>{% endif %}
+            {% if brand.excel_url %}<a href="{{ brand.excel_url }}" class="btn btn-outline btn-sm">Excel</a>{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="text-muted fs-sm">Brand outputs will appear here once the batch is linked and report assets are ready.</div>
+      {% endif %}
+    </div>
   </div>
 </div>
 
@@ -294,16 +381,20 @@
   <div class="card">
     <h3 class="text-navy fw-bold mb-2">Imported Batches</h3>
     <table class="data-table">
-      <thead><tr><th>File</th><th>Period</th><th>Rows</th></tr></thead>
+      <thead><tr><th>Batch</th><th>Period</th><th>Rows</th><th>Status</th></tr></thead>
       <tbody>
         {% for batch in batches %}
         <tr>
-          <td>{{ batch.source_filename }}</td>
-          <td>{{ batch.start_date or '-' }}{% if batch.end_date and batch.end_date != batch.start_date %} to {{ batch.end_date }}{% endif %}</td>
+          <td>
+            <div style="font-weight:600;">{{ batch.display_label or batch.source_filename }}</div>
+            <div class="text-muted fs-sm">{{ batch.source_type_label or batch.source_type or 'Activity' }}</div>
+          </td>
+          <td>{{ batch.report_label or batch.start_date or '-' }}{% if batch.end_date and batch.end_date != batch.start_date %} to {{ batch.end_date }}{% endif %}</td>
           <td>{{ batch.row_count }}</td>
+          <td><span class="badge {% if batch.import_status == 'imported' %}badge-green{% else %}badge-blue{% endif %}">{{ batch.status_label or batch.import_status }}</span></td>
         </tr>
         {% else %}
-        <tr><td colspan="3" class="text-muted">No activity batches imported yet.</td></tr>
+        <tr><td colspan="4" class="text-muted">No activity batches imported yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -473,6 +564,93 @@ async function generateActivityReport() {
   } finally {
     btn.disabled = false;
     btn.textContent = '📊 Generate Report';
+  }
+}
+
+async function generateActivityZip() {
+  const btn = document.getElementById('generateActivityZipBtn');
+  const status = document.getElementById('activityZipStatus');
+  const progressCard = document.getElementById('activityZipProgress');
+  const progressFill = document.getElementById('activityZipFill');
+  const progressPct = document.getElementById('activityZipPct');
+  const progressStage = document.getElementById('activityZipStage');
+  const progressNote = document.getElementById('activityZipNote');
+  const reportId = new URLSearchParams(window.location.search).get('report_id') || '{{ report.id if report else "" }}';
+  const batchId = new URLSearchParams(window.location.search).get('batch_id') || '{{ batch_row.id if batch_row else "" }}';
+
+  const setProgress = (pct, stage, note='') => {
+    const safePct = Math.max(0, Math.min(100, Number(pct || 0)));
+    progressCard.hidden = false;
+    progressFill.style.width = `${safePct}%`;
+    progressPct.textContent = `${Math.round(safePct)}%`;
+    progressStage.textContent = stage || 'Building ZIP';
+    progressNote.textContent = note || '';
+  };
+
+  btn.disabled = true;
+  status.textContent = 'Starting bulk ZIP generation...';
+  setProgress(4, 'Preparing bulk ZIP', 'Assembling brand outputs into folders.');
+
+  try {
+    const res = await fetch('/api/activity/report_bulk', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        batch_id: batchId ? Number(batchId) : null,
+        report_id: reportId ? Number(reportId) : null,
+        brands: [],
+        formats: ['pdf', 'excel', 'html'],
+        return_zip: true
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Could not start bulk ZIP generation.');
+    }
+    if (data.job_id) {
+      await pollActivityZipJob(data.job_id, btn, status, setProgress);
+      return;
+    }
+    throw new Error('ZIP generation did not start.');
+  } catch (err) {
+    status.textContent = err.message;
+    btn.disabled = false;
+  }
+}
+
+async function pollActivityZipJob(jobId, btn, status, setProgress) {
+  while (true) {
+    await new Promise(resolve => setTimeout(resolve, 1400));
+    let payload;
+    try {
+      const res = await fetch(`/api/activity/job/${jobId}`, { cache: 'no-store' });
+      payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || 'Could not read bulk ZIP progress.');
+    } catch (err) {
+      status.textContent = err.message;
+      btn.disabled = false;
+      return;
+    }
+
+    const progress = Math.max(0, Math.min(100, Number(payload.progress || 0)));
+    setProgress(progress, payload.current_brand || 'Building bulk ZIP', payload.status === 'done' ? 'Finalizing download package' : 'Packaging brand outputs...');
+
+    if (payload.status === 'error') {
+      status.textContent = payload.error_msg || 'Bulk ZIP generation failed.';
+      btn.disabled = false;
+      return;
+    }
+
+    if (payload.status === 'done') {
+      const result = payload.result_json || {};
+      status.innerHTML = `
+        <strong style="color:var(--green);">✓ Bulk ZIP is ready</strong><br>
+        ${result.zip_url ? `<a href="${result.zip_url}" class="btn btn-primary btn-sm" style="margin-top:8px;">Download ZIP</a>` : ''}
+      `;
+      btn.disabled = false;
+      setProgress(100, 'Bulk ZIP ready', 'Download the pack now.');
+      return;
+    }
   }
 }
 </script>

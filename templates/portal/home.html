@@ -637,14 +637,22 @@ async function loadActivityHistory() {
     }
     
     historyList.innerHTML = batches.map(batch => {
-      const date = new Date(batch.created_at).toLocaleDateString();
-      const period = batch.source_filename || 'Unknown period';
+      const date = batch.created_at ? new Date(batch.created_at).toLocaleDateString() : '';
+      const title = batch.display_label || batch.report_label || batch.source_filename || 'Activity batch';
+      const subtitle = [
+        batch.source_type_label || batch.source_type || 'Activity',
+        batch.row_count ? `${batch.row_count.toLocaleString()} rows` : '',
+        batch.brand_count ? `${batch.brand_count} brands` : '',
+      ].filter(Boolean).join(' · ');
       return `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--gray);">
-          <div>
-            <span style="font-weight:600;">${period}</span>
-            <span class="badge badge-green" style="font-size:9px;padding:1px 6px;margin-left:4px;">Activity</span>
-            <span class="text-muted fs-sm"> · ${date}</span>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:8px 0;border-bottom:1px solid var(--gray);">
+          <div style="min-width:0;">
+            <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${title}</div>
+            <div class="text-muted fs-sm">${subtitle}${date ? ` · ${date}` : ''}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
+              <span class="badge badge-green" style="font-size:9px;padding:1px 6px;">${batch.status_label || 'Imported'}</span>
+              ${batch.report_label ? `<span class="badge badge-blue" style="font-size:9px;padding:1px 6px;">${batch.report_label}</span>` : ''}
+            </div>
           </div>
           <a href="/activity-intelligence?batch_id=${batch.id}" class="btn btn-outline btn-sm">View</a>
         </div>

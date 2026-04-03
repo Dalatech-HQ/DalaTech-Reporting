@@ -4158,6 +4158,75 @@ def _list_activity_brands_for_report(report_id):
     return [row['brand_name'] for row in rows if row['brand_name']]
 
 
+def _get_activity_batch_row(batch_id):
+    if not batch_id:
+        return None
+    try:
+        target = int(batch_id)
+    except (TypeError, ValueError):
+        return None
+    for batch in ds.get_activity_batches(limit=500):
+        if int(batch.get('id') or 0) == target:
+            return batch
+    return None
+
+
+def _safe_activity_batch_summary(batch):
+    if not batch:
+        return {}
+    summary = batch.get('summary_json') or {}
+    if isinstance(summary, str):
+        try:
+            summary = json.loads(summary)
+        except Exception:
+            summary = {}
+    return summary if isinstance(summary, dict) else {}
+
+
+def _decorate_activity_batch(batch):
+    if not batch:
+        return None
+    summary = _safe_activity_batch_summary(batch)
+    report = ds.get_report(batch.get('report_id')) if batch.get('report_id') else None
+    report_label = (report or {}).get('month_label') or summary.get('report_label') or summary.get('period_label')
+    source_filename = batch.get('source_filename') or summary.get('source_filename') or 'Activity import'
+    source_type = (batch.get('source_type') or summary.get('source_meta', {}).get('source_type') or 'activity').replace('_', ' ')
+    row_count = int(batch.get('row_count') or summary.get('row_count') or 0)
+    brand_count = int(summary.get('brand_count') or len(summary.get('top_brands') or []) or 0)
+    created_at = batch.get('created_at') or ''
+    return {
+        **batch,
+        'summary': summary,
+        'report_label': report_label or source_filename,
+        'display_label': report_label or source_filename,
+        'source_label': source_filename,
+        'source_type_label': source_type.title(),
+        'row_count': row_count,
+        'brand_count': brand_count,
+        'created_at_date': created_at[:10] if created_at else '',
+        'status_label': (batch.get('import_status') or 'imported').replace('_', ' ').title(),
+        'report_id': batch.get('report_id') or (report['id'] if report else None),
+    }
+
+
+def _activity_batch_brand_rows(report_id, summary):
+    rows = summary.get('top_brands') or []
+    brand_rows = []
+    for row in rows:
+        brand_name = row.get('brand_name')
+        if not brand_name:
+            continue
+        brand_rows.append({
+            'brand_name': brand_name,
+            'count': int(row.get('count') or 0),
+            'detail_url': url_for('activity_intelligence', report_id=report_id, brand=brand_name),
+            'html_url': f"/api/activity/report_html/{report_id}/{brand_name}" if report_id else None,
+            'pdf_url': f"/api/activity/report_pdf/{report_id}/{brand_name}" if report_id else None,
+            'excel_url': f"/api/activity/report_excel/{report_id}/{brand_name}" if report_id else None,
+        })
+    return brand_rows
+
+
 def _warm_activity_report_assets(report_id, brand_names=None):
     brands = list(brand_names or _list_activity_brands_for_report(report_id))
     if not brands:
@@ -4882,10 +4951,16 @@ def api_export_alerts():
 def activity_intelligence():
     alert_count = ds.get_unacknowledged_count()
     latest_report = ds.get_latest_report()
-    report_id = request.args.get('report_id', latest_report['id'] if latest_report else None, type=int)
     batch_id = request.args.get('batch_id', type=int)
     brand_name = (request.args.get('brand') or '').strip() or None
     store_code = (request.args.get('store') or '').strip() or None
+    batch_row = _get_activity_batch_row(batch_id)
+    report_id = request.args.get('report_id', type=int)
+    if batch_row and not report_id:
+        report_id = batch_row.get('report_id') or report_id
+    if not report_id and latest_report:
+        report_id = latest_report['id']
+    report = ds.get_report(report_id) if report_id else None
 
     if store_code:
         store_summary = ds.get_retailer_activity_summary(store_code, report_id=report_id)
@@ -4921,12 +4996,14 @@ def activity_intelligence():
     else:
         summary = ds.get_activity_summary(batch_id=batch_id, report_id=report_id, brand_name=brand_name)
 
-    batches = ds.get_activity_batches(limit=30)
+    batches = [_decorate_activity_batch(batch) for batch in ds.get_activity_batches(limit=30)]
+    batches = [batch for batch in batches if batch]
+    report_brands = _activity_batch_brand_rows(report_id, summary)
     available_stores = ds.list_activity_retailers(report_id=report_id, limit=500)
     return render_template(
         'portal/activity_intelligence.html',
         alert_count=alert_count,
-        report=ds.get_report(report_id) if report_id else None,
+        report=report,
         reports=ds.get_all_reports(),
         batches=batches,
         selected_batch_id=batch_id,
@@ -4934,6 +5011,8 @@ def activity_intelligence():
         selected_store=store_code,
         available_stores=available_stores,
         summary=summary,
+        batch_row=_decorate_activity_batch(batch_row) if batch_row else None,
+        report_brands=report_brands,
     )
 
 
@@ -5338,7 +5417,8 @@ def api_activity_detect_brands():
 def api_activity_batches():
     """Get list of activity import batches for history."""
     limit = request.args.get('limit', 5, type=int)
-    batches = ds.get_activity_batches(limit=limit)
+    batches = [_decorate_activity_batch(batch) for batch in ds.get_activity_batches(limit=limit)]
+    batches = [batch for batch in batches if batch]
     return jsonify({'success': True, 'batches': batches})
 
 
