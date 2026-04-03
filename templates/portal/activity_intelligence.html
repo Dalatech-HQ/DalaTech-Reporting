@@ -336,15 +336,39 @@ document.getElementById('activityImportForm')?.addEventListener('submit', async 
   };
 
   btn.disabled = true;
+  btn.textContent = 'Importing... 0%';
   msg.textContent = 'Starting import...';
   setProgress(3, 'Preparing activity import', 'We will show each step here.');
 
-  const res = await fetch('/api/activity/import', { method: 'POST', body: new FormData(form) });
-  const data = await res.json();
+  const fd = new FormData(form);
+  const data = await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/activity/import', true);
+    xhr.responseType = 'json';
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      const pct = Math.max(1, Math.min(99, Math.round((event.loaded / event.total) * 100)));
+      btn.textContent = `Importing... ${pct}%`;
+      setProgress(pct, 'Uploading activity file', 'Sending workbook to the server...');
+    };
+    xhr.onload = () => {
+      const payload = xhr.response || (() => {
+        try { return JSON.parse(xhr.responseText || '{}'); } catch (_) { return {}; }
+      })();
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(payload);
+      } else {
+        reject(new Error(payload.error || 'Import failed.'));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Import failed.'));
+    xhr.send(fd);
+  });
   if (!data.success || !data.job_id) {
     btn.disabled = false;
     msg.textContent = data.error || 'Import failed.';
     setProgress(0, 'Import did not start', data.error || 'Please try again.');
+    btn.textContent = 'Import Activity';
     return;
   }
 
@@ -372,6 +396,7 @@ document.getElementById('activityImportForm')?.addEventListener('submit', async 
       const summaryText = `${summary.visit_count || 0} visits, ${summary.issue_count || 0} issues, ${summary.stores_visited || 0} stores`;
       setProgress(100, 'Activity import complete', 'Opening the updated summary now.', summaryText);
       msg.textContent = 'Activity import complete.';
+      btn.textContent = 'Import Activity';
       const target = new URL(window.location.href);
       if (result.batch_id) target.searchParams.set('batch_id', result.batch_id);
       if (result.report_id) target.searchParams.set('report_id', result.report_id);
@@ -382,6 +407,7 @@ document.getElementById('activityImportForm')?.addEventListener('submit', async 
     if (job.status === 'error') {
       btn.disabled = false;
       msg.textContent = job.error_msg || 'Import failed.';
+      btn.textContent = 'Import Activity';
       return;
     }
 

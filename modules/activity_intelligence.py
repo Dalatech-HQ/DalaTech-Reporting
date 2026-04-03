@@ -597,13 +597,17 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
     survey_resolution_cache: dict[str, dict | None] = {}
 
     total_rows = max(len(df), 1)
+    last_progress_bucket = -1
     for idx, row in enumerate(df.to_dict(orient='records'), start=1):
         clean = {k: (None if str(v).strip() in ('', 'nan', 'NaT') else str(v).strip()) for k, v in row.items()}
         events.append(clean)
 
-        if progress_cb and (idx == 1 or idx == total_rows or idx % 250 == 0):
+        if progress_cb:
             progress = 22 + int((idx / total_rows) * 38)
-            progress_cb(progress, f"Reading activity rows {idx:,} of {total_rows:,}")
+            bucket = progress // 5
+            if idx == 1 or idx == total_rows or bucket != last_progress_bucket:
+                last_progress_bucket = bucket
+                progress_cb(progress, f"Reading activity rows {idx:,} of {total_rows:,}")
 
         survey_guess = _extract_brand_candidate_from_survey(clean.get('survey_name'))
         source_category = str(clean.get('source_category') or '').strip().lower()
