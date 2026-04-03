@@ -4314,11 +4314,19 @@ def api_activity_report_bulk():
     
     # If no brands specified, get all brands with activity data
     if not brand_names:
-        # Get from activity_issues table
+        # Prefer all activity-linked brand sources so clean files with no issues still generate reports.
         with ds._connect() as conn:
             cursor = conn.execute(
-                "SELECT DISTINCT brand_name FROM activity_issues WHERE report_id = ?",
-                (report_id,)
+                """
+                SELECT DISTINCT brand_name
+                FROM (
+                    SELECT brand_name FROM activity_issues WHERE report_id = ? AND brand_name IS NOT NULL AND TRIM(brand_name) != ''
+                    UNION
+                    SELECT brand_name FROM activity_brand_mentions WHERE report_id = ? AND brand_name IS NOT NULL AND TRIM(brand_name) != ''
+                )
+                ORDER BY brand_name
+                """,
+                (report_id, report_id)
             )
             brand_names = [row['brand_name'] for row in cursor.fetchall() if row['brand_name']]
     

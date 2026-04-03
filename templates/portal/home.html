@@ -619,6 +619,7 @@ let detectedBrands = [];
 let brandConfirmCallback = null;
 let activityDetectTimer = null;
 let activityDetectPercent = 0;
+const ACTIVITY_PREVIEW_SIZE_LIMIT = 5 * 1024 * 1024;
 
 async function pollActivityDetectJob(jobId, preview) {
   const jobRes = await fetch(`/api/activity/job/${jobId}`);
@@ -702,6 +703,23 @@ async function previewActivityFile(file) {
   preview.style.display = 'block';
   preview.className = 'flash flash-info';
   activityDetectPercent = 0;
+  if (file && file.size > ACTIVITY_PREVIEW_SIZE_LIMIT) {
+    if (activityDetectTimer) clearInterval(activityDetectTimer);
+    activityDetectTimer = null;
+    detectedBrands = [];
+    preview.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <strong>Large workbook detected</strong>
+      </div>
+      <div class="text-muted fs-sm" style="margin-top:8px;">
+        Brand preview is skipped for larger files to keep uploads responsive. Brands will be resolved during import.
+      </div>
+      <div class="text-muted fs-sm" style="margin-top:6px;">
+        File size: ${(file.size / (1024 * 1024)).toFixed(1)} MB
+      </div>
+    `;
+    return;
+  }
   if (activityDetectTimer) clearInterval(activityDetectTimer);
   activityDetectTimer = window.setInterval(() => {
     if (activityDetectPercent < 90) {
