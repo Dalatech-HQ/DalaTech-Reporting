@@ -4975,9 +4975,27 @@ def api_activity_import():
 
     def _run():
         report_id = explicit_report_id
+        load_done = threading.Event()
+        load_tick = {'value': 8}
+
+        def _pulse_loading():
+            while not load_done.wait(2.5):
+                if load_tick['value'] < 17:
+                    load_tick['value'] += 1
+                ds.update_job(
+                    job_id,
+                    progress=load_tick['value'],
+                    current_brand='Reading activity file',
+                    report_id=report_id,
+                )
+
+        pulse_thread = threading.Thread(target=_pulse_loading, daemon=True)
+        pulse_thread.start()
         try:
             ds.update_job(job_id, progress=8, current_brand='Reading activity file')
             df, meta = load_activity_dataframe(file_bytes, expected_source=source_mode)
+            load_done.set()
+            pulse_thread.join(timeout=1)
 
             ds.update_job(
                 job_id,
@@ -5008,12 +5026,30 @@ def api_activity_import():
             )
 
             ds.update_job(job_id, progress=92, current_brand='Saving activity summary', report_id=report_id)
+            save_done = threading.Event()
+            save_tick = {'value': 92}
+
+            def _pulse_saving():
+                while not save_done.wait(2.5):
+                    if save_tick['value'] < 96:
+                        save_tick['value'] += 1
+                    ds.update_job(
+                        job_id,
+                        progress=save_tick['value'],
+                        current_brand='Saving activity summary',
+                        report_id=report_id,
+                    )
+
+            save_thread = threading.Thread(target=_pulse_saving, daemon=True)
+            save_thread.start()
             batch_id = ds.save_activity_import(
                 payload,
                 source_filename=filename,
                 source_type=meta.get('source_type'),
                 report_id=report_id,
             )
+            save_done.set()
+            save_thread.join(timeout=1)
 
             linked_report = ds.get_report(report_id) if report_id else None
             if linked_report:
@@ -5062,6 +5098,10 @@ def api_activity_import():
                 },
             )
         except Exception as exc:
+            try:
+                load_done.set()
+            except Exception:
+                pass
             ds.update_job(
                 job_id,
                 status='error',
@@ -5069,6 +5109,12 @@ def api_activity_import():
                 report_id=report_id,
                 error_msg=str(exc),
             )
+        finally:
+            load_done.set()
+            try:
+                save_done.set()
+            except Exception:
+                pass
 
     threading.Thread(target=_run, daemon=True).start()
     return jsonify({'success': True, 'job_id': job_id})

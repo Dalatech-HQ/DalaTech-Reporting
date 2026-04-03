@@ -20,6 +20,10 @@ from typing import Iterable
 
 import pandas as pd
 from openpyxl import load_workbook
+try:
+    from python_calamine import load_workbook as load_calamine_workbook
+except Exception:  # pragma: no cover - optional acceleration dependency
+    load_calamine_workbook = None
 
 from .brand_names import canonicalize_brand_name
 
@@ -68,6 +72,11 @@ COLUMN_ALIASES = {
     'label': 'label',
     'answer': 'answer',
 }
+
+
+ACTIVITY_USECOLS = set(EXPECTED_COLUMNS)
+ACTIVITY_USECOLS.update(COLUMN_ALIASES.values())
+ACTIVITY_USECOLS.add('source_category')
 
 
 ISSUE_KEYWORDS = (
@@ -143,6 +152,10 @@ def _looks_like_ooxml_excel(raw: bytes) -> bool:
     )
 
 
+def _activity_usecols(column_name: str) -> bool:
+    return _normalize_header_key(column_name) in ACTIVITY_USECOLS
+
+
 def _decode_text(raw: bytes) -> str:
     for enc in ('utf-8-sig', 'utf-16', 'latin1'):
         try:
@@ -160,6 +173,29 @@ def _read_text_table(raw: bytes) -> pd.DataFrame:
     return pd.read_csv(io.StringIO(text), sep=None, engine='python', dtype=str)
 
 
+def _read_excel_table(raw: bytes) -> pd.DataFrame | None:
+    if load_calamine_workbook is None:
+        return None
+    try:
+        workbook = load_calamine_workbook(io.BytesIO(raw))
+    except Exception:
+        return None
+    try:
+        sheet = workbook.get_sheet_by_index(0)
+        rows = sheet.iter_rows()
+        header = next(rows, None)
+        if not header:
+            return pd.DataFrame()
+        return pd.DataFrame.from_records(rows, columns=header)
+    except Exception:
+        return None
+    finally:
+        try:
+            workbook.close()
+        except Exception:
+            pass
+
+
 def _read_activity_file(raw: bytes, filename: str = '') -> tuple[pd.DataFrame, str]:
     ext = os.path.splitext(filename or '')[1].lower()
     if ext in ('.csv', '.txt', '.tsv'):
@@ -172,9 +208,16 @@ def _read_activity_file(raw: bytes, filename: str = '') -> tuple[pd.DataFrame, s
             pass
 
     if ext in ('.xlsx', '.xlsm', '.xltx', '.xltm'):
+        frame = _read_excel_table(raw)
+        if frame is not None:
+            return frame, 'excel'
         for engine in (None, 'openpyxl'):
             try:
-                kwargs = {'dtype': str}
+                kwargs = {
+                    'dtype': str,
+                    'usecols': _activity_usecols,
+                    'engine_kwargs': {'read_only': True, 'data_only': True},
+                }
                 if engine:
                     kwargs['engine'] = engine
                 return pd.read_excel(io.BytesIO(raw), **kwargs), 'excel'
@@ -183,6 +226,9 @@ def _read_activity_file(raw: bytes, filename: str = '') -> tuple[pd.DataFrame, s
         return _read_text_table(raw), 'text'
 
     if ext == '.xls':
+        frame = _read_excel_table(raw)
+        if frame is not None:
+            return frame, 'excel'
         for engine in ('xlrd', 'openpyxl'):
             try:
                 return pd.read_excel(io.BytesIO(raw), dtype=str, engine=engine), 'excel'
@@ -215,7 +261,53 @@ def _normalize_header_key(value) -> str:
     return re.sub(r'[^a-z0-9]+', '_', str(value or '').strip().lower()).strip('_')
 
 
+def _normalize_date_series(series: pd.Series) -> pd.Series:
+    dt = pd.to_datetime(series, errors='coerce')
+    return dt.dt.strftime('%Y-%m-%d')
+
+
 def _extract_brands_from_workbook(raw: bytes, progress_cb=None) -> tuple[list[str], int]:
+    if load_calamine_workbook is not None:
+        try:
+            wb = load_calamine_workbook(io.BytesIO(raw))
+            try:
+                ws = wb.get_sheet_by_index(0)
+                rows = ws.iter_rows()
+                header = next(rows, ())
+                survey_idx = None
+                for idx, value in enumerate(header):
+                    if _normalize_header_key(value) in {'survey_name', 'surveyname'}:
+                        survey_idx = idx
+                        break
+                if survey_idx is None:
+                    return [], 0
+                total_rows = max(int(getattr(ws, 'height', 0) or 0) - 1, 1)
+                brands = []
+                row_count = 0
+                last_progress = -1
+                for row in rows:
+                    row_count += 1
+                    if progress_cb and total_rows > 0:
+                        pct = min(95, max(10, int((row_count / total_rows) * 90) + 10))
+                        if pct != last_progress and (pct % 5 == 0 or row_count == 1):
+                            last_progress = pct
+                            progress_cb(pct, f'Scanning workbook rows ({row_count:,}/{total_rows:,})')
+                    value = row[survey_idx] if survey_idx < len(row) else None
+                    if value:
+                        brand = str(value).replace(' Feedback', '').strip()
+                        if brand and brand not in brands:
+                            brands.append(brand)
+                if progress_cb:
+                    progress_cb(98, f'Found {len(brands)} brand partners')
+                return brands, row_count
+            finally:
+                try:
+                    wb.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     brands = []
     row_count = 0
     wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
@@ -445,11 +537,12 @@ def load_activity_dataframe(file_source, expected_source: str | None = None) -> 
     else:
         df, source_type = _read_activity_file(raw, filename)
         df = _normalise_columns(df)
-        for col in df.columns:
-            df[col] = df[col].fillna('').astype(str).str.strip()
-        df['activity_date'] = df['activity_date'].apply(_to_iso_date)
-        df['survey_start_date'] = df['survey_start_date'].apply(_to_iso_date)
-        df['survey_end_date'] = df['survey_end_date'].apply(_to_iso_date)
+        if 'activity_date' in df.columns:
+            df['activity_date'] = _normalize_date_series(df['activity_date'])
+        if 'survey_start_date' in df.columns:
+            df['survey_start_date'] = _normalize_date_series(df['survey_start_date'])
+        if 'survey_end_date' in df.columns:
+            df['survey_end_date'] = _normalize_date_series(df['survey_end_date'])
         df = df[df['activity_date'].notna()].copy()
         meta = {
             'source_type': source_type,
@@ -598,8 +691,12 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
 
     total_rows = max(len(df), 1)
     last_progress_bucket = -1
-    for idx, row in enumerate(df.to_dict(orient='records'), start=1):
-        clean = {k: (None if str(v).strip() in ('', 'nan', 'NaT') else str(v).strip()) for k, v in row.items()}
+    columns = list(df.columns)
+    for idx, row in enumerate(df.itertuples(index=False, name=None), start=1):
+        clean = {}
+        for col, value in zip(columns, row):
+            text = str(value).strip()
+            clean[col] = None if text in ('', 'nan', 'NaT') else text
         events.append(clean)
 
         if progress_cb:
