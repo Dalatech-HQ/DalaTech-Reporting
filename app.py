@@ -4200,9 +4200,8 @@ def api_activity_report_bulk():
     
     # If batch_id provided, get report_id and brand list from batch
     if batch_id:
-        batch = ds.get_activity_batches(limit=1)
+        batch = next((item for item in ds.get_activity_batches(limit=50) if str(item.get('id')) == str(batch_id)), None)
         if batch:
-            batch = batch[0]  # Get latest if specific batch not found
             report_id = batch.get('report_id') or report_id
     
     # If no report_id, use latest
@@ -4216,13 +4215,12 @@ def api_activity_report_bulk():
     # If no brands specified, get all brands with activity data
     if not brand_names:
         # Get from activity_issues table
-        conn = ds._conn()
-        cursor = conn.execute(
-            "SELECT DISTINCT brand_name FROM activity_issues WHERE report_id = ?",
-            (report_id,)
-        )
-        brand_names = [row['brand_name'] for row in cursor.fetchall()]
-        conn.close()
+        with ds._connect() as conn:
+            cursor = conn.execute(
+                "SELECT DISTINCT brand_name FROM activity_issues WHERE report_id = ?",
+                (report_id,)
+            )
+            brand_names = [row['brand_name'] for row in cursor.fetchall() if row['brand_name']]
     
     if not brand_names:
         return jsonify({'error': 'No brands with activity data found'}), 404
