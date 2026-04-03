@@ -215,7 +215,7 @@ def _normalize_header_key(value) -> str:
     return re.sub(r'[^a-z0-9]+', '_', str(value or '').strip().lower()).strip('_')
 
 
-def _extract_brands_from_workbook(raw: bytes) -> tuple[list[str], int]:
+def _extract_brands_from_workbook(raw: bytes, progress_cb=None) -> tuple[list[str], int]:
     brands = []
     row_count = 0
     wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
@@ -229,13 +229,22 @@ def _extract_brands_from_workbook(raw: bytes) -> tuple[list[str], int]:
                 break
         if survey_idx is None:
             return [], 0
+        total_rows = max(int(getattr(ws, 'max_row', 0) or 0) - 1, 1)
+        last_progress = -1
         for row in ws.iter_rows(min_row=2, min_col=survey_idx + 1, max_col=survey_idx + 1, values_only=True):
             row_count += 1
+            if progress_cb and total_rows > 0:
+                pct = min(95, max(10, int((row_count / total_rows) * 90) + 10))
+                if pct != last_progress and (pct % 5 == 0 or row_count == 1):
+                    last_progress = pct
+                    progress_cb(pct, f'Scanning workbook rows ({row_count:,}/{total_rows:,})')
             value = row[0] if row else None
             if value:
                 brand = str(value).replace(' Feedback', '').strip()
                 if brand and brand not in brands:
                     brands.append(brand)
+        if progress_cb:
+            progress_cb(98, f'Found {len(brands)} brand partners')
         return brands, row_count
     finally:
         try:
@@ -244,13 +253,13 @@ def _extract_brands_from_workbook(raw: bytes) -> tuple[list[str], int]:
             pass
 
 
-def extract_activity_brands(file_source, expected_source: str | None = None) -> tuple[list[str], dict]:
+def extract_activity_brands(file_source, expected_source: str | None = None, progress_cb=None) -> tuple[list[str], dict]:
     raw, filename = _coerce_bytes(file_source)
     source_choice = str(expected_source or 'auto').strip().lower()
     ext = os.path.splitext(filename or '')[1].lower()
 
     if ext in ('.xlsx', '.xlsm', '.xltx', '.xltm'):
-        brands, row_count = _extract_brands_from_workbook(raw)
+        brands, row_count = _extract_brands_from_workbook(raw, progress_cb=progress_cb)
         return brands, {
             'source_type': 'excel',
             'source_selection': source_choice,

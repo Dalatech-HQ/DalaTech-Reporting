@@ -5093,7 +5093,18 @@ def api_activity_detect_brands():
     def _run():
         try:
             ds.update_job(job_id, progress=10, current_brand='Reading activity file')
-            brands, meta = extract_activity_brands(file_bytes, expected_source=source_mode)
+            def _progress(progress_value, message):
+                ds.update_job(
+                    job_id,
+                    progress=max(10, min(int(progress_value), 98)),
+                    current_brand=message,
+                )
+
+            brands, meta = extract_activity_brands(
+                file_bytes,
+                expected_source=source_mode,
+                progress_cb=_progress,
+            )
             if not brands:
                 ds.update_job(
                     job_id,

@@ -614,6 +614,8 @@ async function loadActivityHistory() {
 // Brand detection preview
 let detectedBrands = [];
 let brandConfirmCallback = null;
+let activityDetectTimer = null;
+let activityDetectPercent = 0;
 
 async function pollActivityDetectJob(jobId, preview) {
   const jobRes = await fetch(`/api/activity/job/${jobId}`);
@@ -627,16 +629,41 @@ async function pollActivityDetectJob(jobId, preview) {
   if (job.status === 'error') {
     preview.className = 'flash flash-error';
     preview.textContent = job.error_msg || 'Could not analyze file.';
+    if (activityDetectTimer) {
+      clearInterval(activityDetectTimer);
+      activityDetectTimer = null;
+    }
     return;
   }
 
+  const backendPct = Math.max(0, Math.min(100, Number(job.progress || 0)));
+  activityDetectPercent = Math.max(activityDetectPercent, backendPct);
+  if (job.status !== 'done' && activityDetectPercent < 95) {
+    activityDetectPercent = Math.min(95, activityDetectPercent + 1);
+  }
+  const pct = activityDetectPercent;
+  preview.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+      <strong>Analyzing file and detecting brands...</strong>
+      <span style="font-weight:700;color:var(--navy);">${Math.round(pct)}%</span>
+    </div>
+    <div style="margin-top:8px;height:8px;background:#E5EAF4;border-radius:999px;overflow:hidden;">
+      <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--navy) 0%, var(--green) 100%);border-radius:999px;transition:width .25s ease;"></div>
+    </div>
+    <div class="text-muted fs-sm" style="margin-top:8px;">${job.current_brand || 'Processing workbook...'}</div>
+  `;
+
   if (job.status !== 'done') {
     preview.className = 'flash flash-info';
-    preview.textContent = job.current_brand || 'Detecting brand partners...';
     window.setTimeout(() => pollActivityDetectJob(jobId, preview), 900);
     return;
   }
 
+  if (activityDetectTimer) {
+    clearInterval(activityDetectTimer);
+    activityDetectTimer = null;
+  }
+  activityDetectPercent = 100;
   const result = job.result_json || {};
   detectedBrands = result.brands || [];
   const brandCount = detectedBrands.length;
@@ -670,7 +697,33 @@ async function pollActivityDetectJob(jobId, preview) {
 async function previewActivityFile(file) {
   const preview = document.getElementById('activityPreviewNote');
   preview.style.display = 'block';
-  preview.innerHTML = '🔍 Analyzing file and detecting brands...';
+  preview.className = 'flash flash-info';
+  activityDetectPercent = 0;
+  if (activityDetectTimer) clearInterval(activityDetectTimer);
+  activityDetectTimer = window.setInterval(() => {
+    if (activityDetectPercent < 90) {
+      activityDetectPercent += 1;
+      const pct = activityDetectPercent;
+      preview.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <strong>Analyzing file and detecting brands...</strong>
+          <span style="font-weight:700;color:var(--navy);">${Math.round(pct)}%</span>
+        </div>
+        <div style="margin-top:8px;height:8px;background:#E5EAF4;border-radius:999px;overflow:hidden;">
+          <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--navy) 0%, var(--green) 100%);border-radius:999px;transition:width .25s ease;"></div>
+        </div>
+      `;
+    }
+  }, 1000);
+  preview.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+      <strong>Analyzing file and detecting brands...</strong>
+      <span style="font-weight:700;color:var(--navy);">0%</span>
+    </div>
+    <div style="margin-top:8px;height:8px;background:#E5EAF4;border-radius:999px;overflow:hidden;">
+      <div style="height:100%;width:0%;background:linear-gradient(90deg,var(--navy) 0%, var(--green) 100%);border-radius:999px;transition:width .25s ease;"></div>
+    </div>
+  `;
   
   const fd = new FormData();
   fd.append('file', file);
@@ -686,8 +739,6 @@ async function previewActivityFile(file) {
       return;
     }
     if (data.job_id) {
-      preview.className = 'flash flash-info';
-      preview.textContent = 'Detecting brand partners...';
       await pollActivityDetectJob(data.job_id, preview);
       return;
     }
