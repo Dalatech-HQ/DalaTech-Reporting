@@ -5426,52 +5426,8 @@ def api_activity_import():
             save_done.set()
             save_thread.join(timeout=1)
 
-            linked_report = ds.get_report(report_id) if report_id else None
-            if linked_report:
-                build_default_agent_actions(ds, linked_report)
-
             top_brands = (payload.get('summary') or {}).get('top_brands') or []
             primary_brand = top_brands[0].get('brand_name') if top_brands else None
-
-            ds.update_job(
-                job_id,
-                progress=97,
-                current_brand='Refreshing Activity summaries',
-                report_id=report_id,
-                result_json={
-                    'batch_id': batch_id,
-                    'report_id': report_id,
-                    'summary': payload.get('summary', {}),
-                },
-            )
-
-            _refresh_copilot_state(
-                report_id=report_id,
-                batch_id=batch_id,
-                brand_name=primary_brand,
-                reason=f'activity_import:{filename}',
-                source='activity_import',
-            )
-            coach_job_id = _launch_coach_refresh_job(
-                mode='current',
-                report_id=report_id,
-                include_pairs=True,
-                source='activity_import',
-            ) if report_id else None
-
-            if report_id:
-                threading.Thread(
-                    target=_warm_activity_report_assets,
-                    kwargs={'report_id': report_id},
-                    daemon=True,
-                ).start()
-            elif batch_id:
-                threading.Thread(
-                    target=_warm_activity_report_assets,
-                    kwargs={'batch_id': batch_id},
-                    daemon=True,
-                ).start()
-
             ds.update_job(
                 job_id,
                 status='done',
@@ -5482,9 +5438,59 @@ def api_activity_import():
                     'batch_id': batch_id,
                     'report_id': report_id,
                     'summary': payload.get('summary', {}),
-                    'coach_job_id': coach_job_id,
+                    'coach_job_id': None,
                 },
             )
+
+            def _post_import_tasks():
+                coach_job_id = None
+                try:
+                    linked_report = ds.get_report(report_id) if report_id else None
+                    if linked_report:
+                        build_default_agent_actions(ds, linked_report)
+
+                    _refresh_copilot_state(
+                        report_id=report_id,
+                        batch_id=batch_id,
+                        brand_name=primary_brand,
+                        reason=f'activity_import:{filename}',
+                        source='activity_import',
+                    )
+                    coach_job_id = _launch_coach_refresh_job(
+                        mode='current',
+                        report_id=report_id,
+                        include_pairs=True,
+                        source='activity_import',
+                    ) if report_id else None
+
+                    if report_id:
+                        _warm_activity_report_assets(report_id=report_id)
+                    elif batch_id:
+                        _warm_activity_report_assets(batch_id=batch_id)
+                except Exception:
+                    try:
+                        app.logger.exception('Activity post-import tasks failed')
+                    except Exception:
+                        pass
+                finally:
+                    try:
+                        ds.update_job(
+                            job_id,
+                            status='done',
+                            progress=100,
+                            current_brand='Activity import complete',
+                            report_id=report_id,
+                            result_json={
+                                'batch_id': batch_id,
+                                'report_id': report_id,
+                                'summary': payload.get('summary', {}),
+                                'coach_job_id': coach_job_id,
+                            },
+                        )
+                    except Exception:
+                        pass
+
+            threading.Thread(target=_post_import_tasks, daemon=True).start()
         except Exception as exc:
             try:
                 load_done.set()
