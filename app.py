@@ -5370,9 +5370,18 @@ def api_activity_import():
                     None if requested_period == 'auto' else requested_period,
                 )
                 if start_date and end_date:
+                    inferred_label = DataStore._build_month_label(start_date, end_date, resolved_period)
                     exact_report = ds.get_report_by_date_range(start_date, end_date)
                     if exact_report and normalize_report_type(exact_report.get('report_type')) == resolved_period:
                         report_id = exact_report['id']
+                    elif inferred_label:
+                        for candidate in ds.get_all_reports():
+                            if normalize_report_type(candidate.get('report_type')) != resolved_period:
+                                continue
+                            if (candidate.get('month_label') or '').strip().lower() != inferred_label.strip().lower():
+                                continue
+                            report_id = candidate.get('id')
+                            break
 
             def _progress(progress_value, message):
                 ds.update_job(
