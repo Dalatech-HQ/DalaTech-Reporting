@@ -7,6 +7,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
+from .brand_names import brand_match_terms
 from .period_comparison import build_period_comparison, comparison_basis_label, compare_same_type_reports
 from .pdf_generator_html import render_pdf_bytes
 
@@ -136,11 +137,15 @@ def _parse_summary_json(batch_row):
         return {}
 
 
-def _get_activity_batch_for_report(ds, report_id):
-    batches = [row for row in ds.get_activity_batches(limit=100) if row.get('report_id') == report_id]
-    if not batches:
+def _get_activity_batch_context(ds, report_id=None, batch_id=None):
+    batches = ds.get_activity_batches(limit=500)
+    batch = None
+    if batch_id:
+        batch = next((row for row in batches if int(row.get('id') or 0) == int(batch_id)), None)
+    elif report_id:
+        batch = next((row for row in batches if row.get('report_id') == report_id), None)
+    if not batch:
         return None, {}
-    batch = batches[0]
     summary = _parse_summary_json(batch)
     return batch, summary
 
@@ -165,28 +170,37 @@ def _source_labels(batch_row, summary):
 
 
 def _build_survey_filter(brand_name):
-    brand_name = (brand_name or '').strip()
-    compact = brand_name.replace(' ', '')
-    clauses = [
-        "(LOWER(COALESCE({alias}.survey_name, '')) LIKE LOWER(?) OR LOWER(COALESCE({alias}.survey_name, '')) LIKE LOWER(?))",
-    ]
-    params = [f"%{brand_name}%", f"%{compact}%"]
-    if brand_name.lower().endswith('s'):
-        singular = brand_name[:-1].strip()
-        if singular:
-            clauses.append("LOWER(COALESCE({alias}.survey_name, '')) LIKE LOWER(?)")
-            params.append(f"%{singular}%")
-    else:
-        plural = f"{brand_name}s"
+    terms = []
+    seen = set()
+    for term in brand_match_terms(brand_name):
+        compact = term.replace(' ', '')
+        for candidate in (term, compact):
+            key = candidate.strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            terms.append(candidate)
+
+    clauses = []
+    params = []
+    for term in terms:
         clauses.append("LOWER(COALESCE({alias}.survey_name, '')) LIKE LOWER(?)")
-        params.append(f"%{plural}%")
+        params.append(f"%{term}%")
+
+    if not clauses:
+        clauses.append("LOWER(COALESCE({alias}.survey_name, '')) LIKE LOWER(?)")
+        params.append(f"%{(brand_name or '').strip()}%")
     return clauses, params
 
 
-def _read_activity_frames(ds, brand_name, report_id):
+def _read_activity_frames(ds, brand_name, report_id=None, batch_id=None):
     clauses, params = _build_survey_filter(brand_name)
     survey_events = ' OR '.join(part.format(alias='ae') for part in clauses)
     survey_visits = ' OR '.join(part.format(alias='av') for part in clauses)
+    scope_col = 'batch_id' if batch_id else 'report_id'
+    scope_value = batch_id if batch_id else report_id
+    if not scope_value:
+        raise ValueError('An activity batch or report is required')
     with ds._connect() as conn:
         events_df = pd.read_sql_query(
             f"""
@@ -195,11 +209,11 @@ def _read_activity_frames(ds, brand_name, report_id):
                    ae.retailer_type, ae.retailer_state, ae.retailer_district, ae.retailer_city,
                    ae.question, ae.label, ae.answer
             FROM activity_events ae
-            WHERE ae.report_id = ? AND ({survey_events})
+            WHERE ae.{scope_col} = ? AND ({survey_events})
             ORDER BY ae.activity_date DESC, ae.id DESC
             """,
             conn,
-            params=[report_id, *params],
+            params=[scope_value, *params],
         )
         visits_df = pd.read_sql_query(
             f"""
@@ -207,32 +221,32 @@ def _read_activity_frames(ds, brand_name, report_id):
                    av.retailer_state, av.retailer_city, av.event_count, av.issue_count,
                    av.opportunity_count, av.photo_count
             FROM activity_visits av
-            WHERE av.report_id = ? AND ({survey_visits})
+            WHERE av.{scope_col} = ? AND ({survey_visits})
             ORDER BY av.activity_date DESC, av.id DESC
             """,
             conn,
-            params=[report_id, *params],
+            params=[scope_value, *params],
         )
         issues_df = pd.read_sql_query(
-            """
+            f"""
             SELECT activity_date, retailer_code, retailer_name, salesman_name, brand_name, sku_name,
                    issue_type, severity, question, label, answer
             FROM activity_issues
-            WHERE report_id = ? AND LOWER(COALESCE(brand_name, '')) = LOWER(?)
+            WHERE {scope_col} = ? AND LOWER(COALESCE(brand_name, '')) = LOWER(?)
             ORDER BY activity_date DESC, id DESC
             """,
             conn,
-            params=[report_id, brand_name],
+            params=[scope_value, brand_name],
         )
         mentions_df = pd.read_sql_query(
-            """
+            f"""
             SELECT activity_date, retailer_code, retailer_name, brand_name, sku_name, source_kind, source_value
             FROM activity_brand_mentions
-            WHERE report_id = ? AND LOWER(COALESCE(brand_name, '')) = LOWER(?)
+            WHERE {scope_col} = ? AND LOWER(COALESCE(brand_name, '')) = LOWER(?)
             ORDER BY activity_date DESC, id DESC
             """,
             conn,
-            params=[report_id, brand_name],
+            params=[scope_value, brand_name],
         )
     for df in (events_df, visits_df, issues_df, mentions_df):
         if 'activity_date' in df.columns:
@@ -283,7 +297,7 @@ def _find_comparison_reports(ds, report):
 
 
 def _period_metrics(ds, brand_name, report_id):
-    events_df, visits_df, issues_df, mentions_df = _read_activity_frames(ds, brand_name, report_id)
+    events_df, visits_df, issues_df, mentions_df = _read_activity_frames(ds, brand_name, report_id=report_id)
     current, non_opportunity_issues, opportunity_issues = _compute_current_metrics(events_df, visits_df, issues_df, mentions_df)
     return {
         'current': current,
@@ -718,31 +732,43 @@ def _build_recommendations(current, issue_mix, opportunity_mix, store_breakdown,
     }
 
 
-def prepare_activity_report_data(ds, brand_name: str, report_id: int = None, start_date: str = None, end_date: str = None) -> dict:
-    report = ds.get_report(report_id) if report_id else ds.get_latest_report()
-    if not report:
-        raise ValueError('No report found for activity report generation')
-    report_id = report['id']
-    start_date = start_date or report.get('start_date')
-    end_date = end_date or report.get('end_date')
+def prepare_activity_report_data(ds, brand_name: str, report_id: int = None, batch_id: int = None,
+                                 start_date: str = None, end_date: str = None,
+                                 report_type: str = None, period_label: str = None) -> dict:
+    report = ds.get_report(report_id) if report_id else None
+    batch_row, batch_summary = _get_activity_batch_context(ds, report_id=report_id, batch_id=batch_id)
+    if not report and not batch_row:
+        fallback_report = ds.get_latest_report() if not batch_id else None
+        report = fallback_report
+        if fallback_report:
+            batch_row, batch_summary = _get_activity_batch_context(ds, report_id=fallback_report.get('id'))
+    if not report and not batch_row:
+        raise ValueError('No report or activity batch found for activity report generation')
 
-    batch_row, batch_summary = _get_activity_batch_for_report(ds, report_id)
+    context_type = report.get('report_type') if report else batch_summary.get('report_type') or report_type or 'custom'
+    context_label = (report.get('month_label') if report else None) or batch_summary.get('report_label') or period_label or 'Current Period'
+    context_start = start_date or (report.get('start_date') if report else None) or batch_summary.get('start_date')
+    context_end = end_date or (report.get('end_date') if report else None) or batch_summary.get('end_date')
     source_type_label, quality_label, quality_flags = _source_labels(batch_row, batch_summary)
 
-    events_df, visits_df, issues_df, mentions_df = _read_activity_frames(ds, brand_name, report_id)
+    events_df, visits_df, issues_df, mentions_df = _read_activity_frames(ds, brand_name, report_id=report_id, batch_id=batch_id)
     current, non_opportunity_issues, opportunity_issues = _compute_current_metrics(events_df, visits_df, issues_df, mentions_df)
-    previous, previous_metrics, trailing, trailing_metrics, same_period_last_year, yoy_metrics = _build_comparisons(ds, brand_name, report)
+    previous = previous_metrics = same_period_last_year = yoy_metrics = None
+    trailing = []
+    trailing_metrics = []
+    if report:
+        previous, previous_metrics, trailing, trailing_metrics, same_period_last_year, yoy_metrics = _build_comparisons(ds, brand_name, report)
     previous_events_df = pd.DataFrame()
     previous_visits_df = pd.DataFrame()
     if previous:
-        previous_events_df, previous_visits_df, _, _ = _read_activity_frames(ds, brand_name, previous['id'])
+        previous_events_df, previous_visits_df, _, _ = _read_activity_frames(ds, brand_name, report_id=previous['id'])
     period_breakdown = build_period_comparison(
         _build_period_rows(visits_df),
         _build_period_rows(previous_visits_df),
         date_key='date',
         metric_columns=('activities', 'issues', 'opportunities'),
-        report_type=report.get('report_type'),
-        current_start=start_date,
+        report_type=context_type,
+        current_start=context_start,
         previous_start=previous.get('start_date') if previous else None,
     ) if not events_df.empty else None
     kpi_cards, trailing_avg = _build_kpi_cards(current, previous_metrics, trailing_metrics, quality_label)
@@ -751,16 +777,16 @@ def prepare_activity_report_data(ds, brand_name: str, report_id: int = None, sta
     geography = _build_geography(events_df)
     field_team = _build_field_team(events_df, visits_df, quality_label)
     details = _build_details(events_df)
-    sales_row = ds.get_brand_kpis_single(report_id, brand_name)
+    sales_row = ds.get_brand_kpis_single(report_id, brand_name) if report_id else None
     executive_summary = _build_executive_summary(brand_name, current, issue_mix, opportunity_mix, geography, sales_row, previous_metrics, trailing_avg, quality_label)
     recommendations = _build_recommendations(current, issue_mix, opportunity_mix, store_breakdown, quality_label, sales_row)
 
     previous_current = previous_metrics['current'] if previous_metrics else {}
     yoy_current = yoy_metrics['current'] if yoy_metrics else {}
     comparison = {
-        'grain': comparison_basis_label(report.get('report_type')),
+        'grain': comparison_basis_label(context_type),
         'basis': [
-            f"Vs previous comparable {report.get('report_type') or 'period'}" + (f" ({previous.get('month_label')})" if previous else ' (not available)'),
+            f"Vs previous comparable {context_type or 'period'}" + (f" ({previous.get('month_label')})" if previous else ' (not available)'),
             "Vs trailing 4-week average" if trailing_metrics else "Vs trailing 4-week average (not available)",
             f"Vs same period last year ({same_period_last_year.get('month_label')})" if same_period_last_year else "Vs same period last year (not available)",
         ],
@@ -811,15 +837,17 @@ def prepare_activity_report_data(ds, brand_name: str, report_id: int = None, sta
         'identity': {
             'brand_name': brand_name,
             'report_title': 'Field Activity Report',
-            'period_label': report.get('month_label') or 'Current Period',
-            'date_range': _compact_date_label(start_date, end_date),
+            'period_label': context_label,
+            'date_range': _compact_date_label(context_start, context_end),
             'generated_at': datetime.now().strftime('%d %b %Y %I:%M %p'),
             'source_type': source_type_label,
             'source_quality': quality_label,
             'quality_flags': quality_flags,
             'report_id': report_id,
-            'start_date': start_date,
-            'end_date': end_date,
+            'batch_id': batch_id,
+            'report_type': context_type,
+            'start_date': context_start,
+            'end_date': context_end,
             'source_filename': (batch_row or {}).get('source_filename'),
         },
         'executive_summary': executive_summary,

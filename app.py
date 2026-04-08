@@ -4069,14 +4069,54 @@ def _activity_report_file_stem(brand_name, period_label):
     return f"{safe_brand}_Activity_Report_{period_safe}"
 
 
-def _activity_report_cached_paths(brand_name, report):
-    period_label = (report or {}).get('month_label') or 'Current_Period'
+def _activity_batch_period_context(batch):
+    summary = _safe_activity_batch_summary(batch)
+    start_date = summary.get('start_date') or batch.get('start_date')
+    end_date = summary.get('end_date') or batch.get('end_date')
+    report_type = normalize_report_type(summary.get('report_type') or 'custom') or 'custom'
+    if report_type == 'auto':
+        report_type = DataStore._infer_report_type(start_date, end_date)
+    period_label = (
+        summary.get('report_label')
+        or (DataStore._build_month_label(start_date, end_date, report_type) if start_date and end_date else None)
+        or os.path.splitext(batch.get('source_filename') or 'Activity_Import')[0]
+    )
+    return {
+        'id': None,
+        'month_label': period_label,
+        'report_type': report_type,
+        'start_date': start_date,
+        'end_date': end_date,
+        'source_filename': batch.get('source_filename'),
+    }
+
+
+def _resolve_activity_scope(report_id=None, batch_id=None):
+    batch = _get_activity_batch_row(batch_id) if batch_id else None
+    report = ds.get_report(report_id) if report_id else None
+    if not report and batch and batch.get('report_id'):
+        report = ds.get_report(batch.get('report_id'))
+        report_id = report['id'] if report else report_id
+    context = report or (_activity_batch_period_context(batch) if batch else None)
+    return {
+        'report_id': report_id if report else None,
+        'batch_id': batch_id if batch else None,
+        'report': report,
+        'batch': batch,
+        'context': context,
+    }
+
+
+def _activity_report_cached_paths(brand_name, report=None, batch=None):
+    context = report or (_activity_batch_period_context(batch) if batch else {})
+    period_label = (context or {}).get('month_label') or 'Current_Period'
     filename = _activity_report_file_stem(brand_name, period_label)
     pdf_path = os.path.join(ACTIVITY_OUTPUT_DIR, f"{filename}.pdf")
     html_path = os.path.join(ACTIVITY_OUTPUT_DIR, f"{filename}.html")
     excel_path = os.path.join(ACTIVITY_OUTPUT_DIR, f"{filename}.xlsx")
     return {
         'report_id': (report or {}).get('id'),
+        'batch_id': batch.get('id') if batch else None,
         'period_label': period_label,
         'filename': filename,
         'pdf_path': pdf_path,
@@ -4086,17 +4126,22 @@ def _activity_report_cached_paths(brand_name, report):
     }
 
 
-def _build_activity_report_assets(brand_name, report_id):
-    report = ds.get_report(report_id) if report_id else ds.get_latest_report()
-    if not report:
-        raise ValueError('No report found')
-    report_id = report['id']
-    cached = _activity_report_cached_paths(brand_name, report)
+def _build_activity_report_assets(brand_name, report_id=None, batch_id=None):
+    scope = _resolve_activity_scope(report_id=report_id, batch_id=batch_id)
+    report = scope['report']
+    batch = scope['batch']
+    context = scope['context']
+    report_id = scope['report_id']
+    batch_id = scope['batch_id']
+    if not context:
+        raise ValueError('No activity context found')
+    cached = _activity_report_cached_paths(brand_name, report=report, batch=batch)
     if cached['cached']:
-        activity_summary = ds.get_activity_summary(report_id=report_id, brand_name=brand_name)
+        activity_summary = ds.get_activity_summary(report_id=report_id, batch_id=batch_id, brand_name=brand_name)
         return {
-            'report': report,
+            'report': report or context,
             'report_id': report_id,
+            'batch_id': batch_id,
             'period_label': cached['period_label'],
             'filename': cached['filename'],
             'pdf_path': cached['pdf_path'],
@@ -4109,7 +4154,7 @@ def _build_activity_report_assets(brand_name, report_id):
             },
         }
 
-    activity_summary = ds.get_activity_summary(report_id=report_id, brand_name=brand_name)
+    activity_summary = ds.get_activity_summary(report_id=report_id, batch_id=batch_id, brand_name=brand_name)
     if not activity_summary or not activity_summary.get('totals', {}).get('events'):
         raise FileNotFoundError(f'No activity data found for {brand_name} in this period')
 
@@ -4117,8 +4162,11 @@ def _build_activity_report_assets(brand_name, report_id):
         ds,
         brand_name,
         report_id=report_id,
-        start_date=report.get('start_date'),
-        end_date=report.get('end_date')
+        batch_id=batch_id,
+        start_date=context.get('start_date'),
+        end_date=context.get('end_date'),
+        report_type=context.get('report_type'),
+        period_label=context.get('month_label'),
     )
     period_label = activity_data['identity']['period_label']
     filename = _activity_report_file_stem(brand_name, period_label)
@@ -4135,8 +4183,9 @@ def _build_activity_report_assets(brand_name, report_id):
     )
     generate_activity_excel_report(excel_path, activity_data)
     return {
-        'report': report,
+        'report': report or context,
         'report_id': report_id,
+        'batch_id': batch_id,
         'period_label': period_label,
         'filename': filename,
         'pdf_path': pdf_path,
@@ -4147,13 +4196,23 @@ def _build_activity_report_assets(brand_name, report_id):
     }
 
 
-def _list_activity_brands_for_report(report_id):
-    if not report_id:
+def _list_activity_brands_for_scope(report_id=None, batch_id=None):
+    if not report_id and not batch_id:
         return []
+    scope_col = 'batch_id' if batch_id else 'report_id'
+    scope_value = batch_id if batch_id else report_id
     with ds._connect() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT brand_name FROM activity_issues WHERE report_id = ? AND brand_name IS NOT NULL AND TRIM(brand_name) != '' ORDER BY brand_name",
-            (report_id,)
+            f"""
+            SELECT DISTINCT brand_name
+            FROM (
+                SELECT brand_name FROM activity_issues WHERE {scope_col} = ? AND brand_name IS NOT NULL AND TRIM(brand_name) != ''
+                UNION
+                SELECT brand_name FROM activity_brand_mentions WHERE {scope_col} = ? AND brand_name IS NOT NULL AND TRIM(brand_name) != ''
+            )
+            ORDER BY brand_name
+            """,
+            (scope_value, scope_value)
         ).fetchall()
     return [row['brand_name'] for row in rows if row['brand_name']]
 
@@ -4209,52 +4268,63 @@ def _decorate_activity_batch(batch):
     }
 
 
-def _activity_batch_brand_rows(report_id, summary):
+def _activity_batch_brand_rows(report_id, batch_id, summary):
     rows = summary.get('top_brands') or []
     brand_rows = []
     for row in rows:
         brand_name = row.get('brand_name')
         if not brand_name:
             continue
+        if report_id:
+            html_url = f"/api/activity/report_html/{report_id}/{brand_name}"
+            pdf_url = f"/api/activity/report_pdf/{report_id}/{brand_name}"
+            excel_url = f"/api/activity/report_excel/{report_id}/{brand_name}"
+            detail_url = url_for('activity_intelligence', report_id=report_id, batch_id=batch_id, brand=brand_name)
+        else:
+            html_url = f"/api/activity/report_html_batch/{batch_id}/{brand_name}" if batch_id else None
+            pdf_url = f"/api/activity/report_pdf_batch/{batch_id}/{brand_name}" if batch_id else None
+            excel_url = f"/api/activity/report_excel_batch/{batch_id}/{brand_name}" if batch_id else None
+            detail_url = url_for('activity_intelligence', batch_id=batch_id, brand=brand_name)
         brand_rows.append({
             'brand_name': brand_name,
             'count': int(row.get('count') or 0),
-            'detail_url': url_for('activity_intelligence', report_id=report_id, brand=brand_name),
-            'html_url': f"/api/activity/report_html/{report_id}/{brand_name}" if report_id else None,
-            'pdf_url': f"/api/activity/report_pdf/{report_id}/{brand_name}" if report_id else None,
-            'excel_url': f"/api/activity/report_excel/{report_id}/{brand_name}" if report_id else None,
+            'detail_url': detail_url,
+            'html_url': html_url,
+            'pdf_url': pdf_url,
+            'excel_url': excel_url,
         })
     return brand_rows
 
 
-def _warm_activity_report_assets(report_id, brand_names=None):
-    brands = list(brand_names or _list_activity_brands_for_report(report_id))
+def _warm_activity_report_assets(report_id=None, batch_id=None, brand_names=None):
+    brands = list(brand_names or _list_activity_brands_for_scope(report_id=report_id, batch_id=batch_id))
     if not brands:
-        return {'report_id': report_id, 'brands': 0, 'generated': 0, 'cached': 0}
+        return {'report_id': report_id, 'batch_id': batch_id, 'brands': 0, 'generated': 0, 'cached': 0}
 
     generated = 0
     cached = 0
     for brand_name in brands:
         try:
-            report = ds.get_report(report_id) if report_id else ds.get_latest_report()
-            if not report:
+            scope = _resolve_activity_scope(report_id=report_id, batch_id=batch_id)
+            context = scope['context']
+            if not context:
                 continue
-            asset_paths = _activity_report_cached_paths(brand_name, report)
+            asset_paths = _activity_report_cached_paths(brand_name, report=scope['report'], batch=scope['batch'])
             if asset_paths['cached']:
                 cached += 1
                 continue
-            _build_activity_report_assets(brand_name, report_id)
+            _build_activity_report_assets(brand_name, report_id=report_id, batch_id=batch_id)
             generated += 1
         except Exception:
             continue
-    return {'report_id': report_id, 'brands': len(brands), 'generated': generated, 'cached': cached}
+    return {'report_id': report_id, 'batch_id': batch_id, 'brands': len(brands), 'generated': generated, 'cached': cached}
 
 
 @app.route('/api/activity/report_html/<int:report_id>/<path:brand_name>')
 def api_activity_report_html(report_id, brand_name):
     try:
         report = ds.get_report(report_id)
-        cached = _activity_report_cached_paths(brand_name, report)
+        cached = _activity_report_cached_paths(brand_name, report=report)
         if cached['cached']:
             return send_file(
                 cached['html_path'],
@@ -4262,7 +4332,7 @@ def api_activity_report_html(report_id, brand_name):
                 download_name=os.path.basename(cached['html_path']) if request.args.get('download') == '1' else None,
                 mimetype='text/html'
             )
-        assets = _build_activity_report_assets(brand_name, report_id)
+        assets = _build_activity_report_assets(brand_name, report_id=report_id)
     except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 404
     except Exception as exc:
@@ -4280,7 +4350,7 @@ def api_activity_report_html(report_id, brand_name):
 def api_activity_report_pdf(report_id, brand_name):
     try:
         report = ds.get_report(report_id)
-        cached = _activity_report_cached_paths(brand_name, report)
+        cached = _activity_report_cached_paths(brand_name, report=report)
         if cached['cached']:
             return send_file(
                 cached['pdf_path'],
@@ -4288,7 +4358,7 @@ def api_activity_report_pdf(report_id, brand_name):
                 download_name=os.path.basename(cached['pdf_path']),
                 mimetype='application/pdf'
             )
-        assets = _build_activity_report_assets(brand_name, report_id)
+        assets = _build_activity_report_assets(brand_name, report_id=report_id)
     except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 404
     except Exception as exc:
@@ -4305,7 +4375,7 @@ def api_activity_report_pdf(report_id, brand_name):
 def api_activity_report_excel(report_id, brand_name):
     try:
         report = ds.get_report(report_id)
-        cached = _activity_report_cached_paths(brand_name, report)
+        cached = _activity_report_cached_paths(brand_name, report=report)
         if cached['cached']:
             return send_file(
                 cached['excel_path'],
@@ -4313,7 +4383,83 @@ def api_activity_report_excel(report_id, brand_name):
                 download_name=os.path.basename(cached['excel_path']),
                 mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
-        assets = _build_activity_report_assets(brand_name, report_id)
+        assets = _build_activity_report_assets(brand_name, report_id=report_id)
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        return jsonify({'error': f'Failed to generate activity Excel report: {str(exc)}'}), 500
+    return send_file(
+        assets['excel_path'],
+        as_attachment=True,
+        download_name=os.path.basename(assets['excel_path']),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+
+
+@app.route('/api/activity/report_html_batch/<int:batch_id>/<path:brand_name>')
+def api_activity_report_html_batch(batch_id, brand_name):
+    try:
+        batch = _get_activity_batch_row(batch_id)
+        cached = _activity_report_cached_paths(brand_name, batch=batch)
+        if cached['cached']:
+            return send_file(
+                cached['html_path'],
+                as_attachment=request.args.get('download') == '1',
+                download_name=os.path.basename(cached['html_path']) if request.args.get('download') == '1' else None,
+                mimetype='text/html'
+            )
+        assets = _build_activity_report_assets(brand_name, batch_id=batch_id)
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        return jsonify({'error': f'Failed to generate activity HTML report: {str(exc)}'}), 500
+    download = request.args.get('download') == '1'
+    return send_file(
+        assets['html_path'],
+        as_attachment=download,
+        download_name=os.path.basename(assets['html_path']) if download else None,
+        mimetype='text/html'
+    )
+
+
+@app.route('/api/activity/report_pdf_batch/<int:batch_id>/<path:brand_name>')
+def api_activity_report_pdf_batch(batch_id, brand_name):
+    try:
+        batch = _get_activity_batch_row(batch_id)
+        cached = _activity_report_cached_paths(brand_name, batch=batch)
+        if cached['cached']:
+            return send_file(
+                cached['pdf_path'],
+                as_attachment=True,
+                download_name=os.path.basename(cached['pdf_path']),
+                mimetype='application/pdf'
+            )
+        assets = _build_activity_report_assets(brand_name, batch_id=batch_id)
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        return jsonify({'error': f'Failed to generate activity PDF report: {str(exc)}'}), 500
+    return send_file(
+        assets['pdf_path'],
+        as_attachment=True,
+        download_name=os.path.basename(assets['pdf_path']),
+        mimetype='application/pdf'
+    )
+
+
+@app.route('/api/activity/report_excel_batch/<int:batch_id>/<path:brand_name>')
+def api_activity_report_excel_batch(batch_id, brand_name):
+    try:
+        batch = _get_activity_batch_row(batch_id)
+        cached = _activity_report_cached_paths(brand_name, batch=batch)
+        if cached['cached']:
+            return send_file(
+                cached['excel_path'],
+                as_attachment=True,
+                download_name=os.path.basename(cached['excel_path']),
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+        assets = _build_activity_report_assets(brand_name, batch_id=batch_id)
     except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 404
     except Exception as exc:
@@ -4329,8 +4475,9 @@ def api_activity_report_excel(report_id, brand_name):
 def api_activity_report(brand_name):
     """Generate on-demand activity report outputs for a brand."""
     report_id = request.args.get('report_id', type=int)
+    batch_id = request.args.get('batch_id', type=int)
     try:
-        assets = _build_activity_report_assets(brand_name, report_id)
+        assets = _build_activity_report_assets(brand_name, report_id=report_id, batch_id=batch_id)
     except FileNotFoundError:
         return jsonify({
             'error': f'No activity data found for {brand_name} in this period',
@@ -4343,11 +4490,12 @@ def api_activity_report(brand_name):
         'success': True,
         'brand': brand_name,
         'report_id': assets['report_id'],
+        'batch_id': assets.get('batch_id'),
         'period': assets['period_label'],
-        'html_url': f"/api/activity/report_html/{assets['report_id']}/{brand_name}",
-        'html_download_url': f"/api/activity/report_html/{assets['report_id']}/{brand_name}?download=1",
-        'pdf_url': f"/api/activity/report_pdf/{assets['report_id']}/{brand_name}",
-        'excel_url': f"/api/activity/report_excel/{assets['report_id']}/{brand_name}",
+        'html_url': f"/api/activity/report_html/{assets['report_id']}/{brand_name}" if assets['report_id'] else f"/api/activity/report_html_batch/{assets['batch_id']}/{brand_name}",
+        'html_download_url': f"/api/activity/report_html/{assets['report_id']}/{brand_name}?download=1" if assets['report_id'] else f"/api/activity/report_html_batch/{assets['batch_id']}/{brand_name}?download=1",
+        'pdf_url': f"/api/activity/report_pdf/{assets['report_id']}/{brand_name}" if assets['report_id'] else f"/api/activity/report_pdf_batch/{assets['batch_id']}/{brand_name}",
+        'excel_url': f"/api/activity/report_excel/{assets['report_id']}/{brand_name}" if assets['report_id'] else f"/api/activity/report_excel_batch/{assets['batch_id']}/{brand_name}",
         'summary': assets['activity_data'].get('kpis', {}),
         'source': assets['activity_data'].get('identity', {}),
         'generated_at': datetime.now().isoformat()
@@ -4364,40 +4512,22 @@ def api_activity_report_bulk():
     formats = data.get('formats', ['pdf', 'excel', 'html'])
     return_zip = bool(data.get('return_zip'))
 
-    # If batch_id provided, get report_id and brand list from batch
+    batch = None
     if batch_id:
-        batch = next((item for item in ds.get_activity_batches(limit=50) if str(item.get('id')) == str(batch_id)), None)
+        batch = next((item for item in ds.get_activity_batches(limit=200) if str(item.get('id')) == str(batch_id)), None)
         if batch:
             report_id = batch.get('report_id') or report_id
 
-    # If no report_id, use latest
-    if not report_id:
+    if not report_id and not batch_id:
         latest = ds.get_latest_report()
         report_id = latest['id'] if latest else None
-
-    if report_id:
-        report = ds.get_report(report_id)
-
-    if not report_id:
-        return jsonify({'error': 'No report found'}), 404
+    report = ds.get_report(report_id) if report_id else None
+    if not report_id and not batch:
+        return jsonify({'error': 'No activity context found'}), 404
 
     # If no brands specified, get all brands with activity data
     if not brand_names:
-        # Prefer all activity-linked brand sources so clean files with no issues still generate reports.
-        with ds._connect() as conn:
-            cursor = conn.execute(
-                """
-                SELECT DISTINCT brand_name
-                FROM (
-                    SELECT brand_name FROM activity_issues WHERE report_id = ? AND brand_name IS NOT NULL AND TRIM(brand_name) != ''
-                    UNION
-                    SELECT brand_name FROM activity_brand_mentions WHERE report_id = ? AND brand_name IS NOT NULL AND TRIM(brand_name) != ''
-                )
-                ORDER BY brand_name
-                """,
-                (report_id, report_id)
-            )
-            brand_names = [row['brand_name'] for row in cursor.fetchall() if row['brand_name']]
+        brand_names = _list_activity_brands_for_scope(report_id=report_id, batch_id=batch_id)
 
     if not brand_names:
         return jsonify({'error': 'No brands with activity data found'}), 404
@@ -4419,8 +4549,8 @@ def api_activity_report_bulk():
             results = []
             errors = []
             total = len(brand_names)
-            report_obj = ds.get_report(report_id)
-            report_period = (report_obj or {}).get('month_label') or 'Current Period'
+            report_obj = ds.get_report(report_id) if report_id else None
+            report_period = (report_obj or {}).get('month_label') or (_activity_batch_period_context(batch).get('month_label') if batch else None) or 'Current Period'
 
             for idx, brand_name in enumerate(brand_names, start=1):
                 try:
@@ -4430,10 +4560,10 @@ def api_activity_report_bulk():
                         current_brand=f'Building {brand_name}',
                         report_id=report_id,
                     )
-                    cached = _activity_report_cached_paths(brand_name, report_obj)
-                    assets = cached if cached['cached'] else _build_activity_report_assets(brand_name, report_id)
+                    cached = _activity_report_cached_paths(brand_name, report=report_obj, batch=batch)
+                    assets = cached if cached['cached'] else _build_activity_report_assets(brand_name, report_id=report_id, batch_id=batch_id)
                     if not cached['cached']:
-                        cached = _activity_report_cached_paths(brand_name, ds.get_report(report_id))
+                        cached = _activity_report_cached_paths(brand_name, report=ds.get_report(report_id) if report_id else None, batch=batch)
 
                     report_result = {
                         'brand': brand_name,
@@ -4446,12 +4576,16 @@ def api_activity_report_bulk():
                         '_html_file': os.path.basename(assets['html_path']),
                     }
                     if 'excel' in formats:
-                        report_result['excel_url'] = f"/api/activity/report_excel/{assets['report_id']}/{brand_name}"
+                        report_result['excel_url'] = f"/api/activity/report_excel/{assets['report_id']}/{brand_name}" if assets.get('report_id') else f"/api/activity/report_excel_batch/{assets['batch_id']}/{brand_name}"
                     if 'pdf' in formats:
-                        report_result['pdf_url'] = f"/api/activity/report_pdf/{assets['report_id']}/{brand_name}"
+                        report_result['pdf_url'] = f"/api/activity/report_pdf/{assets['report_id']}/{brand_name}" if assets.get('report_id') else f"/api/activity/report_pdf_batch/{assets['batch_id']}/{brand_name}"
                     if 'html' in formats or 'pdf' in formats:
-                        report_result['html_url'] = f"/api/activity/report_html/{assets['report_id']}/{brand_name}"
-                        report_result['html_download_url'] = f"/api/activity/report_html/{assets['report_id']}/{brand_name}?download=1"
+                        if assets.get('report_id'):
+                            report_result['html_url'] = f"/api/activity/report_html/{assets['report_id']}/{brand_name}"
+                            report_result['html_download_url'] = f"/api/activity/report_html/{assets['report_id']}/{brand_name}?download=1"
+                        else:
+                            report_result['html_url'] = f"/api/activity/report_html_batch/{assets['batch_id']}/{brand_name}"
+                            report_result['html_download_url'] = f"/api/activity/report_html_batch/{assets['batch_id']}/{brand_name}?download=1"
                     report_result['period'] = assets['period_label']
                     results.append(report_result)
                 except FileNotFoundError:
@@ -4958,7 +5092,7 @@ def activity_intelligence():
     report_id = request.args.get('report_id', type=int)
     if batch_row and not report_id:
         report_id = batch_row.get('report_id') or report_id
-    if not report_id and latest_report:
+    if not report_id and latest_report and not batch_row:
         report_id = latest_report['id']
     report = ds.get_report(report_id) if report_id else None
 
@@ -4998,8 +5132,8 @@ def activity_intelligence():
 
     batches = [_decorate_activity_batch(batch) for batch in ds.get_activity_batches(limit=30)]
     batches = [batch for batch in batches if batch]
-    report_brands = _activity_batch_brand_rows(report_id, summary)
-    available_stores = ds.list_activity_retailers(report_id=report_id, limit=500)
+    report_brands = _activity_batch_brand_rows(report_id, batch_id, summary)
+    available_stores = ds.list_activity_retailers(report_id=report_id, batch_id=batch_id, limit=500)
     return render_template(
         'portal/activity_intelligence.html',
         alert_count=alert_count,
@@ -5156,7 +5290,11 @@ def _build_copilot_state_payload(context):
             'repeat_pct': float(brand_kpis.get('repeat_pct', 0)) if brand_kpis else 0,
         } if brand_kpis else None
     if context.get('retailer_code'):
-        store_summary = ds.get_store_activity_summary(context['retailer_code'])
+        store_summary = ds.get_store_activity_summary(
+            context['retailer_code'],
+            report_id=context.get('report_id'),
+            batch_id=context.get('batch_id'),
+        )
         if store_summary.get('store'):
             payload['store_snapshot'] = {
                 'retailer_name': store_summary['store'].get('retailer_name'),
@@ -5186,6 +5324,7 @@ def api_activity_import():
     filename = uploaded.filename or 'activity_upload'
     explicit_report_id = request.form.get('report_id', type=int)
     source_mode = (request.form.get('source_mode') or request.form.get('source_type') or 'auto').strip().lower()
+    requested_period = normalize_report_type((request.form.get('period_type') or 'auto').strip().lower()) or 'auto'
     job_id = uuid.uuid4().hex
     ds.create_job(job_id)
     ds.update_job(job_id, progress=3, current_brand='Preparing activity import')
@@ -5218,12 +5357,22 @@ def api_activity_import():
                 job_id,
                 progress=18,
                 total=len(df),
-                current_brand='Matching activity dates to a report',
+                current_brand='Checking for an exact report match',
             )
 
             if not report_id and not df.empty:
-                inferred = ds.find_report_covering_range(df['activity_date'].min(), df['activity_date'].max())
-                report_id = inferred['id'] if inferred else None
+                activity_dates = [d for d in df['activity_date'].dropna().tolist() if d]
+                start_date = min(activity_dates) if activity_dates else None
+                end_date = max(activity_dates) if activity_dates else None
+                resolved_period = DataStore._infer_report_type(
+                    start_date,
+                    end_date,
+                    None if requested_period == 'auto' else requested_period,
+                )
+                if start_date and end_date:
+                    exact_report = ds.get_report_by_date_range(start_date, end_date)
+                    if exact_report and normalize_report_type(exact_report.get('report_type')) == resolved_period:
+                        report_id = exact_report['id']
 
             def _progress(progress_value, message):
                 ds.update_job(
@@ -5241,6 +5390,15 @@ def api_activity_import():
                 progress_cb=_progress,
                 source_meta=meta,
             )
+
+            summary = payload.get('summary') or {}
+            start_date = summary.get('start_date')
+            end_date = summary.get('end_date')
+            resolved_period = DataStore._infer_report_type(start_date, end_date, None if requested_period == 'auto' else requested_period)
+            summary['report_type'] = resolved_period
+            if start_date and end_date:
+                summary['report_label'] = DataStore._build_month_label(start_date, end_date, resolved_period)
+            payload['summary'] = summary
 
             ds.update_job(job_id, progress=92, current_brand='Saving activity summary', report_id=report_id)
             save_done = threading.Event()
@@ -5304,7 +5462,13 @@ def api_activity_import():
             if report_id:
                 threading.Thread(
                     target=_warm_activity_report_assets,
-                    args=(report_id,),
+                    kwargs={'report_id': report_id},
+                    daemon=True,
+                ).start()
+            elif batch_id:
+                threading.Thread(
+                    target=_warm_activity_report_assets,
+                    kwargs={'batch_id': batch_id},
                     daemon=True,
                 ).start()
 

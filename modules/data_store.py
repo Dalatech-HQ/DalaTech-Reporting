@@ -21,7 +21,7 @@ import uuid
 from datetime import datetime
 from difflib import SequenceMatcher
 
-from .brand_names import canonicalize_brand_name, normalize_brand_compare_key, normalize_name_key
+from .brand_names import brand_match_terms, canonicalize_brand_name, normalize_brand_compare_key, normalize_name_key
 from .ingestion import looks_like_sku_label, looks_like_store_label
 from .period_comparison import compare_same_type_reports, normalize_report_type
 
@@ -2146,6 +2146,22 @@ class DataStore:
         now = datetime.now().isoformat(timespec='seconds')
         slug_base = self._slugify(canonical_name)
 
+        def _seed_aliases(conn, brand_id):
+            alias_names = list(brand_match_terms(canonical_name))
+            original_name = str(brand_name or '').strip()
+            if original_name:
+                alias_names.append(original_name)
+            for alias_name in alias_names:
+                alias_key = normalize_name_key(alias_name)
+                if not alias_key:
+                    continue
+                conn.execute(
+                    """INSERT OR IGNORE INTO brand_aliases
+                       (brand_id, alias_name, alias_key, created_at)
+                       VALUES (?,?,?,?)""",
+                    (brand_id, alias_name, alias_key, now)
+                )
+
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM brands_master WHERE canonical_key=?",
@@ -2176,6 +2192,7 @@ class DataStore:
                         params
                     )
                     row = conn.execute("SELECT * FROM brands_master WHERE id=?", (row['id'],)).fetchone()
+                _seed_aliases(conn, row['id'])
                 return dict(row)
 
             slug = slug_base or f"brand-{uuid.uuid4().hex[:8]}"
@@ -2193,12 +2210,7 @@ class DataStore:
                  start_date, email, whatsapp, notes, now, now)
             )
             brand_id = cur.lastrowid
-            conn.execute(
-                """INSERT OR IGNORE INTO brand_aliases
-                   (brand_id, alias_name, alias_key, created_at)
-                   VALUES (?,?,?,?)""",
-                (brand_id, canonical_name, canonical_key, now)
-            )
+            _seed_aliases(conn, brand_id)
             return dict(conn.execute("SELECT * FROM brands_master WHERE id=?", (brand_id,)).fetchone())
 
     def add_brand_alias(self, brand_id, alias_name):
@@ -2982,15 +2994,30 @@ class DataStore:
         mention_params = list(params)
 
         if brand_name:
-            # For events and visits, filter by survey_name since brand_name column doesn't exist
-            filters.append("(LOWER(ae.survey_name) LIKE LOWER(?) OR LOWER(ae.survey_name) LIKE LOWER(?))")
-            params.append(f"%{brand_name}%")
-            params.append(f"%{brand_name.replace(' ', '')}%")
-            
-            visit_filters.append("(LOWER(av.survey_name) LIKE LOWER(?) OR LOWER(av.survey_name) LIKE LOWER(?))")
-            visit_params.append(f"%{brand_name}%")
-            visit_params.append(f"%{brand_name.replace(' ', '')}%")
-            
+            survey_terms = []
+            seen_terms = set()
+            for term in brand_match_terms(brand_name):
+                compact = term.replace(' ', '')
+                for candidate in (term, compact):
+                    key = normalize_name_key(candidate)
+                    if not key or key in seen_terms:
+                        continue
+                    seen_terms.add(key)
+                    survey_terms.append(candidate)
+
+            if not survey_terms:
+                survey_terms = [brand_name]
+
+            event_parts = []
+            visit_parts = []
+            for term in survey_terms:
+                event_parts.append("LOWER(ae.survey_name) LIKE LOWER(?)")
+                params.append(f"%{term}%")
+                visit_parts.append("LOWER(av.survey_name) LIKE LOWER(?)")
+                visit_params.append(f"%{term}%")
+
+            filters.append("(" + " OR ".join(event_parts) + ")")
+            visit_filters.append("(" + " OR ".join(visit_parts) + ")")
             issue_filters.append("LOWER(COALESCE(ai.brand_name,''))=LOWER(?)")
             issue_params.append(brand_name)
             mention_filters.append("LOWER(COALESCE(abm.brand_name,''))=LOWER(?)")
@@ -3140,7 +3167,7 @@ class DataStore:
             'latest_visit': dict(latest_visit) if latest_visit else None,
         }
 
-    def get_retailer_activity_summary(self, retailer_code, report_id=None, limit=20):
+    def get_retailer_activity_summary(self, retailer_code, report_id=None, batch_id=None, limit=20):
         retailer_code = str(retailer_code or '').strip()
         if not retailer_code:
             return {
@@ -3154,21 +3181,25 @@ class DataStore:
                 'brand_mentions': 0,
             }
 
-        report_filter = ''
-        report_params = []
+        scope_parts = []
+        scope_params = []
         if report_id:
-            report_filter = ' AND report_id=?'
-            report_params.append(report_id)
+            scope_parts.append("report_id=?")
+            scope_params.append(report_id)
+        if batch_id:
+            scope_parts.append("batch_id=?")
+            scope_params.append(batch_id)
 
-        match_params = (retailer_code.lower(), retailer_code.lower(), *report_params)
+        scope_filter = f" AND {' AND '.join(scope_parts)}" if scope_parts else ''
+        match_params = (retailer_code.lower(), retailer_code.lower(), *scope_params)
         with self._connect() as conn:
             totals = conn.execute(
                 f"""SELECT retailer_name, retailer_state, retailer_city,
                            COUNT(*) AS events,
                            COUNT(DISTINCT activity_date) AS active_days,
                            COUNT(DISTINCT salesman_name) AS salespeople
-                     FROM activity_events
-                     WHERE (LOWER(COALESCE(retailer_code, ''))=? OR LOWER(COALESCE(retailer_name, ''))=?){report_filter}
+                      FROM activity_events
+                     WHERE (LOWER(COALESCE(retailer_code, ''))=? OR LOWER(COALESCE(retailer_name, ''))=?){scope_filter}
                      GROUP BY retailer_name, retailer_state, retailer_city
                      ORDER BY activity_date DESC
                      LIMIT 1""",
@@ -3176,14 +3207,14 @@ class DataStore:
             ).fetchone()
             visits = conn.execute(
                 f"""SELECT * FROM activity_visits
-                    WHERE (LOWER(COALESCE(retailer_code, ''))=? OR LOWER(COALESCE(retailer_name, ''))=?){report_filter}
+                    WHERE (LOWER(COALESCE(retailer_code, ''))=? OR LOWER(COALESCE(retailer_name, ''))=?){scope_filter}
                     ORDER BY activity_date DESC, id DESC
                     LIMIT ?""",
                 (*match_params, limit)
             ).fetchall()
             issues = conn.execute(
                 f"""SELECT * FROM activity_issues
-                    WHERE (LOWER(COALESCE(retailer_code, ''))=? OR LOWER(COALESCE(retailer_name, ''))=?){report_filter}
+                    WHERE (LOWER(COALESCE(retailer_code, ''))=? OR LOWER(COALESCE(retailer_name, ''))=?){scope_filter}
                     ORDER BY activity_date DESC, id DESC
                     LIMIT ?""",
                 (*match_params, limit)
@@ -3191,7 +3222,7 @@ class DataStore:
             brands = conn.execute(
                 f"""SELECT COALESCE(brand_name, 'Unmatched') AS brand_name, COUNT(*) AS mentions
                     FROM activity_brand_mentions
-                    WHERE (LOWER(COALESCE(retailer_code, ''))=? OR LOWER(COALESCE(retailer_name, ''))=?){report_filter}
+                    WHERE (LOWER(COALESCE(retailer_code, ''))=? OR LOWER(COALESCE(retailer_name, ''))=?){scope_filter}
                     GROUP BY COALESCE(brand_name, 'Unmatched')
                     ORDER BY mentions DESC, brand_name
                     LIMIT ?""",
@@ -3219,15 +3250,18 @@ class DataStore:
             'brand_mentions': brand_mentions,
         }
 
-    def get_store_activity_summary(self, retailer_code):
-        return self.get_retailer_activity_summary(retailer_code)
+    def get_store_activity_summary(self, retailer_code, report_id=None, batch_id=None):
+        return self.get_retailer_activity_summary(retailer_code, report_id=report_id, batch_id=batch_id)
 
-    def list_activity_retailers(self, report_id=None, limit=500):
+    def list_activity_retailers(self, report_id=None, batch_id=None, limit=500):
         clauses = []
         params = []
         if report_id:
             clauses.append("report_id=?")
             params.append(report_id)
+        if batch_id:
+            clauses.append("batch_id=?")
+            params.append(batch_id)
         where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ''
         with self._connect() as conn:
             rows = conn.execute(

@@ -22,6 +22,7 @@ _CANONICAL_MAP = {
     'biniowan': 'Biniowan',
     'bpbiniowanenterprises': 'Biniowan',
     'catherinesign': 'Catherine Sign',
+    'cevo': 'Cevo Crystal',
     'cevocrystal': 'Cevo Crystal',
     'cevocrystalservice': 'Cevo Crystal',
     'cevocrystalservices': 'Cevo Crystal',
@@ -109,3 +110,31 @@ def canonicalize_brand_name(name: str) -> str:
     value = value.title()
     value = re.sub(r'\s+', ' ', value).strip()
     return value
+
+
+def brand_match_terms(name: str) -> list[str]:
+    """Return useful brand alias terms for matching survey names and free text."""
+    canonical = canonicalize_brand_name(name)
+    terms = []
+    seen = set()
+
+    def _add(value: str):
+        text = str(value or '').strip()
+        key = normalize_name_key(text)
+        if not text or not key or key in seen:
+            return
+        seen.add(key)
+        terms.append(text)
+
+    _add(canonical)
+    compare_key = normalize_brand_compare_key(canonical)
+    _add(compare_key)
+
+    canonical_key = normalize_name_key(canonical)
+    for raw_key, mapped in _CANONICAL_MAP.items():
+        if normalize_name_key(mapped) != canonical_key:
+            continue
+        pretty = re.sub(r'([a-z])([A-Z])', r'\1 \2', raw_key).strip()
+        _add(pretty.title())
+
+    return terms

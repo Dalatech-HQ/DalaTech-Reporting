@@ -533,8 +533,10 @@ async function generateActivityReport() {
   
   try {
     const reportId = new URLSearchParams(window.location.search).get('report_id');
+    const batchId = new URLSearchParams(window.location.search).get('batch_id');
     let url = `/api/activity/report/${encodeURIComponent(brandName)}?period=${encodeURIComponent(periodLabel)}`;
     if (reportId) url += `&report_id=${reportId}`;
+    if (batchId) url += `&batch_id=${batchId}`;
     
     const res = await fetch(url);
     const data = await res.json();

@@ -25,7 +25,7 @@ try:
 except Exception:  # pragma: no cover - optional acceleration dependency
     load_calamine_workbook = None
 
-from .brand_names import canonicalize_brand_name
+from .brand_names import brand_match_terms, canonicalize_brand_name, normalize_brand_compare_key
 
 
 EXPECTED_COLUMNS = {
@@ -575,13 +575,23 @@ def _build_brand_lookup(ds) -> list[tuple[str, str, int]]:
     for brand in ds.get_all_brand_master(status='all'):
         canonical = str(brand['canonical_name']).strip()
         if canonical:
-            rows.append((canonical, canonical.lower(), brand['id']))
+            for term in brand_match_terms(canonical):
+                rows.append((canonical, term.lower(), brand['id']))
         for alias in ds.get_brand_aliases(brand['id']):
-            alias_text = str(alias['alias_name']).strip().lower()
+            alias_text = str(alias['alias_name']).strip()
             if alias_text:
-                rows.append((canonical, alias_text, brand['id']))
-    rows.sort(key=lambda item: len(item[1]), reverse=True)
-    return rows
+                for term in brand_match_terms(alias_text):
+                    rows.append((canonical, term.lower(), brand['id']))
+    deduped = []
+    seen = set()
+    for canonical, alias_text, brand_id in rows:
+        token = (canonical, alias_text, brand_id)
+        if token in seen:
+            continue
+        seen.add(token)
+        deduped.append((canonical, alias_text, brand_id))
+    deduped.sort(key=lambda item: len(item[1]), reverse=True)
+    return deduped
 
 
 def _build_sku_lookup(ds) -> dict[int, list[tuple[str, str]]]:
@@ -796,10 +806,10 @@ def build_activity_payload(df: pd.DataFrame, ds=None, source_filename: str = '',
     visit_rows = []
     grouped = df.copy()
     grouped['visit_key'] = (
-        grouped['activity_date'].fillna('') + '|' +
-        grouped['salesman_name'].fillna('') + '|' +
-        grouped['retailer_code'].fillna('') + '|' +
-        grouped['survey_name'].fillna('')
+        grouped['activity_date'].fillna('').astype(str) + '|' +
+        grouped['salesman_name'].fillna('').astype(str) + '|' +
+        grouped['retailer_code'].fillna('').astype(str) + '|' +
+        grouped['survey_name'].fillna('').astype(str)
     )
     for visit_key, grp in grouped.groupby('visit_key', dropna=False):
         rows = grp.to_dict(orient='records')
