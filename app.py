@@ -4296,6 +4296,49 @@ def _activity_batch_brand_rows(report_id, batch_id, summary):
     return brand_rows
 
 
+def _activity_bulk_zip_filename(period_label, report_id=None, batch_id=None):
+    safe_period = (period_label or 'Current Period').replace(' ', '_').replace(',', '')
+    scope_part = f"report_{report_id}" if report_id else f"batch_{batch_id}"
+    return f"Activity_Reports_{safe_period}_{scope_part}.zip"
+
+
+def _activity_bulk_zip_path(period_label, report_id=None, batch_id=None):
+    return os.path.join(
+        ACTIVITY_OUTPUT_DIR,
+        _activity_bulk_zip_filename(period_label, report_id=report_id, batch_id=batch_id),
+    )
+
+
+def _build_activity_bulk_zip(report_id=None, batch_id=None, brand_names=None, formats=None):
+    scope = _resolve_activity_scope(report_id=report_id, batch_id=batch_id)
+    context = scope['context']
+    if not context:
+        raise ValueError('No activity context found')
+
+    report = scope['report']
+    batch = scope['batch']
+    report_id = scope['report_id']
+    batch_id = scope['batch_id']
+    period_label = context.get('month_label') or 'Current Period'
+    requested_formats = [fmt for fmt in (formats or ['pdf', 'excel', 'html']) if fmt in {'pdf', 'excel', 'html'}]
+    brands = list(brand_names or _list_activity_brands_for_scope(report_id=report_id, batch_id=batch_id))
+    if not brands:
+        raise FileNotFoundError('No brands with activity data found')
+
+    zip_path = _activity_bulk_zip_path(period_label, report_id=report_id, batch_id=batch_id)
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for brand_name in brands:
+            assets = _build_activity_report_assets(brand_name, report_id=report_id, batch_id=batch_id)
+            brand_folder = _safe_name(brand_name or 'brand')
+            if 'excel' in requested_formats and os.path.exists(assets['excel_path']):
+                zipf.write(assets['excel_path'], f"{brand_folder}/{os.path.basename(assets['excel_path'])}")
+            if 'pdf' in requested_formats and os.path.exists(assets['pdf_path']):
+                zipf.write(assets['pdf_path'], f"{brand_folder}/{os.path.basename(assets['pdf_path'])}")
+            if 'html' in requested_formats and os.path.exists(assets['html_path']):
+                zipf.write(assets['html_path'], f"{brand_folder}/{os.path.basename(assets['html_path'])}")
+    return zip_path
+
+
 def _warm_activity_report_assets(report_id=None, batch_id=None, brand_names=None):
     brands = list(brand_names or _list_activity_brands_for_scope(report_id=report_id, batch_id=batch_id))
     if not brands:
@@ -4317,7 +4360,22 @@ def _warm_activity_report_assets(report_id=None, batch_id=None, brand_names=None
             generated += 1
         except Exception:
             continue
-    return {'report_id': report_id, 'batch_id': batch_id, 'brands': len(brands), 'generated': generated, 'cached': cached}
+
+    zip_cached = False
+    try:
+        _build_activity_bulk_zip(report_id=report_id, batch_id=batch_id, brand_names=brands)
+        zip_cached = True
+    except Exception:
+        zip_cached = False
+
+    return {
+        'report_id': report_id,
+        'batch_id': batch_id,
+        'brands': len(brands),
+        'generated': generated,
+        'cached': cached,
+        'zip_cached': zip_cached,
+    }
 
 
 @app.route('/api/activity/report_html/<int:report_id>/<path:brand_name>')
@@ -4505,11 +4563,21 @@ def api_activity_report(brand_name):
 @app.route('/api/activity/report_bulk', methods=['POST'])
 def api_activity_report_bulk():
     """Queue activity reports for multiple brands and return a job id immediately."""
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
     brand_names = data.get('brands', [])
+    if isinstance(brand_names, str):
+        try:
+            brand_names = json.loads(brand_names)
+        except Exception:
+            brand_names = [brand_names]
     batch_id = data.get('batch_id')
     report_id = data.get('report_id')
     formats = data.get('formats', ['pdf', 'excel', 'html'])
+    if isinstance(formats, str):
+        try:
+            formats = json.loads(formats)
+        except Exception:
+            formats = [formats]
     return_zip = bool(data.get('return_zip'))
 
     batch = None
@@ -4525,15 +4593,46 @@ def api_activity_report_bulk():
     if not report_id and not batch:
         return jsonify({'error': 'No activity context found'}), 404
 
+    all_scope_brands = _list_activity_brands_for_scope(report_id=report_id, batch_id=batch_id)
+
     # If no brands specified, get all brands with activity data
     if not brand_names:
-        brand_names = _list_activity_brands_for_scope(report_id=report_id, batch_id=batch_id)
+        brand_names = all_scope_brands
 
     if not brand_names:
         return jsonify({'error': 'No brands with activity data found'}), 404
 
+    report_period = (report or {}).get('month_label') or (_activity_batch_period_context(batch).get('month_label') if batch else None) or 'Current Period'
+    requested_all_brands = sorted(brand_names) == sorted(all_scope_brands)
+    normalized_formats = [fmt for fmt in formats if fmt in {'pdf', 'excel', 'html'}]
+    uses_default_bundle = set(normalized_formats) == {'pdf', 'excel', 'html'}
+    cached_zip_path = _activity_bulk_zip_path(report_period, report_id=report_id, batch_id=batch_id)
+
     job_id = uuid.uuid4().hex
     ds.create_job(job_id)
+
+    if return_zip and requested_all_brands and uses_default_bundle and os.path.exists(cached_zip_path):
+        zip_url = f"/download/{os.path.basename(cached_zip_path)}"
+        ds.update_job(
+            job_id,
+            status='done',
+            progress=100,
+            total=len(brand_names),
+            current_brand='Activity bulk export ready',
+            report_id=report_id,
+            result_json={
+                'success': True,
+                'period_label': report_period,
+                'reports': [],
+                'errors': [],
+                'total': len(brand_names),
+                'success_count': len(brand_names),
+                'zip_url': zip_url,
+                'cached': True,
+            },
+        )
+        return jsonify({'success': True, 'job_id': job_id, 'total': len(brand_names), 'cached': True, 'zip_url': zip_url})
+
     ds.update_job(
         job_id,
         status='running',
@@ -4550,7 +4649,6 @@ def api_activity_report_bulk():
             errors = []
             total = len(brand_names)
             report_obj = ds.get_report(report_id) if report_id else None
-            report_period = (report_obj or {}).get('month_label') or (_activity_batch_period_context(batch).get('month_label') if batch else None) or 'Current Period'
 
             for idx, brand_name in enumerate(brand_names, start=1):
                 try:
@@ -4596,32 +4694,15 @@ def api_activity_report_bulk():
             zip_url = None
             if return_zip and results:
                 try:
-                    import zipfile
-                    zip_filename = f"Activity_Reports_{report_period.replace(' ', '_').replace(',', '')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
-                    zip_path = os.path.join(ACTIVITY_OUTPUT_DIR, zip_filename)
-
-                    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                        for result in results:
-                            if not result.get('success'):
-                                continue
-                            brand_folder = _safe_name(result.get('brand') or 'brand')
-                            if result.get('excel_url'):
-                                excel_filename = result.get('_excel_file')
-                                excel_path = os.path.join(ACTIVITY_OUTPUT_DIR, excel_filename)
-                                if os.path.exists(excel_path):
-                                    zipf.write(excel_path, f"{brand_folder}/{excel_filename}")
-                            if result.get('pdf_url'):
-                                pdf_filename = result.get('_pdf_file')
-                                pdf_path = os.path.join(ACTIVITY_OUTPUT_DIR, pdf_filename)
-                                if os.path.exists(pdf_path):
-                                    zipf.write(pdf_path, f"{brand_folder}/{pdf_filename}")
-                            if result.get('html_url'):
-                                html_filename = result.get('_html_file')
-                                html_path = os.path.join(ACTIVITY_OUTPUT_DIR, html_filename)
-                                if os.path.exists(html_path):
-                                    zipf.write(html_path, f"{brand_folder}/{html_filename}")
-
-                    zip_url = f"/download/{zip_filename}"
+                    zip_path = cached_zip_path
+                    if not (requested_all_brands and uses_default_bundle and os.path.exists(zip_path)):
+                        zip_path = _build_activity_bulk_zip(
+                            report_id=report_id,
+                            batch_id=batch_id,
+                            brand_names=brand_names,
+                            formats=normalized_formats,
+                        )
+                    zip_url = f"/download/{os.path.basename(zip_path)}"
                 except Exception as zip_err:
                     errors.append({'brand': None, 'error': f'ZIP generation failed: {zip_err}'})
 
@@ -5453,10 +5534,17 @@ def api_activity_import():
 
             def _post_import_tasks():
                 coach_job_id = None
+                warm_result = None
                 try:
                     linked_report = ds.get_report(report_id) if report_id else None
                     if linked_report:
                         build_default_agent_actions(ds, linked_report)
+
+                    warm_result = (
+                        _warm_activity_report_assets(report_id=report_id)
+                        if report_id
+                        else _warm_activity_report_assets(batch_id=batch_id)
+                    )
 
                     _refresh_copilot_state(
                         report_id=report_id,
@@ -5471,11 +5559,6 @@ def api_activity_import():
                         include_pairs=True,
                         source='activity_import',
                     ) if report_id else None
-
-                    if report_id:
-                        _warm_activity_report_assets(report_id=report_id)
-                    elif batch_id:
-                        _warm_activity_report_assets(batch_id=batch_id)
                 except Exception:
                     try:
                         app.logger.exception('Activity post-import tasks failed')
@@ -5494,6 +5577,7 @@ def api_activity_import():
                                 'report_id': report_id,
                                 'summary': payload.get('summary', {}),
                                 'coach_job_id': coach_job_id,
+                                'warm_ready': bool((warm_result or {}).get('zip_cached')),
                             },
                         )
                     except Exception:
