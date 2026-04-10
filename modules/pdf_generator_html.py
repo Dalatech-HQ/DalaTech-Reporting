@@ -14,8 +14,11 @@ import glob
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
+import time
 from datetime import datetime
+from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from playwright.sync_api import sync_playwright
@@ -859,6 +862,67 @@ def _ensure_browser():
     return _browser_inst
 
 
+def _system_browser_pdf_executable():
+    explicit = [
+        os.getenv('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'),
+        os.path.join(os.environ.get('ProgramFiles(x86)', ''), 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+        os.path.join(os.environ.get('ProgramFiles', ''), 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+        os.path.join(os.environ.get('ProgramFiles', ''), 'Google', 'Chrome', 'Application', 'chrome.exe'),
+        os.path.join(os.environ.get('ProgramFiles(x86)', ''), 'Google', 'Chrome', 'Application', 'chrome.exe'),
+        shutil.which('msedge'),
+        shutil.which('chrome'),
+    ]
+    for path in [*explicit, *_candidate_paths()]:
+        if path and os.path.exists(path):
+            return path
+    return None
+
+
+def _render_pdf_bytes_system_browser(html_content: str) -> bytes:
+    """Render PDF bytes using an installed system browser when Playwright is unavailable."""
+    executable = _system_browser_pdf_executable()
+    if not executable:
+        raise RuntimeError('No system browser executable available for PDF fallback')
+
+    tmp_dir = tempfile.mkdtemp(prefix='dala-pdf-')
+    html_path = os.path.join(tmp_dir, 'report.html')
+    pdf_path = os.path.join(tmp_dir, 'report.pdf')
+    try:
+        with open(html_path, 'w', encoding='utf-8') as fh:
+            fh.write(html_content)
+
+        cmd = [
+            executable,
+            '--headless=new',
+            '--disable-gpu',
+            '--allow-file-access-from-files',
+            '--run-all-compositor-stages-before-draw',
+            '--virtual-time-budget=8000',
+            f'--print-to-pdf={pdf_path}',
+            Path(html_path).resolve().as_uri(),
+        ]
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=60,
+            check=False,
+        )
+        if proc.returncode not in (0,):
+            stderr = (proc.stderr or b'').decode('utf-8', errors='ignore').strip()
+            stdout = (proc.stdout or b'').decode('utf-8', errors='ignore').strip()
+            raise RuntimeError(f'System browser PDF render failed ({proc.returncode}): {stderr or stdout or "unknown error"}')
+
+        for _ in range(30):
+            if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:
+                with open(pdf_path, 'rb') as fh:
+                    return fh.read()
+            time.sleep(0.25)
+        raise RuntimeError('System browser PDF render did not produce an output file')
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 def _render_pdf_bytes_persistent(html_content: str) -> bytes:
     """Render PDF bytes reusing a persistent Chromium instance (no cold-start per call)."""
     global _browser_inst, _pw_instance
@@ -951,7 +1015,12 @@ def render_pdf_bytes(html_content: str) -> bytes:
     try:
         loop = asyncio.get_running_loop()
         if loop and loop.is_running():
-            return _render_pdf_bytes_oneoff(html_content)
+            try:
+                return _render_pdf_bytes_oneoff(html_content)
+            except Exception as exc:
+                if 'WinError 225' in str(exc) or 'potentially unwanted software' in str(exc):
+                    return _render_pdf_bytes_system_browser(html_content)
+                raise
     except RuntimeError:
         pass
 
@@ -960,7 +1029,14 @@ def render_pdf_bytes(html_content: str) -> bytes:
     except Exception as exc:
         message = str(exc)
         if 'Playwright Sync API inside the asyncio loop' in message:
-            return _render_pdf_bytes_oneoff(html_content)
+            try:
+                return _render_pdf_bytes_oneoff(html_content)
+            except Exception as inner_exc:
+                if 'WinError 225' in str(inner_exc) or 'potentially unwanted software' in str(inner_exc):
+                    return _render_pdf_bytes_system_browser(html_content)
+                raise
+        if 'WinError 225' in message or 'potentially unwanted software' in message:
+            return _render_pdf_bytes_system_browser(html_content)
         raise
 
 
