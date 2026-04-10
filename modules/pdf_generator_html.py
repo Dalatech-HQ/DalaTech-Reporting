@@ -9,10 +9,12 @@ Page 2: Inventory detail, performance scorecard, store heatmap
 import os
 import base64
 import calendar as _calendar
+import asyncio
 import glob
 import shutil
 import subprocess
 import sys
+import threading
 from datetime import datetime
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -857,7 +859,7 @@ def _ensure_browser():
     return _browser_inst
 
 
-def render_pdf_bytes(html_content: str) -> bytes:
+def _render_pdf_bytes_persistent(html_content: str) -> bytes:
     """Render PDF bytes reusing a persistent Chromium instance (no cold-start per call)."""
     global _browser_inst, _pw_instance
     with _browser_lock:
@@ -897,6 +899,69 @@ def render_pdf_bytes(html_content: str) -> bytes:
                     _pw_instance = None
                 else:
                     raise
+
+
+def _render_pdf_bytes_oneoff(html_content: str) -> bytes:
+    """Render PDF bytes in a fresh worker context, safe for request threads with active event loops."""
+    result: dict[str, bytes] = {}
+    error: dict[str, Exception] = {}
+
+    def _worker():
+        try:
+            with sync_playwright() as pw:
+                browser = _launch_chromium(pw)
+                page = browser.new_page()
+                try:
+                    page.set_content(html_content, wait_until='load')
+                    try:
+                        page.evaluate("document.fonts.ready")
+                    except Exception:
+                        pass
+                    try:
+                        page.wait_for_function("window.__REPORT_READY === true", timeout=3000)
+                    except Exception:
+                        pass
+                    result['bytes'] = page.pdf(
+                        format='A4',
+                        print_background=True,
+                        margin={'top': '0mm', 'right': '0mm', 'bottom': '0mm', 'left': '0mm'},
+                    )
+                finally:
+                    try:
+                        page.close()
+                    except Exception:
+                        pass
+                try:
+                    browser.close()
+                except Exception:
+                    pass
+        except Exception as exc:
+            error['exc'] = exc
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+    thread.join()
+    if error.get('exc'):
+        raise error['exc']
+    return result['bytes']
+
+
+def render_pdf_bytes(html_content: str) -> bytes:
+    """Render PDF bytes, avoiding Playwright sync API calls inside an active asyncio loop."""
+    try:
+        loop = asyncio.get_running_loop()
+        if loop and loop.is_running():
+            return _render_pdf_bytes_oneoff(html_content)
+    except RuntimeError:
+        pass
+
+    try:
+        return _render_pdf_bytes_persistent(html_content)
+    except Exception as exc:
+        message = str(exc)
+        if 'Playwright Sync API inside the asyncio loop' in message:
+            return _render_pdf_bytes_oneoff(html_content)
+        raise
 
 
 def generate_pdf_html(output_path: str, brand_name: str, kpis: dict,
