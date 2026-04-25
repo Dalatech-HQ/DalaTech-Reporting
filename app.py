@@ -43,6 +43,7 @@ from modules.ingestion        import (
     load_and_clean, filter_by_date, split_by_brand,
     looks_like_store_label, looks_like_sku_label,
 )
+from modules.weekly_consolidator import consolidate_weekly_files, write_consolidated_workbook
 from modules.kpi              import calculate_kpis, calculate_perf_score, generate_narrative, build_reorder_trend
 from modules.pdf_generator_html import generate_pdf_html
 from modules.pdf_generator      import generate_pdf as generate_pdf_reportlab
@@ -2044,6 +2045,103 @@ def _run_generation_batch(job_id, batch_id, file_entries, start_date, end_date, 
     except Exception as exc:
         ds.update_sales_import_batch(batch_id, status='error', error_msg=str(exc))
         ds.update_job(job_id, status='error', error_msg=str(exc), current_brand='Batch generation failed')
+
+
+def _read_weekly_consolidation_uploads():
+    field_labels = {
+        'sales_file': 'sales/itemwise file',
+        'inventory_file': 'available inventory file',
+        'journal_file': 'journal register file',
+        'credit_file': 'credit note register file',
+    }
+    entries = {}
+    missing = []
+    for field, label in field_labels.items():
+        uploaded = request.files.get(field)
+        if not uploaded or not uploaded.filename:
+            missing.append(label)
+            continue
+        file_bytes = uploaded.read()
+        entries[field] = {
+            'filename': uploaded.filename,
+            'file_bytes': file_bytes,
+        }
+    if missing:
+        raise ValueError(f"Please upload the {', '.join(missing)}.")
+    return entries
+
+
+def _consolidate_weekly_upload_entries(entries):
+    return consolidate_weekly_files(
+        sales_file=io.BytesIO(entries['sales_file']['file_bytes']),
+        inventory_file=io.BytesIO(entries['inventory_file']['file_bytes']),
+        journal_file=io.BytesIO(entries['journal_file']['file_bytes']),
+        credit_file=io.BytesIO(entries['credit_file']['file_bytes']),
+    )
+
+
+@app.route('/api/weekly-consolidation/download', methods=['POST'])
+def weekly_consolidation_download():
+    try:
+        entries = _read_weekly_consolidation_uploads()
+        result = _consolidate_weekly_upload_entries(entries)
+        workbook_bytes = write_consolidated_workbook(result.dataframe)
+        return send_file(
+            io.BytesIO(workbook_bytes),
+            as_attachment=True,
+            download_name=result.output_filename,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+
+
+@app.route('/api/weekly-consolidation/generate', methods=['POST'])
+def weekly_consolidation_generate():
+    try:
+        entries = _read_weekly_consolidation_uploads()
+        result = _consolidate_weekly_upload_entries(entries)
+        workbook_bytes = write_consolidated_workbook(result.dataframe)
+        cleaned_df = result.dataframe.rename(
+            columns={
+                'Brand Partners': 'Brand Partner',
+                'Particulars': 'SKUs',
+                'Retailers': 'Particulars',
+            }
+        ).copy()
+        selected_raw = request.form.get('selected_brands', '')
+        selected_brands = [b.strip() for b in selected_raw.split(',') if b.strip()] if selected_raw else []
+        report_type = request.form.get('report_type', '').strip() or 'weekly'
+        if report_type == 'auto':
+            report_type = 'weekly'
+        options = _parse_generation_options(request.form)
+        archive_entries = [
+            {'filename': entry['filename'], 'file_bytes': entry['file_bytes'], 'file_index': index}
+            for index, entry in enumerate(entries.values(), start=1)
+        ]
+        job_id = _submit_generation_job(
+            file_bytes=workbook_bytes,
+            start_date=result.start_date.isoformat(),
+            end_date=result.end_date.isoformat(),
+            selected_brands=selected_brands,
+            filename=result.output_filename,
+            report_type=report_type,
+            options=options,
+            data_frame=cleaned_df,
+            archive_bytes=_bundle_source_files(archive_entries),
+        )
+        return jsonify({
+            'success': True,
+            'job_id': job_id,
+            'filename': result.output_filename,
+            'start_date': result.start_date.isoformat(),
+            'end_date': result.end_date.isoformat(),
+            'rows': int(len(result.dataframe)),
+            'voucher_counts': result.dataframe['Vch Type'].value_counts().to_dict(),
+            'import_mode': options.get('import_mode', 'full'),
+        })
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
 
 
 @app.route('/api/generate_async', methods=['POST'])

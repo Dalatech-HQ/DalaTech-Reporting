@@ -70,7 +70,8 @@
     border: 1px solid rgba(30,132,73,.2); border-radius: 8px;
     padding: 10px 18px; font-weight: 600; font-size: 14px; margin-top: 16px;
   }
-  #fileInputPrimary, #fileInputSecondary { display: none; }
+  #fileInputPrimary, #fileInputSecondary,
+  #weeklySalesFile, #weeklyInventoryFile, #weeklyJournalFile, #weeklyCreditFile { display: none; }
   .file-stack { display: grid; gap: 14px; }
   .batch-status {
     margin-top: 14px;
@@ -81,6 +82,51 @@
     color: var(--navy);
     font-size: 12px;
     font-weight: 600;
+  }
+  .weekly-consolidator {
+    margin-top: 18px;
+    padding: 16px;
+    border: 1px solid rgba(27,43,94,.12);
+    border-radius: 10px;
+    background: var(--white);
+  }
+  .weekly-upload-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .weekly-file-btn {
+    min-height: 74px;
+    padding: 10px;
+    border: 1.5px dashed var(--gray);
+    border-radius: 8px;
+    background: var(--bg);
+    cursor: pointer;
+    text-align: left;
+  }
+  .weekly-file-btn.has-file {
+    border-color: var(--green);
+    background: rgba(30,132,73,.05);
+  }
+  .weekly-file-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 800;
+    margin-bottom: 6px;
+  }
+  .weekly-file-name {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--navy);
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 900px) {
+    .weekly-upload-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 560px) {
+    .weekly-upload-grid { grid-template-columns: 1fr; }
   }
 
   /* ── ANALYSIS LOADER ─────────────────────────────────────────────────── */
@@ -247,6 +293,42 @@
     <input type="file" id="fileInputSecondary" accept=".xls,.xlsx,.csv,.txt,.tsv" onchange="onFileSelect('secondary', this)">
   </div>
   <div id="batchStatus" class="batch-status">0 of 2 files ready. Upload both files to unlock generation.</div>
+
+  <div class="weekly-consolidator">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+      <div>
+        <h4 style="color:var(--navy);margin-bottom:4px;">Weekly 4-file consolidation</h4>
+        <p class="text-muted fs-sm">Upload sales, available inventory, journal, and credit note exports to create the single weekly workbook.</p>
+      </div>
+      <div id="weeklyStatus" class="batch-status" style="margin:0;">0 of 4 files ready.</div>
+    </div>
+    <div class="weekly-upload-grid">
+      <button type="button" class="weekly-file-btn" id="weeklyBtnSales" onclick="document.getElementById('weeklySalesFile').click()">
+        <div class="weekly-file-label">Sales</div>
+        <div class="weekly-file-name" id="weeklyNameSales">Choose file</div>
+      </button>
+      <button type="button" class="weekly-file-btn" id="weeklyBtnInventory" onclick="document.getElementById('weeklyInventoryFile').click()">
+        <div class="weekly-file-label">Available inventory</div>
+        <div class="weekly-file-name" id="weeklyNameInventory">Choose file</div>
+      </button>
+      <button type="button" class="weekly-file-btn" id="weeklyBtnJournal" onclick="document.getElementById('weeklyJournalFile').click()">
+        <div class="weekly-file-label">Journal</div>
+        <div class="weekly-file-name" id="weeklyNameJournal">Choose file</div>
+      </button>
+      <button type="button" class="weekly-file-btn" id="weeklyBtnCredit" onclick="document.getElementById('weeklyCreditFile').click()">
+        <div class="weekly-file-label">Credit note</div>
+        <div class="weekly-file-name" id="weeklyNameCredit">Choose file</div>
+      </button>
+    </div>
+    <input type="file" id="weeklySalesFile" accept=".xls,.xlsx" onchange="onWeeklyFileSelect('sales', this)">
+    <input type="file" id="weeklyInventoryFile" accept=".xls,.xlsx" onchange="onWeeklyFileSelect('inventory', this)">
+    <input type="file" id="weeklyJournalFile" accept=".xls,.xlsx" onchange="onWeeklyFileSelect('journal', this)">
+    <input type="file" id="weeklyCreditFile" accept=".xls,.xlsx" onchange="onWeeklyFileSelect('credit', this)">
+    <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:14px;">
+      <button type="button" class="btn btn-outline" id="weeklyDownloadBtn" onclick="downloadWeeklyConsolidation()" disabled>Download Workbook</button>
+      <button type="button" class="btn btn-primary" id="weeklyGenerateBtn" onclick="generateWeeklyConsolidation()" disabled>Generate Analytics</button>
+    </div>
+  </div>
 
   <!-- Quick period presets -->
   <div style="margin-top:20px;margin-bottom:12px;">
@@ -480,6 +562,7 @@
 {% block scripts %}
 <script>
 let selectedFiles = { primary: null, secondary: null };
+let weeklyFiles = { sales: null, inventory: null, journal: null, credit: null };
 let selectedFile  = null;
 let previewData   = null;
 let currentJobId  = null;
@@ -517,6 +600,91 @@ function updateBatchStatus() {
   if (analyzeBtn) analyzeBtn.disabled = !primary;
   const startGenBtn = document.getElementById('startGenBtn');
   if (startGenBtn) startGenBtn.disabled = received < 2;
+}
+
+function onWeeklyFileSelect(slot, input) {
+  if (!input.files[0]) return;
+  weeklyFiles[slot] = input.files[0];
+  const title = slot.charAt(0).toUpperCase() + slot.slice(1);
+  const nameEl = document.getElementById('weeklyName' + title);
+  const btnEl = document.getElementById('weeklyBtn' + title);
+  if (nameEl) nameEl.textContent = input.files[0].name;
+  if (btnEl) btnEl.classList.add('has-file');
+  updateWeeklyStatus();
+}
+
+function updateWeeklyStatus() {
+  const ready = Object.values(weeklyFiles).filter(Boolean).length;
+  const status = document.getElementById('weeklyStatus');
+  if (status) status.textContent = `${ready} of 4 files ready.${ready === 4 ? ' Ready.' : ''}`;
+  document.getElementById('weeklyDownloadBtn').disabled = ready < 4;
+  document.getElementById('weeklyGenerateBtn').disabled = ready < 4;
+}
+
+function buildWeeklyFormData() {
+  const fd = new FormData();
+  fd.append('sales_file', weeklyFiles.sales);
+  fd.append('inventory_file', weeklyFiles.inventory);
+  fd.append('journal_file', weeklyFiles.journal);
+  fd.append('credit_file', weeklyFiles.credit);
+  fd.append('report_type', 'weekly');
+  fd.append('import_mode', 'full');
+  return fd;
+}
+
+async function downloadWeeklyConsolidation() {
+  if (Object.values(weeklyFiles).filter(Boolean).length < 4) return;
+  const btn = document.getElementById('weeklyDownloadBtn');
+  btn.disabled = true;
+  btn.textContent = 'Preparing...';
+  try {
+    const res = await fetch('/api/weekly-consolidation/download', {method:'POST', body: buildWeeklyFormData()});
+    if (!res.ok) {
+      const data = await parseJsonResponse(res);
+      throw new Error(data.error || 'Could not consolidate files.');
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get('content-disposition') || '';
+    const match = disposition.match(/filename="?([^"]+)"?/i);
+    const filename = match ? match[1] : 'Weekly Sales Report.xlsx';
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert('Consolidation failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Download Workbook';
+    updateWeeklyStatus();
+  }
+}
+
+async function generateWeeklyConsolidation() {
+  if (Object.values(weeklyFiles).filter(Boolean).length < 4) return;
+  goToStep(5);
+  document.getElementById('genBrandList').innerHTML = '';
+  document.getElementById('genSubtitle').textContent = 'Consolidating weekly files...';
+  let data;
+  try {
+    const res = await fetch('/api/weekly-consolidation/generate', {method:'POST', body: buildWeeklyFormData()});
+    data = await parseJsonResponse(res);
+  } catch (err) {
+    alert('Generation failed: ' + err.message);
+    goToStep(1);
+    return;
+  }
+  if (!data.success) {
+    alert('Generation failed: ' + data.error);
+    goToStep(1);
+    return;
+  }
+  currentJobId = data.job_id;
+  pollProgress(currentJobId, []);
 }
 
 // ── Period selector ──────────────────────────────────────────────────────────
