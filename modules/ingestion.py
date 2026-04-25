@@ -13,6 +13,7 @@ without touching any downstream module.
 
 import os
 import io
+from functools import lru_cache
 import pandas as pd
 
 from .brand_names import canonicalize_brand_name
@@ -155,6 +156,7 @@ def _is_csv(file_source):
     return False
 
 
+@lru_cache(maxsize=None)
 def _resolve_known_brand_name(raw_name: str) -> str:
     """
     Map approved aliases to their canonical brand names without blocking unknown imports.
