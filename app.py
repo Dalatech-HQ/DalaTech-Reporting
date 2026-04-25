@@ -3958,13 +3958,13 @@ def api_report_pdf_bulk(report_id):
     zip_name  = (f"Selected_Brand_Reports_{month_tag}.zip" if requested_brands
                  else f"All_Brand_Reports_{month_tag}.zip")
 
-    render_signature_mtime = _report_render_signature_mtime()
-
     def _get_pdf(brand_name):
         safe      = _safe_name(brand_name)
         disk_path = os.path.join(PDF_DIR, f"{safe}_Report_{month_tag}.pdf")
-        # Serve from disk only if it matches the current render pipeline.
-        if os.path.isfile(disk_path) and os.path.getmtime(disk_path) >= render_signature_mtime:
+        # Bulk download: serve from disk if available, regardless of render pipeline age.
+        # (Re-generating 25+ PDFs via Playwright on every code deployment exceeds the
+        # gunicorn timeout; stale PDFs are acceptable for bulk packs.)
+        if os.path.isfile(disk_path):
             with open(disk_path, 'rb') as fh:
                 return brand_name, fh.read(), None
         try:
@@ -3982,8 +3982,8 @@ def api_report_pdf_bulk(report_id):
         except Exception as exc:
             return brand_name, None, str(exc)
 
-    # Parallel: disk reads + KPI reconstruction run concurrently;
-    # Playwright rendering is serialised internally by _browser_lock
+    # Parallel: disk reads run concurrently; any missing PDFs are generated
+    # on-demand (Playwright rendering is serialised internally by _browser_lock).
     results   = {}
     failures  = []
     with ThreadPoolExecutor(max_workers=6) as pool:
