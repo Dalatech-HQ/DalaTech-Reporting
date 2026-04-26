@@ -94,12 +94,14 @@ app.secret_key = os.environ.get('SECRET_KEY', 'dala-dev-secret-2026')
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024   # 100 MB
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
-OUTPUT_DIR  = os.path.join(BASE_DIR, 'output')
+# Use Railway persistent volume if available so PDF/HTML caches survive redeploys
+_PERSISTENT_ROOT = os.environ.get('RAILWAY_VOLUME_MOUNT_PATH')
+OUTPUT_DIR  = os.path.join(_PERSISTENT_ROOT or BASE_DIR, 'output')
 PDF_DIR     = os.path.join(OUTPUT_DIR, 'pdf')
 HTML_DIR    = os.path.join(OUTPUT_DIR, 'html')
 os.makedirs(PDF_DIR,  exist_ok=True)
 os.makedirs(HTML_DIR, exist_ok=True)
-ACTIVITY_OUTPUT_DIR = os.path.join(BASE_DIR, 'New Data to Feed', 'Output')
+ACTIVITY_OUTPUT_DIR = os.path.join(_PERSISTENT_ROOT or BASE_DIR, 'New Data to Feed', 'Output')
 os.makedirs(ACTIVITY_OUTPUT_DIR, exist_ok=True)
 BATCH_STAGE_DIR = os.path.join(BASE_DIR, 'tmp', 'sales_import_batches')
 os.makedirs(BATCH_STAGE_DIR, exist_ok=True)
