@@ -905,23 +905,34 @@ def _render_activity_report_html(activity_data: dict, *, include_full_details: b
 
 
 def generate_activity_report_html(output_path: str, brand_name: str, activity_data: dict, period_label: str = None,
-                                  report_id: int = None, html_output_path: str = None) -> str:
+                                  report_id: int = None, html_output_path: str = None) -> tuple[str, str | None]:
+    """Generate activity report HTML and PDF. Returns (html_path, pdf_path_or_none).
+    
+    PDF is generated using A3 landscape to match the dashboard template's print CSS.
+    If PDF generation fails, pdf_path is None so callers can handle gracefully.
+    """
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     if not html_output_path:
         html_output_path = output_path.replace(f"{os.sep}pdf{os.sep}", f"{os.sep}html{os.sep}").replace('.pdf', '.html')
     os.makedirs(os.path.dirname(html_output_path), exist_ok=True)
+    
+    # Always generate HTML
     html_content = _render_activity_report_html(activity_data, include_full_details=True, for_pdf=False)
     with open(html_output_path, 'w', encoding='utf-8') as handle:
         handle.write(html_content)
 
+    # Attempt PDF generation with A3 landscape (matches template @page rule)
     pdf_content = _render_activity_report_html(activity_data, include_full_details=False, for_pdf=True)
     try:
-        pdf_bytes = render_pdf_bytes(pdf_content)
+        pdf_bytes = render_pdf_bytes(
+            pdf_content,
+            page_size={'width': '297mm', 'height': '420mm', 'margin': {'top': '5mm', 'right': '5mm', 'bottom': '5mm', 'left': '5mm'}},
+        )
         with open(output_path, 'wb') as handle:
             handle.write(pdf_bytes)
-        return output_path
+        return html_output_path, output_path
     except Exception:
-        return html_output_path
+        return html_output_path, None
 
 
 def generate_activity_excel_report(output_path: str, activity_data: dict) -> str:

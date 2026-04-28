@@ -4222,6 +4222,9 @@ def _activity_report_cached_paths(brand_name, report=None, batch=None):
     pdf_path = os.path.join(ACTIVITY_OUTPUT_DIR, f"{filename}.pdf")
     html_path = os.path.join(ACTIVITY_OUTPUT_DIR, f"{filename}.html")
     excel_path = os.path.join(ACTIVITY_OUTPUT_DIR, f"{filename}.xlsx")
+    html_ok = os.path.isfile(html_path)
+    excel_ok = os.path.isfile(excel_path)
+    pdf_ok = os.path.isfile(pdf_path)
     return {
         'report_id': (report or {}).get('id'),
         'batch_id': batch.get('id') if batch else None,
@@ -4230,7 +4233,10 @@ def _activity_report_cached_paths(brand_name, report=None, batch=None):
         'pdf_path': pdf_path,
         'html_path': html_path,
         'excel_path': excel_path,
-        'cached': all(os.path.isfile(path) for path in (pdf_path, html_path, excel_path)),
+        'cached': html_ok and excel_ok,
+        'pdf_available': pdf_ok,
+        'html_available': html_ok,
+        'excel_available': excel_ok,
     }
 
 
@@ -4252,10 +4258,11 @@ def _build_activity_report_assets(brand_name, report_id=None, batch_id=None):
             'batch_id': batch_id,
             'period_label': cached['period_label'],
             'filename': cached['filename'],
-            'pdf_path': cached['pdf_path'],
+            'pdf_path': cached['pdf_path'] if cached['pdf_available'] else None,
             'html_path': cached['html_path'],
             'excel_path': cached['excel_path'],
-            'generated_path': cached['pdf_path'],
+            'generated_path': cached['pdf_path'] if cached['pdf_available'] else cached['html_path'],
+            'pdf_available': cached['pdf_available'],
             'activity_data': {
                 'identity': {'period_label': cached['period_label']},
                 'kpis': dict(activity_summary.get('totals') or {}),
@@ -4281,7 +4288,7 @@ def _build_activity_report_assets(brand_name, report_id=None, batch_id=None):
     pdf_path = os.path.join(ACTIVITY_OUTPUT_DIR, f"{filename}.pdf")
     html_path = os.path.join(ACTIVITY_OUTPUT_DIR, f"{filename}.html")
     excel_path = os.path.join(ACTIVITY_OUTPUT_DIR, f"{filename}.xlsx")
-    generated_path = generate_activity_report_html(
+    generated_html_path, generated_pdf_path = generate_activity_report_html(
         output_path=pdf_path,
         html_output_path=html_path,
         brand_name=brand_name,
@@ -4296,10 +4303,11 @@ def _build_activity_report_assets(brand_name, report_id=None, batch_id=None):
         'batch_id': batch_id,
         'period_label': period_label,
         'filename': filename,
-        'pdf_path': pdf_path,
-        'html_path': html_path,
+        'pdf_path': generated_pdf_path if generated_pdf_path else None,
+        'html_path': generated_html_path if generated_html_path else html_path,
         'excel_path': excel_path,
-        'generated_path': generated_path,
+        'generated_path': generated_pdf_path or generated_html_path,
+        'pdf_available': bool(generated_pdf_path),
         'activity_data': activity_data,
     }
 
@@ -4383,14 +4391,17 @@ def _activity_batch_brand_rows(report_id, batch_id, summary):
         brand_name = row.get('brand_name')
         if not brand_name:
             continue
+        report = ds.get_report(report_id) if report_id else None
+        batch = _get_activity_batch_row(batch_id) if batch_id else None
+        cached = _activity_report_cached_paths(brand_name, report=report, batch=batch)
         if report_id:
             html_url = f"/api/activity/report_html/{report_id}/{brand_name}"
-            pdf_url = f"/api/activity/report_pdf/{report_id}/{brand_name}"
+            pdf_url = f"/api/activity/report_pdf/{report_id}/{brand_name}" if cached['pdf_available'] else None
             excel_url = f"/api/activity/report_excel/{report_id}/{brand_name}"
             detail_url = url_for('activity_intelligence', report_id=report_id, batch_id=batch_id, brand=brand_name)
         else:
             html_url = f"/api/activity/report_html_batch/{batch_id}/{brand_name}" if batch_id else None
-            pdf_url = f"/api/activity/report_pdf_batch/{batch_id}/{brand_name}" if batch_id else None
+            pdf_url = f"/api/activity/report_pdf_batch/{batch_id}/{brand_name}" if batch_id and cached['pdf_available'] else None
             excel_url = f"/api/activity/report_excel_batch/{batch_id}/{brand_name}" if batch_id else None
             detail_url = url_for('activity_intelligence', batch_id=batch_id, brand=brand_name)
         brand_rows.append({
@@ -4438,11 +4449,11 @@ def _build_activity_bulk_zip(report_id=None, batch_id=None, brand_names=None, fo
         for brand_name in brands:
             assets = _build_activity_report_assets(brand_name, report_id=report_id, batch_id=batch_id)
             brand_folder = _safe_name(brand_name or 'brand')
-            if 'excel' in requested_formats and os.path.exists(assets['excel_path']):
+            if 'excel' in requested_formats and assets.get('excel_path') and os.path.exists(assets['excel_path']):
                 zipf.write(assets['excel_path'], f"{brand_folder}/{os.path.basename(assets['excel_path'])}")
-            if 'pdf' in requested_formats and os.path.exists(assets['pdf_path']):
+            if 'pdf' in requested_formats and assets.get('pdf_available') and assets.get('pdf_path') and os.path.exists(assets['pdf_path']):
                 zipf.write(assets['pdf_path'], f"{brand_folder}/{os.path.basename(assets['pdf_path'])}")
-            if 'html' in requested_formats and os.path.exists(assets['html_path']):
+            if 'html' in requested_formats and assets.get('html_path') and os.path.exists(assets['html_path']):
                 zipf.write(assets['html_path'], f"{brand_folder}/{os.path.basename(assets['html_path'])}")
     return zip_path
 
@@ -4517,7 +4528,7 @@ def api_activity_report_pdf(report_id, brand_name):
     try:
         report = ds.get_report(report_id)
         cached = _activity_report_cached_paths(brand_name, report=report)
-        if cached['cached']:
+        if cached['cached'] and cached['pdf_available']:
             return send_file(
                 cached['pdf_path'],
                 as_attachment=True,
@@ -4529,6 +4540,8 @@ def api_activity_report_pdf(report_id, brand_name):
         return jsonify({'error': str(exc)}), 404
     except Exception as exc:
         return jsonify({'error': f'Failed to generate activity PDF report: {str(exc)}'}), 500
+    if not assets.get('pdf_available'):
+        return jsonify({'error': 'PDF generation failed for this activity report. The HTML version is available.', 'html_url': f"/api/activity/report_html/{report_id}/{brand_name}"}), 503
     return send_file(
         assets['pdf_path'],
         as_attachment=True,
@@ -4593,7 +4606,7 @@ def api_activity_report_pdf_batch(batch_id, brand_name):
     try:
         batch = _get_activity_batch_row(batch_id)
         cached = _activity_report_cached_paths(brand_name, batch=batch)
-        if cached['cached']:
+        if cached['cached'] and cached['pdf_available']:
             return send_file(
                 cached['pdf_path'],
                 as_attachment=True,
@@ -4605,6 +4618,8 @@ def api_activity_report_pdf_batch(batch_id, brand_name):
         return jsonify({'error': str(exc)}), 404
     except Exception as exc:
         return jsonify({'error': f'Failed to generate activity PDF report: {str(exc)}'}), 500
+    if not assets.get('pdf_available'):
+        return jsonify({'error': 'PDF generation failed for this activity report. The HTML version is available.', 'html_url': f"/api/activity/report_html_batch/{batch_id}/{brand_name}"}), 503
     return send_file(
         assets['pdf_path'],
         as_attachment=True,
@@ -4652,16 +4667,20 @@ def api_activity_report(brand_name):
     except Exception as exc:
         return jsonify({'error': f'Failed to generate activity report: {str(exc)}'}), 500
 
+    pdf_available = assets.get('pdf_available', False)
+    report_id_val = assets.get('report_id')
+    batch_id_val = assets.get('batch_id')
     return jsonify({
         'success': True,
         'brand': brand_name,
-        'report_id': assets['report_id'],
-        'batch_id': assets.get('batch_id'),
+        'report_id': report_id_val,
+        'batch_id': batch_id_val,
         'period': assets['period_label'],
-        'html_url': f"/api/activity/report_html/{assets['report_id']}/{brand_name}" if assets['report_id'] else f"/api/activity/report_html_batch/{assets['batch_id']}/{brand_name}",
-        'html_download_url': f"/api/activity/report_html/{assets['report_id']}/{brand_name}?download=1" if assets['report_id'] else f"/api/activity/report_html_batch/{assets['batch_id']}/{brand_name}?download=1",
-        'pdf_url': f"/api/activity/report_pdf/{assets['report_id']}/{brand_name}" if assets['report_id'] else f"/api/activity/report_pdf_batch/{assets['batch_id']}/{brand_name}",
-        'excel_url': f"/api/activity/report_excel/{assets['report_id']}/{brand_name}" if assets['report_id'] else f"/api/activity/report_excel_batch/{assets['batch_id']}/{brand_name}",
+        'html_url': f"/api/activity/report_html/{report_id_val}/{brand_name}" if report_id_val else f"/api/activity/report_html_batch/{batch_id_val}/{brand_name}",
+        'html_download_url': f"/api/activity/report_html/{report_id_val}/{brand_name}?download=1" if report_id_val else f"/api/activity/report_html_batch/{batch_id_val}/{brand_name}?download=1",
+        'pdf_url': (f"/api/activity/report_pdf/{report_id_val}/{brand_name}" if report_id_val else f"/api/activity/report_pdf_batch/{batch_id_val}/{brand_name}") if pdf_available else None,
+        'pdf_available': pdf_available,
+        'excel_url': f"/api/activity/report_excel/{report_id_val}/{brand_name}" if report_id_val else f"/api/activity/report_excel_batch/{batch_id_val}/{brand_name}",
         'summary': assets['activity_data'].get('kpis', {}),
         'source': assets['activity_data'].get('identity', {}),
         'generated_at': datetime.now().isoformat()
@@ -5266,6 +5285,71 @@ def api_export_alerts():
     buf.seek(0)
     return app.response_class(buf.getvalue(), mimetype='text/csv',
                                headers={'Content-Disposition': 'attachment; filename=alerts.csv'})
+
+
+# ── Activity Reports Output Page ──────────────────────────────────────────────
+
+@app.route('/activity-reports')
+def activity_reports():
+    """Dedicated activity reports output page — mirrors the sales dashboard UX."""
+    alert_count = ds.get_unacknowledged_count()
+    latest_report = ds.get_latest_report()
+    report_id = request.args.get('report_id', type=int)
+    batch_id = request.args.get('batch_id', type=int)
+
+    batch_row = _get_activity_batch_row(batch_id) if batch_id else None
+    if batch_row and not report_id:
+        report_id = batch_row.get('report_id') or report_id
+    if not report_id and latest_report and not batch_row:
+        report_id = latest_report['id']
+    report = ds.get_report(report_id) if report_id else None
+
+    # Activity summary for the selected scope
+    summary = ds.get_activity_summary(batch_id=batch_id, report_id=report_id)
+
+    # Build brand rows with pre-computed metrics and download URLs
+    brand_rows = []
+    all_brands = _list_activity_brands_for_scope(report_id=report_id, batch_id=batch_id)
+    for brand_name in all_brands:
+        brand_summary = ds.get_activity_summary(batch_id=batch_id, report_id=report_id, brand_name=brand_name)
+        totals = brand_summary.get('totals') or {} if brand_summary else {}
+        cached = _activity_report_cached_paths(brand_name, report=report, batch=batch_row)
+        if report_id:
+            html_url = f"/api/activity/report_html/{report_id}/{brand_name}"
+            pdf_url = f"/api/activity/report_pdf/{report_id}/{brand_name}" if cached['pdf_available'] else None
+            excel_url = f"/api/activity/report_excel/{report_id}/{brand_name}"
+        elif batch_id:
+            html_url = f"/api/activity/report_html_batch/{batch_id}/{brand_name}"
+            pdf_url = f"/api/activity/report_pdf_batch/{batch_id}/{brand_name}" if cached['pdf_available'] else None
+            excel_url = f"/api/activity/report_excel_batch/{batch_id}/{brand_name}"
+        else:
+            html_url = pdf_url = excel_url = None
+        brand_rows.append({
+            'brand_name': brand_name,
+            'stores': totals.get('stores', 0),
+            'visits': totals.get('visits', 0),
+            'issues': totals.get('issues', 0),
+            'opportunities': totals.get('opportunities', 0),
+            'html_url': html_url,
+            'pdf_url': pdf_url,
+            'excel_url': excel_url,
+        })
+
+    # Sort by visits descending
+    brand_rows.sort(key=lambda b: b['visits'], reverse=True)
+
+    batches = [_decorate_activity_batch(batch) for batch in ds.get_activity_batches(limit=30)]
+    batches = [batch for batch in batches if batch]
+
+    return render_template(
+        'portal/activity_reports.html',
+        alert_count=alert_count,
+        report=report,
+        reports=ds.get_all_reports(),
+        summary=summary or {'totals': {}},
+        brand_rows=brand_rows,
+        batches=batches,
+    )
 
 
 # ── Activity Log API ──────────────────────────────────────────────────────────

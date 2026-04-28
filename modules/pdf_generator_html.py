@@ -878,7 +878,127 @@ def _system_browser_pdf_executable():
     return None
 
 
-def _render_pdf_bytes_system_browser(html_content: str) -> bytes:
+def render_pdf_bytes(html_content: str, page_size: dict | None = None) -> bytes:
+    """Render PDF bytes, avoiding Playwright sync API calls inside an active asyncio loop.
+    
+    Args:
+        html_content: The HTML content to render.
+        page_size: Optional dict with Playwright page.pdf() options (e.g. {'width':'297mm','height':'420mm'}).
+                   If omitted, defaults to A4.
+    """
+    default_size = {'format': 'A4', 'margin': {'top': '0mm', 'right': '0mm', 'bottom': '0mm', 'left': '0mm'}}
+    size_opts = page_size or default_size
+
+    try:
+        loop = asyncio.get_running_loop()
+        if loop and loop.is_running():
+            try:
+                return _render_pdf_bytes_oneoff(html_content, page_size=size_opts)
+            except Exception as exc:
+                if 'WinError 225' in str(exc) or 'potentially unwanted software' in str(exc):
+                    return _render_pdf_bytes_system_browser(html_content, page_size=size_opts)
+                raise
+    except RuntimeError:
+        pass
+
+    try:
+        return _render_pdf_bytes_persistent(html_content, page_size=size_opts)
+    except Exception as exc:
+        message = str(exc)
+        if 'Playwright Sync API inside the asyncio loop' in message:
+            try:
+                return _render_pdf_bytes_oneoff(html_content, page_size=size_opts)
+            except Exception as inner_exc:
+                if 'WinError 225' in str(inner_exc) or 'potentially unwanted software' in str(inner_exc):
+                    return _render_pdf_bytes_system_browser(html_content, page_size=size_opts)
+                raise
+        if 'WinError 225' in message or 'potentially unwanted software' in message:
+            return _render_pdf_bytes_system_browser(html_content, page_size=size_opts)
+        raise
+
+
+def _render_pdf_bytes_persistent(html_content: str, page_size: dict | None = None) -> bytes:
+    """Render PDF bytes reusing a persistent Chromium instance (no cold-start per call)."""
+    global _browser_inst, _pw_instance
+    size_opts = page_size or {'format': 'A4', 'margin': {'top': '0mm', 'right': '0mm', 'bottom': '0mm', 'left': '0mm'}}
+    with _browser_lock:
+        for attempt in range(2):
+            try:
+                browser = _ensure_browser()
+                page = browser.new_page()
+                try:
+                    # 'load' fires once DOM + sync scripts finish — no network-idle delay
+                    page.set_content(html_content, wait_until='load')
+                    # Wait for web fonts (e.g. Inter) to finish loading so ₦ renders correctly
+                    try:
+                        page.evaluate("document.fonts.ready")
+                    except Exception:
+                        pass
+                    try:
+                        page.wait_for_function("window.__REPORT_READY === true", timeout=5000)
+                    except Exception:
+                        pass
+                    pdf_bytes = page.pdf(print_background=True, **size_opts)
+                finally:
+                    page.close()
+                return pdf_bytes
+            except Exception:
+                if attempt == 0:
+                    # Reset and retry once on first failure
+                    for obj in (_browser_inst, _pw_instance):
+                        try:
+                            obj.close() if hasattr(obj, 'close') else obj.stop()
+                        except Exception:
+                            pass
+                    _browser_inst = None
+                    _pw_instance = None
+                else:
+                    raise
+
+
+def _render_pdf_bytes_oneoff(html_content: str, page_size: dict | None = None) -> bytes:
+    """Render PDF bytes in a fresh worker context, safe for request threads with active event loops."""
+    result: dict[str, bytes] = {}
+    error: dict[str, Exception] = {}
+    size_opts = page_size or {'format': 'A4', 'margin': {'top': '0mm', 'right': '0mm', 'bottom': '0mm', 'left': '0mm'}}
+
+    def _worker():
+        try:
+            with sync_playwright() as pw:
+                browser = _launch_chromium(pw)
+                page = browser.new_page()
+                try:
+                    page.set_content(html_content, wait_until='load')
+                    try:
+                        page.evaluate("document.fonts.ready")
+                    except Exception:
+                        pass
+                    try:
+                        page.wait_for_function("window.__REPORT_READY === true", timeout=5000)
+                    except Exception:
+                        pass
+                    result['bytes'] = page.pdf(print_background=True, **size_opts)
+                finally:
+                    try:
+                        page.close()
+                    except Exception:
+                        pass
+                try:
+                    browser.close()
+                except Exception:
+                    pass
+        except Exception as exc:
+            error['exc'] = exc
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+    thread.join()
+    if error.get('exc'):
+        raise error['exc']
+    return result['bytes']
+
+
+def _render_pdf_bytes_system_browser(html_content: str, page_size: dict | None = None) -> bytes:
     """Render PDF bytes using an installed system browser when Playwright is unavailable."""
     executable = _system_browser_pdf_executable()
     if not executable:
@@ -921,123 +1041,6 @@ def _render_pdf_bytes_system_browser(html_content: str) -> bytes:
         raise RuntimeError('System browser PDF render did not produce an output file')
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
-
-
-def _render_pdf_bytes_persistent(html_content: str) -> bytes:
-    """Render PDF bytes reusing a persistent Chromium instance (no cold-start per call)."""
-    global _browser_inst, _pw_instance
-    with _browser_lock:
-        for attempt in range(2):
-            try:
-                browser = _ensure_browser()
-                page = browser.new_page()
-                try:
-                    # 'load' fires once DOM + sync scripts finish — no network-idle delay
-                    page.set_content(html_content, wait_until='load')
-                    # Wait for web fonts (e.g. Inter) to finish loading so ₦ renders correctly
-                    try:
-                        page.evaluate("document.fonts.ready")
-                    except Exception:
-                        pass
-                    try:
-                        page.wait_for_function("window.__REPORT_READY === true", timeout=3000)
-                    except Exception:
-                        pass
-                    pdf_bytes = page.pdf(
-                        format='A4',
-                        print_background=True,
-                        margin={'top': '0mm', 'right': '0mm', 'bottom': '0mm', 'left': '0mm'},
-                    )
-                finally:
-                    page.close()
-                return pdf_bytes
-            except Exception:
-                if attempt == 0:
-                    # Reset and retry once on first failure
-                    for obj in (_browser_inst, _pw_instance):
-                        try:
-                            obj.close() if hasattr(obj, 'close') else obj.stop()
-                        except Exception:
-                            pass
-                    _browser_inst = None
-                    _pw_instance = None
-                else:
-                    raise
-
-
-def _render_pdf_bytes_oneoff(html_content: str) -> bytes:
-    """Render PDF bytes in a fresh worker context, safe for request threads with active event loops."""
-    result: dict[str, bytes] = {}
-    error: dict[str, Exception] = {}
-
-    def _worker():
-        try:
-            with sync_playwright() as pw:
-                browser = _launch_chromium(pw)
-                page = browser.new_page()
-                try:
-                    page.set_content(html_content, wait_until='load')
-                    try:
-                        page.evaluate("document.fonts.ready")
-                    except Exception:
-                        pass
-                    try:
-                        page.wait_for_function("window.__REPORT_READY === true", timeout=3000)
-                    except Exception:
-                        pass
-                    result['bytes'] = page.pdf(
-                        format='A4',
-                        print_background=True,
-                        margin={'top': '0mm', 'right': '0mm', 'bottom': '0mm', 'left': '0mm'},
-                    )
-                finally:
-                    try:
-                        page.close()
-                    except Exception:
-                        pass
-                try:
-                    browser.close()
-                except Exception:
-                    pass
-        except Exception as exc:
-            error['exc'] = exc
-
-    thread = threading.Thread(target=_worker, daemon=True)
-    thread.start()
-    thread.join()
-    if error.get('exc'):
-        raise error['exc']
-    return result['bytes']
-
-
-def render_pdf_bytes(html_content: str) -> bytes:
-    """Render PDF bytes, avoiding Playwright sync API calls inside an active asyncio loop."""
-    try:
-        loop = asyncio.get_running_loop()
-        if loop and loop.is_running():
-            try:
-                return _render_pdf_bytes_oneoff(html_content)
-            except Exception as exc:
-                if 'WinError 225' in str(exc) or 'potentially unwanted software' in str(exc):
-                    return _render_pdf_bytes_system_browser(html_content)
-                raise
-    except RuntimeError:
-        pass
-
-    try:
-        return _render_pdf_bytes_persistent(html_content)
-    except Exception as exc:
-        message = str(exc)
-        if 'Playwright Sync API inside the asyncio loop' in message:
-            try:
-                return _render_pdf_bytes_oneoff(html_content)
-            except Exception as inner_exc:
-                if 'WinError 225' in str(inner_exc) or 'potentially unwanted software' in str(inner_exc):
-                    return _render_pdf_bytes_system_browser(html_content)
-                raise
-        if 'WinError 225' in message or 'potentially unwanted software' in message:
-            return _render_pdf_bytes_system_browser(html_content)
-        raise
 
 
 def generate_pdf_html(output_path: str, brand_name: str, kpis: dict,

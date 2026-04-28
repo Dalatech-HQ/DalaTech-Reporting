@@ -1,0 +1,281 @@
+{% extends "portal/base.html" %}
+{% block title %}Activity Reports — DALA Analytics{% endblock %}
+{% block page_title %}Activity Reports{% endblock %}
+
+{% block topbar_actions %}
+<select class="form-control" style="width:200px;" onchange="window.location='/activity-reports?report_id='+this.value">
+  {% for r in reports %}
+  <option value="{{ r.id }}" {% if report and r.id==report.id %}selected{% endif %}>{{ r.month_label }}</option>
+  {% endfor %}
+</select>
+{% if report %}
+<a href="/activity-intelligence?report_id={{ report.id }}" class="btn btn-outline btn-sm">Activity Intelligence</a>
+{% endif %}
+{% endblock %}
+
+{% block head %}
+<style>
+  .brand-table td { vertical-align:middle; }
+  .brand-table .actions { white-space:nowrap; display:flex; gap:6px; }
+  .batch-history-row td { font-size:12px; }
+  .empty-state { text-align:center; padding:48px; color:var(--muted); }
+  .activity-progress { margin-top:16px; padding:16px; border-radius:12px; border:1px solid rgba(27,43,94,.08); background:linear-gradient(180deg,#ffffff 0%,#f7f9fe 100%); }
+  .activity-progress[hidden] { display:none; }
+  .activity-progress-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+  .activity-progress-track { height:10px; border-radius:999px; background:#E5EAF4; overflow:hidden; }
+  .activity-progress-fill { height:100%; width:0%; background:linear-gradient(90deg,var(--navy) 0%, var(--blue) 100%); border-radius:999px; transition:width .25s ease; }
+  .activity-progress-note { margin-top:10px; font-size:12px; color:var(--muted); line-height:1.6; }
+  .summary-banner-kicker { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); margin-bottom:8px; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if not report %}
+<div class="card empty-state">
+  <p style="font-size:18px;">No reports yet. <a href="/">Upload your first Tally file.</a></p>
+</div>
+{% else %}
+
+<!-- Activity Summary KPIs -->
+<div class="grid-4" style="margin-bottom:24px;">
+  <div class="kpi-card blue">
+    <div class="kpi-label">Events</div>
+    <div class="kpi-value-sm">{{ summary.totals.events or 0 }}</div>
+    <div class="kpi-sub">Responses captured</div>
+  </div>
+  <div class="kpi-card green">
+    <div class="kpi-label">Visits</div>
+    <div class="kpi-value-sm">{{ summary.totals.visits or 0 }}</div>
+    <div class="kpi-sub">Store visits logged</div>
+  </div>
+  <div class="kpi-card red">
+    <div class="kpi-label">Issues</div>
+    <div class="kpi-value-sm">{{ summary.totals.issues or 0 }}</div>
+    <div class="kpi-sub">Issues found in the field</div>
+  </div>
+  <div class="kpi-card amber">
+    <div class="kpi-label">Coverage</div>
+    <div class="kpi-value-sm">{{ summary.totals.stores or 0 }}</div>
+    <div class="kpi-sub">{{ summary.totals.salespeople or 0 }} salespeople active</div>
+  </div>
+</div>
+
+<!-- Bulk Actions -->
+<div class="card mb-3">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+    <div>
+      <h4 style="color:var(--navy);">Brand Activity Reports — {{ report.month_label }}</h4>
+      <p class="text-muted fs-sm">Download individual reports or select brands for bulk export.</p>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-primary btn-sm" onclick="bulkDownload('all')">📦 Download All (ZIP)</button>
+      <button class="btn btn-outline btn-sm" onclick="toggleSelectAll()">Select All</button>
+      <button class="btn btn-outline btn-sm" onclick="bulkDownload('selected')">Download Selected (ZIP)</button>
+    </div>
+  </div>
+
+  {% if brand_rows %}
+  <table class="data-table brand-table" id="activityBrandTable">
+    <thead>
+      <tr>
+        <th style="width:30px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()"></th>
+        <th>Brand</th>
+        <th>Stores</th>
+        <th>Visits</th>
+        <th>Issues</th>
+        <th>Opportunities</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for brand in brand_rows %}
+      <tr>
+        <td><input type="checkbox" class="brand-checkbox" data-brand="{{ brand.brand_name }}"></td>
+        <td style="font-weight:600;">
+          <a href="/activity-intelligence?report_id={{ report.id }}&brand={{ brand.brand_name }}" style="color:var(--navy);text-decoration:none;">
+            {{ brand.brand_name }}
+          </a>
+        </td>
+        <td>{{ brand.stores or 0 }}</td>
+        <td>{{ brand.visits or 0 }}</td>
+        <td>{{ brand.issues or 0 }}</td>
+        <td>{{ brand.opportunities or 0 }}</td>
+        <td class="actions">
+          <a href="{{ brand.html_url }}" target="_blank" class="btn btn-outline btn-sm" title="View HTML">HTML</a>
+          {% if brand.pdf_url %}
+          <a href="{{ brand.pdf_url }}" class="btn btn-outline btn-sm" title="Download PDF">PDF</a>
+          {% else %}
+          <span class="btn btn-sm" style="opacity:.4;cursor:not-allowed;" title="PDF unavailable">PDF</span>
+          {% endif %}
+          <a href="{{ brand.excel_url }}" class="btn btn-outline btn-sm" title="Download Excel">Excel</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Bulk Progress -->
+  <div id="bulkProgress" class="activity-progress" hidden style="margin-top:16px;">
+    <div class="activity-progress-top">
+      <div>
+        <div class="summary-banner-kicker" style="margin-bottom:4px;">Bulk Export</div>
+        <div id="bulkStage" class="text-navy fw-bold">Preparing pack</div>
+      </div>
+      <div id="bulkPct" class="kpi-value-sm">0%</div>
+    </div>
+    <div class="activity-progress-track">
+      <div id="bulkFill" class="activity-progress-fill"></div>
+    </div>
+    <div id="bulkNote" class="activity-progress-note">Packaging brand outputs...</div>
+    <div id="bulkResult" style="margin-top:8px;"></div>
+  </div>
+  {% else %}
+  <p class="text-muted">No activity data found for this report. <a href="/activity-intelligence?report_id={{ report.id }}">Import activity data</a>.</p>
+  {% endif %}
+</div>
+
+<!-- Activity Batch History -->
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    <h4 style="color:var(--navy);">Activity Batch History</h4>
+    <a href="/activity-intelligence" class="btn btn-outline btn-sm">Import New Activity</a>
+  </div>
+  <table class="data-table batch-history-row">
+    <thead>
+      <tr><th>Batch</th><th>Period</th><th>Rows</th><th>Brands</th><th>Status</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for batch in batches %}
+      <tr>
+        <td>
+          <div style="font-weight:600;">{{ batch.display_label or batch.source_filename }}</div>
+          <div class="text-muted fs-sm">{{ batch.source_type_label or batch.source_type or 'Activity' }}</div>
+        </td>
+        <td>{{ batch.report_label or batch.start_date or '-' }}{% if batch.end_date and batch.end_date != batch.start_date %} to {{ batch.end_date }}{% endif %}</td>
+        <td>{{ batch.row_count or 0 }}</td>
+        <td>{{ batch.brand_count or 0 }}</td>
+        <td><span class="badge {% if batch.import_status == 'imported' %}badge-green{% else %}badge-blue{% endif %}">{{ batch.status_label or batch.import_status }}</span></td>
+        <td>
+          <a href="/activity-reports?batch_id={{ batch.id }}" class="btn btn-outline btn-sm">View Reports</a>
+          <a href="/activity-intelligence?batch_id={{ batch.id }}" class="btn btn-outline btn-sm">Details</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-muted">No activity batches imported yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleSelectAll() {
+  const master = document.getElementById('selectAllCheckbox');
+  const boxes = document.querySelectorAll('.brand-checkbox');
+  const allChecked = Array.from(boxes).every(b => b.checked);
+  boxes.forEach(b => b.checked = !allChecked);
+  master.checked = !allChecked;
+}
+
+function getSelectedBrands() {
+  return Array.from(document.querySelectorAll('.brand-checkbox:checked')).map(b => b.dataset.brand);
+}
+
+async function bulkDownload(mode) {
+  const brands = mode === 'all' ? [] : getSelectedBrands();
+  if (mode === 'selected' && brands.length === 0) {
+    alert('Please select at least one brand.');
+    return;
+  }
+
+  const progressCard = document.getElementById('bulkProgress');
+  const progressFill = document.getElementById('bulkFill');
+  const progressPct = document.getElementById('bulkPct');
+  const progressStage = document.getElementById('bulkStage');
+  const progressNote = document.getElementById('bulkNote');
+  const progressResult = document.getElementById('bulkResult');
+
+  const setProgress = (pct, stage, note = '') => {
+    const safePct = Math.max(0, Math.min(100, Number(pct || 0)));
+    progressCard.hidden = false;
+    progressFill.style.width = `${safePct}%`;
+    progressPct.textContent = `${Math.round(safePct)}%`;
+    progressStage.textContent = stage || 'Building bulk export';
+    progressNote.textContent = note || '';
+  };
+
+  setProgress(5, 'Preparing bulk export', 'Sending request to server...');
+  progressResult.innerHTML = '';
+
+  const reportId = new URLSearchParams(window.location.search).get('report_id') || '{{ report.id if report else "" }}';
+  const batchId = new URLSearchParams(window.location.search).get('batch_id') || '';
+
+  try {
+    const res = await fetch('/api/activity/report_bulk', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        report_id: reportId ? Number(reportId) : null,
+        batch_id: batchId ? Number(batchId) : null,
+        brands: brands,
+        formats: ['pdf', 'excel', 'html'],
+        return_zip: true
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Could not start bulk export.');
+    }
+    if (data.cached && data.zip_url) {
+      setProgress(100, 'Bulk export ready', 'Cached pack served instantly.');
+      progressResult.innerHTML = `<a href="${data.zip_url}" class="btn btn-primary btn-sm" download>Download ZIP</a>`;
+      return;
+    }
+    if (data.job_id) {
+      await pollBulkJob(data.job_id, setProgress, progressResult);
+      return;
+    }
+    throw new Error('Bulk export did not start.');
+  } catch (err) {
+    setProgress(0, 'Bulk export failed', err.message);
+  }
+}
+
+async function pollBulkJob(jobId, setProgress, resultDiv) {
+  while (true) {
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    let payload;
+    try {
+      const res = await fetch(`/api/activity/job/${jobId}`, { cache: 'no-store' });
+      payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || 'Could not read progress.');
+    } catch (err) {
+      setProgress(0, 'Progress unavailable', err.message);
+      return;
+    }
+
+    const progress = Math.max(0, Math.min(100, Number(payload.progress || 0)));
+    setProgress(progress, payload.current_brand || 'Building export', payload.status === 'done' ? 'Finalizing package...' : 'Packaging brand outputs...');
+
+    if (payload.status === 'error') {
+      setProgress(0, 'Export failed', payload.error_msg || 'Something went wrong.');
+      return;
+    }
+
+    if (payload.status === 'done') {
+      const result = payload.result_json || {};
+      if (result.zip_url) {
+        resultDiv.innerHTML = `<a href="${result.zip_url}" class="btn btn-primary btn-sm" download>Download ZIP</a>`;
+      } else {
+        resultDiv.innerHTML = '<span class="text-muted">No ZIP was produced. Some reports may have failed.</span>';
+      }
+      setProgress(100, 'Export complete', 'Download your pack now.');
+      return;
+    }
+  }
+}
+</script>
+{% endblock %}
