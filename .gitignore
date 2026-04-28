@@ -60,3 +60,14 @@ pdf_final*.png
 # Playwright
 playwright-report/
 test-results/
+
+# Local dev artifacts
+brand_zeef.html
+brand_zeef.pdf
+debug_brand.py
+flask_err.txt
+flask_out.txt
+gen_all_pdfs.py
+test_bulk_local.py
+test_bulk_single*.zip
+test_zeef*.pdf

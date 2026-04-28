@@ -3903,8 +3903,16 @@ def api_report_pdf(report_id, brand_name):
 
     render_signature_mtime = _report_render_signature_mtime()
 
-    # Fast path: serve pre-generated PDF only if it was built after the current print pipeline
-    if os.path.isfile(disk_path) and os.path.getmtime(disk_path) >= render_signature_mtime:
+    # Data freshness: if the report was regenerated after the PDF was cached, the PDF is stale.
+    report_generated_at = 0
+    try:
+        report_generated_at = datetime.fromisoformat(str(report.get('generated_at') or '')).timestamp()
+    except Exception:
+        pass
+    freshness_threshold = max(render_signature_mtime, report_generated_at)
+
+    # Fast path: serve pre-generated PDF only if it was built after both the code and the data.
+    if os.path.isfile(disk_path) and os.path.getmtime(disk_path) >= freshness_threshold:
         return send_file(disk_path, as_attachment=True, download_name=fname,
                          mimetype='application/pdf')
 
