@@ -3,7 +3,7 @@
 {% block page_title %}Activity Reports{% endblock %}
 
 {% block topbar_actions %}
-<select class="form-control" style="width:200px;" onchange="window.location='/activity-reports?report_id='+this.value">
+<select class="form-control" style="width:220px;" onchange="window.location='/activity-reports?report_id='+this.value">
   {% for r in reports %}
   <option value="{{ r.id }}" {% if report and r.id==report.id %}selected{% endif %}>{{ r.month_label }}</option>
   {% endfor %}
@@ -15,153 +15,575 @@
 
 {% block head %}
 <style>
-  .brand-table td { vertical-align:middle; }
-  .brand-table .actions { white-space:nowrap; display:flex; gap:6px; }
-  .batch-history-row td { font-size:12px; }
-  .empty-state { text-align:center; padding:48px; color:var(--muted); }
-  .activity-progress { margin-top:16px; padding:16px; border-radius:12px; border:1px solid rgba(27,43,94,.08); background:linear-gradient(180deg,#ffffff 0%,#f7f9fe 100%); }
-  .activity-progress[hidden] { display:none; }
-  .activity-progress-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
-  .activity-progress-track { height:10px; border-radius:999px; background:#E5EAF4; overflow:hidden; }
-  .activity-progress-fill { height:100%; width:0%; background:linear-gradient(90deg,var(--navy) 0%, var(--blue) 100%); border-radius:999px; transition:width .25s ease; }
-  .activity-progress-note { margin-top:10px; font-size:12px; color:var(--muted); line-height:1.6; }
-  .summary-banner-kicker { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); margin-bottom:8px; }
+  /* ── Hero Banner ── */
+  .activity-hero {
+    background: linear-gradient(135deg, #1B2B5E 0%, #254184 40%, #2E86C1 100%);
+    border-radius: 16px;
+    padding: 32px 36px;
+    color: white;
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .activity-hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -10%;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .activity-hero::after {
+    content: '';
+    position: absolute;
+    bottom: -30%;
+    left: -5%;
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(232,25,44,0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .activity-hero-content { position: relative; z-index: 1; }
+  .activity-hero-kicker {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    opacity: 0.7;
+    margin-bottom: 8px;
+  }
+  .activity-hero h2 {
+    font-size: 28px;
+    font-weight: 800;
+    margin: 0 0 6px;
+    letter-spacing: -0.3px;
+  }
+  .activity-hero-meta {
+    display: flex;
+    gap: 16px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+  .activity-hero-meta-item {
+    background: rgba(255,255,255,0.12);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 12px;
+  }
+  .activity-hero-meta-item strong {
+    display: block;
+    font-size: 18px;
+    font-weight: 800;
+    margin-bottom: 2px;
+  }
+
+  /* ── KPI Cards ── */
+  .activity-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .activity-kpi-card {
+    background: white;
+    border-radius: 14px;
+    padding: 22px 20px;
+    box-shadow: 0 2px 8px rgba(27,43,94,0.06), 0 8px 24px rgba(27,43,94,0.08);
+    border: 1px solid rgba(27,43,94,0.06);
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .activity-kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(27,43,94,0.12);
+  }
+  .activity-kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--accent, var(--navy));
+  }
+  .activity-kpi-card.blue { --accent: #2E86C1; }
+  .activity-kpi-card.green { --accent: #1E8449; }
+  .activity-kpi-card.red { --accent: #E8192C; }
+  .activity-kpi-card.amber { --accent: #C0922A; }
+  .activity-kpi-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    margin-bottom: 12px;
+    background: var(--accent-bg, #f0f4ff);
+  }
+  .activity-kpi-card.blue .activity-kpi-icon { --accent-bg: rgba(46,134,193,0.1); }
+  .activity-kpi-card.green .activity-kpi-icon { --accent-bg: rgba(30,132,73,0.1); }
+  .activity-kpi-card.red .activity-kpi-icon { --accent-bg: rgba(232,25,44,0.1); }
+  .activity-kpi-card.amber .activity-kpi-icon { --accent-bg: rgba(192,146,42,0.1); }
+  .activity-kpi-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .activity-kpi-value {
+    font-size: 32px;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1;
+    letter-spacing: -0.5px;
+  }
+  .activity-kpi-sub {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  /* ── Section Cards ── */
+  .activity-section {
+    background: white;
+    border-radius: 14px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(27,43,94,0.06), 0 8px 24px rgba(27,43,94,0.08);
+    border: 1px solid rgba(27,43,94,0.06);
+    margin-bottom: 24px;
+  }
+  .activity-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .activity-section-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--navy);
+  }
+  .activity-section-subtitle {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  /* ── Table ── */
+  .activity-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+  }
+  .activity-table thead th {
+    background: #f8fafc;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 2px solid #e2e8f0;
+    white-space: nowrap;
+  }
+  .activity-table tbody td {
+    padding: 14px;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: middle;
+  }
+  .activity-table tbody tr {
+    transition: background 0.15s ease;
+  }
+  .activity-table tbody tr:hover {
+    background: #f8fafc;
+  }
+  .activity-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .activity-brand-name {
+    font-weight: 700;
+    color: var(--navy);
+    text-decoration: none;
+  }
+  .activity-brand-name:hover {
+    color: var(--red);
+  }
+  .activity-metric-cell {
+    font-weight: 600;
+    color: var(--text);
+  }
+  .activity-actions {
+    display: flex;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .activity-actions .btn {
+    padding: 5px 10px;
+    font-size: 11px;
+    border-radius: 6px;
+  }
+
+  /* ── Empty State ── */
+  .activity-empty {
+    text-align: center;
+    padding: 64px 24px;
+  }
+  .activity-empty-icon {
+    width: 80px;
+    height: 80px;
+    background: linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 100%);
+    border-radius: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+    margin-bottom: 20px;
+  }
+  .activity-empty h3 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--navy);
+    margin-bottom: 8px;
+  }
+  .activity-empty p {
+    font-size: 14px;
+    color: var(--muted);
+    max-width: 400px;
+    margin: 0 auto 20px;
+    line-height: 1.6;
+  }
+
+  /* ── Progress ── */
+  .activity-progress {
+    margin-top: 16px;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(27,43,94,0.08);
+    background: linear-gradient(180deg,#ffffff 0%,#f7f9fe 100%);
+  }
+  .activity-progress[hidden] { display: none; }
+  .activity-progress-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .activity-progress-track {
+    height: 8px;
+    border-radius: 999px;
+    background: #E5EAF4;
+    overflow: hidden;
+  }
+  .activity-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg,var(--navy) 0%, var(--blue) 100%);
+    border-radius: 999px;
+    transition: width 0.3s ease;
+  }
+  .activity-progress-note {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .summary-banner-kicker {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+
+  /* ── Batch History ── */
+  .batch-row td {
+    font-size: 13px;
+    padding: 14px;
+  }
+  .batch-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .batch-badge.imported {
+    background: rgba(30,132,73,0.1);
+    color: #1E8449;
+  }
+  .batch-badge.pending {
+    background: rgba(46,134,193,0.1);
+    color: #2E86C1;
+  }
+
+  /* ── Checkbox ── */
+  .activity-table input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--navy);
+    cursor: pointer;
+  }
+
+  /* ── Animations ── */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-in {
+    animation: fadeInUp 0.5s ease forwards;
+  }
+  .delay-1 { animation-delay: 0.1s; opacity: 0; }
+  .delay-2 { animation-delay: 0.2s; opacity: 0; }
+  .delay-3 { animation-delay: 0.3s; opacity: 0; }
+
+  @media(max-width:900px) {
+    .activity-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    .activity-hero { padding: 24px; }
+    .activity-hero h2 { font-size: 22px; }
+  }
+  @media(max-width:600px) {
+    .activity-kpi-grid { grid-template-columns: 1fr; }
+    .activity-hero-meta { flex-direction: column; }
+    .activity-actions { flex-wrap: wrap; }
+  }
 </style>
 {% endblock %}
 
 {% block content %}
 {% if not report %}
-<div class="card empty-state">
-  <p style="font-size:18px;">No reports yet. <a href="/">Upload your first Tally file.</a></p>
+<div class="activity-empty animate-in">
+  <div class="activity-empty-icon">📊</div>
+  <h3>No Reports Yet</h3>
+  <p>Upload your first sales report to start generating activity insights and field team reports.</p>
+  <a href="/" class="btn btn-primary">Upload Report</a>
 </div>
 {% else %}
 
-<!-- Activity Summary KPIs -->
-<div class="grid-4" style="margin-bottom:24px;">
-  <div class="kpi-card blue">
-    <div class="kpi-label">Events</div>
-    <div class="kpi-value-sm">{{ summary.totals.events or 0 }}</div>
-    <div class="kpi-sub">Responses captured</div>
-  </div>
-  <div class="kpi-card green">
-    <div class="kpi-label">Visits</div>
-    <div class="kpi-value-sm">{{ summary.totals.visits or 0 }}</div>
-    <div class="kpi-sub">Store visits logged</div>
-  </div>
-  <div class="kpi-card red">
-    <div class="kpi-label">Issues</div>
-    <div class="kpi-value-sm">{{ summary.totals.issues or 0 }}</div>
-    <div class="kpi-sub">Issues found in the field</div>
-  </div>
-  <div class="kpi-card amber">
-    <div class="kpi-label">Coverage</div>
-    <div class="kpi-value-sm">{{ summary.totals.stores or 0 }}</div>
-    <div class="kpi-sub">{{ summary.totals.salespeople or 0 }} salespeople active</div>
+<!-- Hero Banner -->
+<div class="activity-hero animate-in">
+  <div class="activity-hero-content">
+    <div class="activity-hero-kicker">Field Activity Overview</div>
+    <h2>{{ report.month_label }}</h2>
+    <p style="opacity:0.8;font-size:14px;margin:0;">
+      {{ report.start_date }} to {{ report.end_date }} · {{ report.brand_count }} brand partners
+    </p>
+    <div class="activity-hero-meta">
+      <div class="activity-hero-meta-item">
+        <strong>{{ summary.totals.events or 0 }}</strong>
+        Events Captured
+      </div>
+      <div class="activity-hero-meta-item">
+        <strong>{{ summary.totals.visits or 0 }}</strong>
+        Store Visits
+      </div>
+      <div class="activity-hero-meta-item">
+        <strong>{{ summary.totals.issues or 0 }}</strong>
+        Issues Logged
+      </div>
+      <div class="activity-hero-meta-item">
+        <strong>{{ summary.totals.stores or 0 }}</strong>
+        Stores Covered
+      </div>
+    </div>
   </div>
 </div>
 
-<!-- Bulk Actions -->
-<div class="card mb-3">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+<!-- KPI Cards -->
+<div class="activity-kpi-grid">
+  <div class="activity-kpi-card blue animate-in delay-1">
+    <div class="activity-kpi-icon">📡</div>
+    <div class="activity-kpi-label">Events</div>
+    <div class="activity-kpi-value">{{ summary.totals.events or 0 }}</div>
+    <div class="activity-kpi-sub">Responses captured in the field</div>
+  </div>
+  <div class="activity-kpi-card green animate-in delay-1">
+    <div class="activity-kpi-icon">🛒</div>
+    <div class="activity-kpi-label">Visits</div>
+    <div class="activity-kpi-value">{{ summary.totals.visits or 0 }}</div>
+    <div class="activity-kpi-sub">Store visits logged</div>
+  </div>
+  <div class="activity-kpi-card red animate-in delay-2">
+    <div class="activity-kpi-icon">⚠️</div>
+    <div class="activity-kpi-label">Issues</div>
+    <div class="activity-kpi-value">{{ summary.totals.issues or 0 }}</div>
+    <div class="activity-kpi-sub">Issues found in the field</div>
+  </div>
+  <div class="activity-kpi-card amber animate-in delay-2">
+    <div class="activity-kpi-icon">🌍</div>
+    <div class="activity-kpi-label">Coverage</div>
+    <div class="activity-kpi-value">{{ summary.totals.stores or 0 }}</div>
+    <div class="activity-kpi-sub">{{ summary.totals.salespeople or 0 }} salespeople active</div>
+  </div>
+</div>
+
+<!-- Brand Reports Table -->
+<div class="activity-section animate-in delay-3">
+  <div class="activity-section-header">
     <div>
-      <h4 style="color:var(--navy);">Brand Activity Reports — {{ report.month_label }}</h4>
-      <p class="text-muted fs-sm">Download individual reports or select brands for bulk export.</p>
+      <div class="activity-section-title">Brand Activity Reports</div>
+      <div class="activity-section-subtitle">
+        {% if brand_rows|length > 0 %}
+          {{ brand_rows|length }} brand{{ 's' if brand_rows|length != 1 else '' }} with activity data
+        {% else %}
+          No activity data imported for this period
+        {% endif %}
+      </div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="btn btn-primary btn-sm" onclick="bulkDownload('all')">📦 Download All (ZIP)</button>
-      <button class="btn btn-outline btn-sm" onclick="toggleSelectAll()">Select All</button>
-      <button class="btn btn-outline btn-sm" onclick="bulkDownload('selected')">Download Selected (ZIP)</button>
+      {% if brand_rows|length > 0 %}
+      <button class="btn btn-primary btn-sm" onclick="bulkDownload('all')">
+        📦 Download All
+      </button>
+      <button class="btn btn-outline btn-sm" onclick="toggleSelectAll()">
+        Select All
+      </button>
+      <button class="btn btn-outline btn-sm" onclick="bulkDownload('selected')">
+        Download Selected
+      </button>
+      {% endif %}
+      <a href="/activity-intelligence?report_id={{ report.id }}" class="btn btn-navy btn-sm">Import Activity</a>
     </div>
   </div>
 
   {% if brand_rows %}
-  <table class="data-table brand-table" id="activityBrandTable">
+  <table class="activity-table" id="activityBrandTable">
     <thead>
       <tr>
-        <th style="width:30px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()"></th>
+        <th style="width:36px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()"></th>
         <th>Brand</th>
-        <th>Stores</th>
-        <th>Visits</th>
-        <th>Issues</th>
-        <th>Opportunities</th>
-        <th>Actions</th>
+        <th style="text-align:center;">Stores</th>
+        <th style="text-align:center;">Visits</th>
+        <th style="text-align:center;">Issues</th>
+        <th style="text-align:center;">Opportunities</th>
+        <th style="text-align:right;">Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for brand in brand_rows %}
       <tr>
         <td><input type="checkbox" class="brand-checkbox" data-brand="{{ brand.brand_name }}"></td>
-        <td style="font-weight:600;">
-          <a href="/activity-intelligence?report_id={{ report.id }}&brand={{ brand.brand_name }}" style="color:var(--navy);text-decoration:none;">
+        <td>
+          <a href="/activity-intelligence?report_id={{ report.id }}&brand={{ brand.brand_name }}" class="activity-brand-name">
             {{ brand.brand_name }}
           </a>
         </td>
-        <td>{{ brand.stores or 0 }}</td>
-        <td>{{ brand.visits or 0 }}</td>
-        <td>{{ brand.issues or 0 }}</td>
-        <td>{{ brand.opportunities or 0 }}</td>
-        <td class="actions">
-          <a href="{{ brand.html_url }}" target="_blank" class="btn btn-outline btn-sm" title="View HTML">HTML</a>
-          {% if brand.pdf_url %}
-          <a href="{{ brand.pdf_url }}" class="btn btn-outline btn-sm" title="Download PDF">PDF</a>
+        <td style="text-align:center;" class="activity-metric-cell">{{ brand.stores or 0 }}</td>
+        <td style="text-align:center;" class="activity-metric-cell">{{ brand.visits or 0 }}</td>
+        <td style="text-align:center;" class="activity-metric-cell">
+          {% if brand.issues > 0 %}
+            <span style="color:var(--red);font-weight:700;">{{ brand.issues }}</span>
           {% else %}
-          <span class="btn btn-sm" style="opacity:.4;cursor:not-allowed;" title="PDF unavailable">PDF</span>
+            {{ brand.issues or 0 }}
           {% endif %}
-          <a href="{{ brand.excel_url }}" class="btn btn-outline btn-sm" title="Download Excel">Excel</a>
+        </td>
+        <td style="text-align:center;" class="activity-metric-cell">{{ brand.opportunities or 0 }}</td>
+        <td style="text-align:right;">
+          <div class="activity-actions">
+            <a href="{{ brand.html_url }}" target="_blank" class="btn btn-outline btn-sm" title="View HTML report">HTML</a>
+            {% if brand.pdf_url %}
+            <a href="{{ brand.pdf_url }}" class="btn btn-outline btn-sm" title="Download PDF">PDF</a>
+            {% else %}
+            <span class="btn btn-sm" style="opacity:.35;cursor:not-allowed;background:#f8fafc;border-color:#e2e8f0;" title="PDF unavailable">PDF</span>
+            {% endif %}
+            <a href="{{ brand.excel_url }}" class="btn btn-outline btn-sm" title="Download Excel">Excel</a>
+          </div>
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 
-  <!-- Bulk Progress -->
-  <div id="bulkProgress" class="activity-progress" hidden style="margin-top:16px;">
+  <div id="bulkProgress" class="activity-progress" hidden>
     <div class="activity-progress-top">
       <div>
-        <div class="summary-banner-kicker" style="margin-bottom:4px;">Bulk Export</div>
+        <div class="summary-banner-kicker">Bulk Export</div>
         <div id="bulkStage" class="text-navy fw-bold">Preparing pack</div>
       </div>
-      <div id="bulkPct" class="kpi-value-sm">0%</div>
+      <div id="bulkPct" style="font-size:20px;font-weight:800;color:var(--navy);">0%</div>
     </div>
     <div class="activity-progress-track">
       <div id="bulkFill" class="activity-progress-fill"></div>
     </div>
     <div id="bulkNote" class="activity-progress-note">Packaging brand outputs...</div>
-    <div id="bulkResult" style="margin-top:8px;"></div>
+    <div id="bulkResult" style="margin-top:10px;"></div>
   </div>
   {% else %}
-  <p class="text-muted">No activity data found for this report. <a href="/activity-intelligence?report_id={{ report.id }}">Import activity data</a>.</p>
+  <div class="activity-empty" style="padding:48px 24px;">
+    <div class="activity-empty-icon" style="width:64px;height:64px;font-size:28px;">📋</div>
+    <h3 style="font-size:16px;">No Activity Data Yet</h3>
+    <p style="font-size:13px;">Import field activity data for this report period to generate per-brand reports.</p>
+    <a href="/activity-intelligence?report_id={{ report.id }}" class="btn btn-primary btn-sm">Go to Activity Intelligence</a>
+  </div>
   {% endif %}
 </div>
 
-<!-- Activity Batch History -->
-<div class="card">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-    <h4 style="color:var(--navy);">Activity Batch History</h4>
-    <a href="/activity-intelligence" class="btn btn-outline btn-sm">Import New Activity</a>
+<!-- Batch History -->
+<div class="activity-section animate-in delay-3">
+  <div class="activity-section-header">
+    <div>
+      <div class="activity-section-title">Activity Batch History</div>
+      <div class="activity-section-subtitle">Past activity imports and their status</div>
+    </div>
   </div>
-  <table class="data-table batch-history-row">
+  <table class="activity-table batch-row">
     <thead>
-      <tr><th>Batch</th><th>Period</th><th>Rows</th><th>Brands</th><th>Status</th><th>Actions</th></tr>
+      <tr>
+        <th>Batch</th>
+        <th>Period</th>
+        <th style="text-align:center;">Rows</th>
+        <th style="text-align:center;">Brands</th>
+        <th>Status</th>
+        <th style="text-align:right;">Actions</th>
+      </tr>
     </thead>
     <tbody>
       {% for batch in batches %}
       <tr>
         <td>
-          <div style="font-weight:600;">{{ batch.display_label or batch.source_filename }}</div>
-          <div class="text-muted fs-sm">{{ batch.source_type_label or batch.source_type or 'Activity' }}</div>
+          <div style="font-weight:700;color:var(--navy);">{{ batch.display_label or batch.source_filename or 'Batch ' ~ batch.id }}</div>
+          <div class="text-muted fs-sm">{{ batch.source_type_label or 'Activity import' }}</div>
         </td>
-        <td>{{ batch.report_label or batch.start_date or '-' }}{% if batch.end_date and batch.end_date != batch.start_date %} to {{ batch.end_date }}{% endif %}</td>
-        <td>{{ batch.row_count or 0 }}</td>
-        <td>{{ batch.brand_count or 0 }}</td>
-        <td><span class="badge {% if batch.import_status == 'imported' %}badge-green{% else %}badge-blue{% endif %}">{{ batch.status_label or batch.import_status }}</span></td>
         <td>
-          <a href="/activity-reports?batch_id={{ batch.id }}" class="btn btn-outline btn-sm">View Reports</a>
-          <a href="/activity-intelligence?batch_id={{ batch.id }}" class="btn btn-outline btn-sm">Details</a>
+          {{ batch.report_label or batch.start_date or '-' }}
+          {% if batch.end_date and batch.end_date != batch.start_date %}
+            <span class="text-muted">to {{ batch.end_date }}</span>
+          {% endif %}
+        </td>
+        <td style="text-align:center;font-weight:600;">{{ batch.row_count or 0 }}</td>
+        <td style="text-align:center;font-weight:600;">{{ batch.brand_count or 0 }}</td>
+        <td>
+          <span class="batch-badge {{ 'imported' if batch.import_status == 'imported' else 'pending' }}">
+            {{ batch.status_label or batch.import_status }}
+          </span>
+        </td>
+        <td style="text-align:right;">
+          <div class="activity-actions">
+            <a href="/activity-reports?batch_id={{ batch.id }}" class="btn btn-outline btn-sm">View</a>
+            <a href="/activity-intelligence?batch_id={{ batch.id }}" class="btn btn-outline btn-sm">Details</a>
+          </div>
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="text-muted">No activity batches imported yet.</td></tr>
+      <tr>
+        <td colspan="6" style="text-align:center;padding:32px;color:var(--muted);">
+          No activity batches imported yet.
+        </td>
+      </tr>
       {% endfor %}
     </tbody>
   </table>
@@ -203,7 +625,7 @@ async function bulkDownload(mode) {
     progressCard.hidden = false;
     progressFill.style.width = `${safePct}%`;
     progressPct.textContent = `${Math.round(safePct)}%`;
-    progressStage.textContent = stage || 'Building bulk export';
+    progressStage.textContent = stage || 'Building export';
     progressNote.textContent = note || '';
   };
 
@@ -231,7 +653,7 @@ async function bulkDownload(mode) {
     }
     if (data.cached && data.zip_url) {
       setProgress(100, 'Bulk export ready', 'Cached pack served instantly.');
-      progressResult.innerHTML = `<a href="${data.zip_url}" class="btn btn-primary btn-sm" download>Download ZIP</a>`;
+      progressResult.innerHTML = `<a href="${data.zip_url}" class="btn btn-primary btn-sm" download>⬇ Download ZIP</a>`;
       return;
     }
     if (data.job_id) {
@@ -268,7 +690,7 @@ async function pollBulkJob(jobId, setProgress, resultDiv) {
     if (payload.status === 'done') {
       const result = payload.result_json || {};
       if (result.zip_url) {
-        resultDiv.innerHTML = `<a href="${result.zip_url}" class="btn btn-primary btn-sm" download>Download ZIP</a>`;
+        resultDiv.innerHTML = `<a href="${result.zip_url}" class="btn btn-primary btn-sm" download>⬇ Download ZIP</a>`;
       } else {
         resultDiv.innerHTML = '<span class="text-muted">No ZIP was produced. Some reports may have failed.</span>';
       }
