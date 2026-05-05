@@ -4318,6 +4318,7 @@ def _list_activity_brands_for_scope(report_id=None, batch_id=None):
     scope_col = 'batch_id' if batch_id else 'report_id'
     scope_value = batch_id if batch_id else report_id
     with ds._connect() as conn:
+        # Get brands from issues and mentions (resolved brands)
         rows = conn.execute(
             f"""
             SELECT DISTINCT brand_name
@@ -4330,7 +4331,27 @@ def _list_activity_brands_for_scope(report_id=None, batch_id=None):
             """,
             (scope_value, scope_value)
         ).fetchall()
-    return [row['brand_name'] for row in rows if row['brand_name']]
+        brands = [row['brand_name'] for row in rows if row['brand_name']]
+        
+        # Also extract brands from raw survey names in activity_events
+        # This catches brands that failed resolution during import
+        survey_rows = conn.execute(
+            f"""
+            SELECT DISTINCT survey_name FROM activity_events
+            WHERE {scope_col} = ? AND survey_name IS NOT NULL AND TRIM(survey_name) != ''
+            """,
+            (scope_value,)
+        ).fetchall()
+        from modules.activity_intelligence import _extract_brand_candidate_from_survey
+        from modules.brand_names import canonicalize_brand_name
+        for row in survey_rows:
+            candidate = _extract_brand_candidate_from_survey(row['survey_name'])
+            if candidate:
+                canonical = canonicalize_brand_name(candidate)
+                if canonical and canonical not in brands:
+                    brands.append(canonical)
+        brands.sort()
+    return brands
 
 
 def _get_activity_batch_row(batch_id):
@@ -4428,7 +4449,7 @@ def _activity_bulk_zip_path(period_label, report_id=None, batch_id=None):
     )
 
 
-def _build_activity_bulk_zip(report_id=None, batch_id=None, brand_names=None, formats=None):
+def _build_activity_bulk_zip(report_id=None, batch_id=None, brand_names=None, formats=None, prebuilt_assets=None):
     scope = _resolve_activity_scope(report_id=report_id, batch_id=batch_id)
     context = scope['context']
     if not context:
@@ -4444,18 +4465,26 @@ def _build_activity_bulk_zip(report_id=None, batch_id=None, brand_names=None, fo
     if not brands:
         raise FileNotFoundError('No brands with activity data found')
 
+    prebuilt_assets = prebuilt_assets or {}
     zip_path = _activity_bulk_zip_path(period_label, report_id=report_id, batch_id=batch_id)
+    skipped_brands = []
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for brand_name in brands:
-            assets = _build_activity_report_assets(brand_name, report_id=report_id, batch_id=batch_id)
-            brand_folder = _safe_name(brand_name or 'brand')
-            if 'excel' in requested_formats and assets.get('excel_path') and os.path.exists(assets['excel_path']):
-                zipf.write(assets['excel_path'], f"{brand_folder}/{os.path.basename(assets['excel_path'])}")
-            if 'pdf' in requested_formats and assets.get('pdf_available') and assets.get('pdf_path') and os.path.exists(assets['pdf_path']):
-                zipf.write(assets['pdf_path'], f"{brand_folder}/{os.path.basename(assets['pdf_path'])}")
-            if 'html' in requested_formats and assets.get('html_path') and os.path.exists(assets['html_path']):
-                zipf.write(assets['html_path'], f"{brand_folder}/{os.path.basename(assets['html_path'])}")
-    return zip_path
+            try:
+                assets = prebuilt_assets.get(brand_name)
+                if not assets:
+                    assets = _build_activity_report_assets(brand_name, report_id=report_id, batch_id=batch_id)
+                brand_folder = _safe_name(brand_name or 'brand')
+                if 'excel' in requested_formats and assets.get('excel_path') and os.path.exists(assets['excel_path']):
+                    zipf.write(assets['excel_path'], f"{brand_folder}/{os.path.basename(assets['excel_path'])}")
+                if 'pdf' in requested_formats and assets.get('pdf_available') and assets.get('pdf_path') and os.path.exists(assets['pdf_path']):
+                    zipf.write(assets['pdf_path'], f"{brand_folder}/{os.path.basename(assets['pdf_path'])}")
+                if 'html' in requested_formats and assets.get('html_path') and os.path.exists(assets['html_path']):
+                    zipf.write(assets['html_path'], f"{brand_folder}/{os.path.basename(assets['html_path'])}")
+            except Exception as e:
+                skipped_brands.append({'brand': brand_name, 'error': str(e)})
+                continue
+    return zip_path, skipped_brands
 
 
 def _warm_activity_report_assets(report_id=None, batch_id=None, brand_names=None):
@@ -4776,6 +4805,7 @@ def api_activity_report_bulk():
             errors = []
             total = len(brand_names)
             report_obj = ds.get_report(report_id) if report_id else None
+            prebuilt_assets = {}
 
             for idx, brand_name in enumerate(brand_names, start=1):
                 try:
@@ -4789,6 +4819,9 @@ def api_activity_report_bulk():
                     assets = cached if cached['cached'] else _build_activity_report_assets(brand_name, report_id=report_id, batch_id=batch_id)
                     if not cached['cached']:
                         cached = _activity_report_cached_paths(brand_name, report=ds.get_report(report_id) if report_id else None, batch=batch)
+                    
+                    # Store for ZIP builder so we don't rebuild
+                    prebuilt_assets[brand_name] = assets
 
                     report_result = {
                         'brand': brand_name,
@@ -4823,12 +4856,15 @@ def api_activity_report_bulk():
                 try:
                     zip_path = cached_zip_path
                     if not (requested_all_brands and uses_default_bundle and os.path.exists(zip_path)):
-                        zip_path = _build_activity_bulk_zip(
+                        zip_path, zip_skipped = _build_activity_bulk_zip(
                             report_id=report_id,
                             batch_id=batch_id,
-                            brand_names=brand_names,
+                            brand_names=[r['brand'] for r in results],
                             formats=normalized_formats,
+                            prebuilt_assets=prebuilt_assets,
                         )
+                    if zip_skipped:
+                        errors.extend(zip_skipped)
                     zip_url = f"/download/{os.path.basename(zip_path)}"
                 except Exception as zip_err:
                     errors.append({'brand': None, 'error': f'ZIP generation failed: {zip_err}'})
