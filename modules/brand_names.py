@@ -138,6 +138,12 @@ def brand_match_terms(name: str) -> list[str]:
     compare_key = normalize_brand_compare_key(canonical)
     _add(compare_key)
 
+    # Strip common prefixes so "Bp Madala Beverages Limited" also matches "Madala Beverages Limited Feedback"
+    for prefix in ('bp ', 'bp'):
+        if canonical.lower().startswith(prefix):
+            _add(canonical[len(prefix):].strip())
+            break
+
     canonical_key = normalize_name_key(canonical)
     for raw_key, mapped in _CANONICAL_MAP.items():
         if normalize_name_key(mapped) != canonical_key:
