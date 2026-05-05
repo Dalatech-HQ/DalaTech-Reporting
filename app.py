@@ -5326,6 +5326,25 @@ def api_export_alerts():
 # ── Activity Reports Output Page ──────────────────────────────────────────────
 
 @app.route('/activity-reports')
+def _find_matching_activity_batch(report):
+    """Find an activity batch whose date range overlaps with the report."""
+    if not report:
+        return None
+    report_start = report.get('start_date')
+    report_end = report.get('end_date')
+    if not report_start or not report_end:
+        return None
+    for batch in ds.get_activity_batches(limit=100):
+        batch_start = batch.get('start_date')
+        batch_end = batch.get('end_date')
+        if not batch_start or not batch_end:
+            continue
+        # Overlap check: batch_start <= report_end AND batch_end >= report_start
+        if batch_start <= report_end and batch_end >= report_start:
+            return batch
+    return None
+
+
 def activity_reports():
     """Dedicated activity reports output page — mirrors the sales dashboard UX."""
     alert_count = ds.get_unacknowledged_count()
@@ -5339,6 +5358,12 @@ def activity_reports():
     if not report_id and latest_report and not batch_row:
         report_id = latest_report['id']
     report = ds.get_report(report_id) if report_id else None
+
+    # If no batch specified but report has a matching unlinked batch, use it
+    if not batch_row and report:
+        batch_row = _find_matching_activity_batch(report)
+        if batch_row:
+            batch_id = batch_row.get('id')
 
     # Activity summary for the selected scope
     summary = ds.get_activity_summary(batch_id=batch_id, report_id=report_id)
